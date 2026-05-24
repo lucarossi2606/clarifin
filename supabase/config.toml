@@ -1,0 +1,2 @@
+[functions.generate-node]
+verify_jwt = false
