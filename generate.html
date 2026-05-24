@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Clarifin Draft Generator</title>
+    <style>
+      :root {
+        font-family: -apple-system, BlinkMacSystemFont, "Inter", "SF Pro Text", "Segoe UI", sans-serif;
+        color: #111827;
+        background: #f4f6f8;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: start center;
+        padding: 32px 16px;
+      }
+
+      main {
+        width: min(100%, 720px);
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 24px;
+        box-shadow: 0 18px 60px rgba(15, 23, 42, 0.08);
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 26px;
+      }
+
+      p {
+        margin: 0 0 18px;
+        color: #6b7280;
+        line-height: 1.5;
+      }
+
+      label {
+        display: block;
+        margin: 18px 0 8px;
+        font-weight: 700;
+      }
+
+      textarea,
+      input {
+        width: 100%;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        padding: 12px;
+        font: inherit;
+        color: #111827;
+        background: #fff;
+      }
+
+      textarea {
+        min-height: 180px;
+        resize: vertical;
+      }
+
+      .hint {
+        margin-top: 6px;
+        font-size: 13px;
+        color: #7d828a;
+      }
+
+      button {
+        margin-top: 22px;
+        width: 100%;
+        border: 0;
+        border-radius: 8px;
+        padding: 13px 16px;
+        font: inherit;
+        font-weight: 700;
+        color: #fff;
+        background: #111827;
+        cursor: pointer;
+      }
+
+      button:disabled {
+        cursor: wait;
+        opacity: 0.65;
+      }
+
+      .message {
+        margin-top: 18px;
+        padding: 14px;
+        border-radius: 8px;
+        display: none;
+        line-height: 1.5;
+      }
+
+      .message.success {
+        display: block;
+        background: rgba(16, 185, 129, 0.12);
+        color: #065f46;
+      }
+
+      .message.error {
+        display: block;
+        background: rgba(239, 68, 68, 0.12);
+        color: #991b1b;
+      }
+
+      .message a {
+        color: inherit;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Clarifin Draft Generator</h1>
+      <p>Create a draft node from a raw market or macro event. Drafts are saved with <strong>status = draft</strong> and are not published automatically.</p>
+
+      <form id="generator-form">
+        <label for="raw_event_text">Raw event text</label>
+        <textarea id="raw_event_text" name="raw_event_text" required placeholder="Example: US inflation came in hotter than expected, pushing bond yields higher..."></textarea>
+
+        <label for="tickers">Optional tickers</label>
+        <input id="tickers" name="tickers" placeholder="Example: SPY, QQQ, JPM" />
+        <div class="hint">Separate tickers with commas.</div>
+
+        <label for="source_urls">Optional source URLs</label>
+        <input id="source_urls" name="source_urls" placeholder="Example: https://example.com/article" />
+        <div class="hint">Separate URLs with commas. If empty, the draft will use “User provided event text” as source.</div>
+
+        <button id="submit-button" type="submit">Generate Draft</button>
+      </form>
+
+      <div id="message" class="message"></div>
+    </main>
+
+    <script>
+      const SUPABASE_URL = "https://omoansqramrgtpecsudh.supabase.co";
+      const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_YXZ0BaSAQnCuOfohv7aGwQ_DZN4f8to";
+      const FUNCTION_URL = `${SUPABASE_URL}/functions/v1/generate-node`;
+      const DASHBOARD_DRAFTS_URL = "https://supabase.com/dashboard/project/omoansqramrgtpecsudh/editor";
+
+      const form = document.querySelector("#generator-form");
+      const button = document.querySelector("#submit-button");
+      const message = document.querySelector("#message");
+
+      function splitOptionalList(value) {
+        return value
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean);
+      }
+
+      function showMessage(type, html) {
+        message.className = `message ${type}`;
+        message.innerHTML = html;
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        button.disabled = true;
+        button.textContent = "Generating...";
+        showMessage("success", "Generating draft. This can take a few seconds.");
+
+        const formData = new FormData(form);
+        const payload = {
+          raw_event_text: String(formData.get("raw_event_text") || "").trim(),
+          tickers: splitOptionalList(String(formData.get("tickers") || "")),
+          source_urls: splitOptionalList(String(formData.get("source_urls") || "")),
+        };
+
+        try {
+          const response = await fetch(FUNCTION_URL, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              apikey: SUPABASE_PUBLISHABLE_KEY,
+              Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+            },
+            body: JSON.stringify(payload),
+          });
+
+          const result = await response.json();
+          if (!response.ok) {
+            throw new Error(result.error || "The draft could not be generated.");
+          }
+
+          showMessage(
+            "success",
+            `Draft created successfully.<br><strong>Node ID:</strong> ${result.node_id}<br><br>Open Supabase Table Editor and check the <strong>nodes</strong> table for rows where <strong>status = draft</strong>.<br><a href="${DASHBOARD_DRAFTS_URL}" target="_blank" rel="noreferrer">Open Supabase Table Editor</a>`
+          );
+          form.reset();
+        } catch (error) {
+          showMessage("error", error.message || "Something went wrong.");
+        } finally {
+          button.disabled = false;
+          button.textContent = "Generate Draft";
+        }
+      });
+    </script>
+  </body>
+</html>
