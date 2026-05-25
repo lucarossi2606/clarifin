@@ -47,7 +47,7 @@ button { border: 0; font: inherit; background: none; padding: 0; cursor: pointer
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.12);
 }
 
-.app-screen { padding: 96px 16px 110px 16px; height: 100%; overflow-y: auto; }
+.app-screen { padding: 96px 16px calc(160px + env(safe-area-inset-bottom, 0px)) 16px; height: 100%; overflow-y: auto; overscroll-behavior: contain; }
 
 .screen[hidden] { display: none; }
 
@@ -149,7 +149,7 @@ details.detail-card[open] summary::after { content: "−"; }
 .direction-mixed, .direction-neutral { color: var(--gray-text); }
 .asset-card p { margin: 4px 0 0 0; font-size: 13px; }
 
-.bottom-nav { position: absolute; bottom: 24px; left: 16px; right: 16px; height: 64px; border-radius: 99px; display: flex; justify-content: space-around; align-items: center; padding: 0 var(--sp-2); z-index: 100; }
+.bottom-nav { position: absolute; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); left: 16px; right: 16px; height: 64px; border-radius: 99px; display: flex; justify-content: space-around; align-items: center; padding: 0 var(--sp-2); z-index: 1000; }
 .bottom-nav[hidden] { display: none; }
 .nav-item { flex: 1; text-align: center; padding: 12px 0; border-radius: 99px; font-size: 14px; font-weight: 700; color: var(--text-muted); transition: all 0.2s ease; }
 .nav-item.active { background: var(--text-main); color: #fff; }
@@ -162,15 +162,15 @@ details.detail-card[open] summary::after { content: "−"; }
       
       <header class="top-nav liquid-glass">
         <div class="brand">clarifin</div>
-        <div class="next-event">NEXT: FOMC in 4h</div>
+        <div class="next-event">NEXT: No major event</div>
         <div class="avatar">L</div>
       </header>
 
       <main class="app-screen">
         <section class="screen list-screen" id="list-screen">
           <section class="greeting-section" id="screen-intro">
-            <p class="date-label">Wednesday, 21 May</p>
-            <h1>Good morning, Luca</h1>
+            <p class="date-label"></p>
+            <h1></h1>
           </section>
 
           <section class="feed-section">
@@ -328,9 +328,30 @@ const fallbackNodes = [
 let nodes = sortNodesNewestFirst(fallbackNodes);
 
 const upcomingEvents = [
-  { date: "TOMORROW, 14:30", category: "Macro", title: "US CPI release", short: "Inflation data could reset rate-cut expectations.", watch: ["S&P 500", "Nasdaq", "Dollar", "Bonds"] },
-  { date: "TUESDAY, 22:00", category: "Earnings", title: "NVIDIA earnings", short: "AI demand, margins and supply constraints move back into focus.", watch: ["NVDA", "AMD", "Semiconductors", "Cloud"] },
-  { date: "WEDNESDAY, 20:00", category: "Central Banks", title: "Fed decision", short: "Policy language may shift yields, banks and risk assets.", watch: ["S&P 500", "Treasuries", "Dollar", "Banks"] }
+  {
+    datetime: new Date(Date.now() + 14 * 60 * 60 * 1000).toISOString(),
+    nextLabel: "US CPI",
+    category: "Macro",
+    title: "US CPI release",
+    short: "Inflation data could reset rate-cut expectations.",
+    watch: ["S&P 500", "Nasdaq", "Dollar", "Bonds"]
+  },
+  {
+    datetime: new Date(Date.now() + 36 * 60 * 60 * 1000).toISOString(),
+    nextLabel: "NVIDIA earnings",
+    category: "Earnings",
+    title: "NVIDIA earnings",
+    short: "AI demand, margins and supply constraints move back into focus.",
+    watch: ["NVDA", "AMD", "Semiconductors", "Cloud"]
+  },
+  {
+    datetime: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+    nextLabel: "Fed decision",
+    category: "Central Banks",
+    title: "Fed decision",
+    short: "Policy language may shift yields, banks and risk assets.",
+    watch: ["S&P 500", "Treasuries", "Dollar", "Banks"]
+  }
 ];
 
 const watchlist = ["TSMC", "Apple", "Rheinmetall", "LVMH", "Microsoft", "Vonovia"];
@@ -585,6 +606,9 @@ const eventList = document.querySelector("#event-list");
 const detailSections = document.querySelector("#detail-sections");
 const saveButton = document.querySelector("#save-node");
 const bottomNav = document.querySelector(".bottom-nav");
+const appScreen = document.querySelector(".app-screen");
+const brandButton = document.querySelector(".brand");
+const nextEventLabel = document.querySelector(".next-event");
 
 function escapeHtml(value) {
   return String(value)
@@ -593,6 +617,111 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function getCurrentDateLabel() {
+  // The Home date uses the user's device date every time the app loads.
+  const now = new Date();
+  const weekday = now.toLocaleDateString("en-US", { weekday: "long" });
+  const day = now.getDate();
+  const month = now.toLocaleDateString("en-US", { month: "long" });
+  return `${weekday}, ${day} ${month}`;
+}
+
+function getGreeting() {
+  // The greeting follows the user's local device time.
+  const hour = new Date().getHours();
+  if (hour >= 3 && hour <= 10) return "Good morning, Luca";
+  if (hour >= 17 && hour <= 21) return "Good evening, Luca";
+  return "Welcome, Luca";
+}
+
+function getSortedUpcomingEvents() {
+  return upcomingEvents
+    .slice()
+    .sort((a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime());
+}
+
+function isSameCalendarDay(firstDate, secondDate) {
+  return firstDate.getFullYear() === secondDate.getFullYear()
+    && firstDate.getMonth() === secondDate.getMonth()
+    && firstDate.getDate() === secondDate.getDate();
+}
+
+function formatShortDate(date) {
+  const day = date.getDate();
+  const month = date.toLocaleDateString("en-US", { month: "short" });
+  return `${day} ${month}`;
+}
+
+function formatUpcomingTime(dateString) {
+  // The top header shows the next event using short relative time labels.
+  const eventDate = new Date(dateString);
+  if (Number.isNaN(eventDate.getTime())) return "";
+
+  const now = new Date();
+  const diffMs = eventDate.getTime() - now.getTime();
+  if (diffMs <= 0) return "now";
+
+  const minutes = Math.ceil(diffMs / 60000);
+  if (minutes < 60) return `in ${minutes} min`;
+
+  const hours = Math.ceil(minutes / 60);
+  if (hours < 24) return `in ${hours}h`;
+
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  if (isSameCalendarDay(eventDate, tomorrow)) return "tomorrow";
+
+  const days = Math.ceil(diffMs / (24 * 60 * 60 * 1000));
+  if (days < 7) return `in ${days}d`;
+
+  return formatShortDate(eventDate);
+}
+
+function getUpcomingCardDateLabel(dateString) {
+  const eventDate = new Date(dateString);
+  if (Number.isNaN(eventDate.getTime())) return "";
+  const time = eventDate.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  return `${formatShortDate(eventDate)}, ${time}`;
+}
+
+function getNextUpcomingEvent() {
+  // Find the first future event after sorting all upcoming events by datetime.
+  const now = Date.now();
+  return getSortedUpcomingEvents().find((event) => {
+    const eventTime = new Date(event.datetime).getTime();
+    return Number.isFinite(eventTime) && eventTime > now;
+  });
+}
+
+function updateTopHeader() {
+  const nextEvent = getNextUpcomingEvent();
+  if (!nextEvent) {
+    nextEventLabel.textContent = "NEXT: No major event";
+    return;
+  }
+
+  const label = nextEvent.nextLabel || nextEvent.title;
+  nextEventLabel.textContent = `NEXT: ${label} ${formatUpcomingTime(nextEvent.datetime)}`;
+}
+
+function setActiveNav(view) {
+  document.querySelectorAll(".nav-item").forEach((nav) => {
+    nav.classList.toggle("active", nav.dataset.view === view);
+  });
+}
+
+function scrollAppToTop() {
+  appScreen.scrollTo({ top: 0, behavior: "auto" });
+}
+
+function goHome() {
+  activeView = "home";
+  eventMode = "top";
+  selectedNodeId = null;
+  setActiveNav("home");
+  renderList();
 }
 
 function getNode(id) {
@@ -615,8 +744,8 @@ function getWatchlistHits(node) {
 function renderIntro() {
   if (activeView === "home") {
     screenIntro.innerHTML = `
-      <p class="date-label">Wednesday, 21 May</p>
-      <h1>Good morning, Luca</h1>
+      <p class="date-label">${getCurrentDateLabel()}</p>
+      <h1>${getGreeting()}</h1>
     `;
     eventTabs.hidden = false;
   } else if (activeView === "watchlist") {
@@ -704,7 +833,7 @@ function renderNodeCards(list) {
 }
 
 function renderUpcomingCards() {
-  eventList.innerHTML = upcomingEvents
+  eventList.innerHTML = getSortedUpcomingEvents()
     .map(
       (event) => `
         <article class="event-card upcoming-card liquid-glass">
@@ -717,7 +846,7 @@ function renderUpcomingCards() {
           <div class="ticker-row">
             ${event.watch.map((item) => `<span class="ticker-chip neutral">${escapeHtml(item)}</span>`).join("")}
           </div>
-          <span class="timestamp">${escapeHtml(event.date)}</span>
+          <span class="timestamp">${escapeHtml(getUpcomingCardDateLabel(event.datetime))}</span>
         </article>
       `
     )
@@ -729,8 +858,9 @@ function renderList() {
   listScreen.hidden = false;
   detailScreen.hidden = true;
   bottomNav.hidden = false;
-  window.scrollTo(0, 0);
+  scrollAppToTop();
   renderIntro();
+  updateTopHeader();
 
   document.querySelectorAll(".event-tab").forEach((tab) => {
     tab.classList.toggle("active", tab.dataset.eventMode === eventMode);
@@ -763,7 +893,8 @@ function renderDetail(node) {
   listScreen.hidden = true;
   detailScreen.hidden = false;
   bottomNav.hidden = true;
-  window.scrollTo(0, 0);
+  scrollAppToTop();
+  updateTopHeader();
   
   document.querySelector("#node-category").textContent = node.category;
   document.querySelector("#node-title").textContent = node.title;
@@ -819,10 +950,20 @@ document.querySelectorAll(".nav-item").forEach((item) => {
   item.addEventListener("click", () => {
     activeView = item.dataset.view;
     eventMode = "top";
-    document.querySelectorAll(".nav-item").forEach((nav) => nav.classList.toggle("active", nav === item));
+    setActiveNav(activeView);
     renderList();
   });
 });
+
+brandButton.addEventListener("click", goHome);
+brandButton.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    goHome();
+  }
+});
+brandButton.setAttribute("role", "button");
+brandButton.setAttribute("tabindex", "0");
 
 renderList();
 loadPublishedNodes();
