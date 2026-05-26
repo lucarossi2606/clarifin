@@ -608,7 +608,7 @@ function convertSupabaseUpcomingEvent(row) {
     short: firstValue(row, ["source"], "Scheduled market event"),
     watch: toArray(row.tickers),
     region: firstValue(row, ["region"], "global"),
-    importance: toNumber(row.importance, 0),
+    importance: toNumber(row.importance, 50),
     source: firstValue(row, ["source"], ""),
     sourceUrl: firstValue(row, ["source_url"], "")
   };
@@ -620,31 +620,21 @@ function useFallbackUpcomingEvents() {
 
 async function loadUpcomingEvents() {
   try {
-    const now = encodeURIComponent(new Date().toISOString());
-    const rows = await supabaseFetch(`upcoming_events?select=*&status=eq.published&event_time=gte.${now}&order=event_time.asc`);
+    const rows = await supabaseFetch("upcoming_events?select=*&status=eq.published&event_time=gte.now()&order=event_time.asc");
 
-    if (!Array.isArray(rows) || !rows.length) {
+    if (Array.isArray(rows) && rows.length) {
+      upcomingEvents = rows
+        .map(convertSupabaseUpcomingEvent)
+        .sort((a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime());
+    } else {
       useFallbackUpcomingEvents();
-      updateTopHeader();
-      if (activeView === "home" && eventMode === "upcoming" && detailScreen.hidden) renderList();
-      return;
     }
-
-    upcomingEvents = rows
-      .map(convertSupabaseUpcomingEvent)
-      .filter((event) => new Date(event.datetime).getTime() >= Date.now())
-      .sort((a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime());
-
-    if (!upcomingEvents.length) useFallbackUpcomingEvents();
-
-    updateTopHeader();
-    if (activeView === "home" && eventMode === "upcoming" && detailScreen.hidden) renderList();
   } catch (error) {
     console.warn("Clarifin Supabase upcoming events load failed. Using fallback events.", error);
     useFallbackUpcomingEvents();
-    updateTopHeader();
-    if (activeView === "home" && eventMode === "upcoming" && detailScreen.hidden) renderList();
   }
+
+  renderList();
 }
 
 async function loadPublishedNodes() {
