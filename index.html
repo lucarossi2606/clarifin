@@ -915,12 +915,30 @@ function renderNodeCards(list) {
     .join("");
 }
 
-function getUpcomingShortText(event) {
-  if (String(event.category || "").toLowerCase() === "earnings") {
-    return "Scheduled earnings event. Watch guidance, margins, revenue growth and sector read-throughs.";
-  }
+function isEarningsEvent(event) {
+  return String(event.category || "").toLowerCase() === "earnings";
+}
 
-  return event.short || "Scheduled market event";
+function getPrimaryUpcomingTicker(event) {
+  const watchItems = Array.isArray(event.watch) ? event.watch : [];
+  const ticker = watchItems[0] || String(event.title || "").split(" ")[0];
+  return String(ticker || "").trim().toUpperCase();
+}
+
+function getUpcomingEventDescription(event) {
+  if (!isEarningsEvent(event)) return event.short || "Scheduled market event";
+
+  const ticker = getPrimaryUpcomingTicker(event);
+  const descriptions = {
+    COST: "Costco reports earnings. Watch consumer demand, membership trends, margins and retail read-throughs.",
+    ADBE: "Adobe reports earnings. Watch AI monetization, subscription growth, margins and creative software demand.",
+    NKE: "Nike reports earnings. Watch China demand, inventory levels, margins and consumer spending signals.",
+    FDX: "FedEx reports earnings. Watch shipping volumes, pricing, margins and global trade demand.",
+    DOCU: "DocuSign reports earnings. Watch subscription growth, retention, margins and enterprise software demand.",
+    CCL: "Carnival reports earnings. Watch booking trends, pricing, debt reduction and travel demand."
+  };
+
+  return descriptions[ticker] || `${ticker || "Company"} reports earnings. Watch guidance, margins, revenue growth and sector read-throughs.`;
 }
 
 function getUpcomingImportance(event) {
@@ -931,7 +949,8 @@ function getUpcomingImportance(event) {
 function renderUpcomingCards() {
   eventList.innerHTML = getSortedUpcomingEvents()
     .map((event) => {
-      const importance = getUpcomingImportance(event);
+      const earnings = isEarningsEvent(event);
+      const importance = earnings ? null : getUpcomingImportance(event);
       const watchItems = Array.isArray(event.watch) ? event.watch : [];
 
       return `
@@ -941,11 +960,13 @@ function renderUpcomingCards() {
             <img src="${event.region ? getRegionFlag(event.region) : getUpcomingFlag(event.title)}" class="region-flag" alt="Region" onerror="this.style.display='none'" />
           </div>
           <h2>${escapeHtml(event.title)}</h2>
-          <p>${escapeHtml(getUpcomingShortText(event))}</p>
-          <div class="card-meta">
-            <span class="score-pill gray">${escapeHtml(getUpcomingCardDateLabel(event.datetime))}</span>
-            ${importance ? `<span class="score-pill yellow">${importance}</span>` : ""}
-          </div>
+          <p>${escapeHtml(getUpcomingEventDescription(event))}</p>
+          ${!earnings ? `
+            <div class="card-meta">
+              <span class="score-pill gray">${escapeHtml(getUpcomingCardDateLabel(event.datetime))}</span>
+              ${importance ? `<span class="score-pill yellow">${importance}</span>` : ""}
+            </div>
+          ` : ""}
           ${watchItems.length ? `
             <div class="ticker-row">
               ${watchItems.map((item) => `<span class="ticker-chip neutral">${escapeHtml(item)}</span>`).join("")}
