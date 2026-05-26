@@ -1,2 +1,5 @@
 [functions.generate-node]
 verify_jwt = false
+
+[functions.sync-upcoming-events]
+verify_jwt = false
