@@ -358,14 +358,16 @@ const fallbackNodes = [
 ];
 let nodes = sortNodesNewestFirst(fallbackNodes);
 
-const upcomingEvents = [
+const fallbackUpcomingEvents = [
   {
     datetime: new Date(Date.now() + 14 * 60 * 60 * 1000).toISOString(),
     nextLabel: "US CPI",
     category: "Macro",
     title: "US CPI release",
     short: "Inflation data could reset rate-cut expectations.",
-    watch: ["S&P 500", "Nasdaq", "Dollar", "Bonds"]
+    watch: ["S&P 500", "Nasdaq", "Dollar", "Bonds"],
+    region: "us",
+    importance: 4
   },
   {
     datetime: new Date(Date.now() + 36 * 60 * 60 * 1000).toISOString(),
@@ -373,7 +375,9 @@ const upcomingEvents = [
     category: "Earnings",
     title: "NVIDIA earnings",
     short: "AI demand, margins and supply constraints move back into focus.",
-    watch: ["NVDA", "AMD", "Semiconductors", "Cloud"]
+    watch: ["NVDA", "AMD", "Semiconductors", "Cloud"],
+    region: "us",
+    importance: 4
   },
   {
     datetime: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
@@ -381,9 +385,12 @@ const upcomingEvents = [
     category: "Central Banks",
     title: "Fed decision",
     short: "Policy language may shift yields, banks and risk assets.",
-    watch: ["S&P 500", "Treasuries", "Dollar", "Banks"]
+    watch: ["S&P 500", "Treasuries", "Dollar", "Banks"],
+    region: "us",
+    importance: 5
   }
 ];
+let upcomingEvents = fallbackUpcomingEvents.slice();
 
 const watchlist = ["TSMC", "Apple", "Rheinmetall", "LVMH", "Microsoft", "Vonovia"];
 const directionOrder = { positive: 0, negative: 1, mixed: 2, neutral: 2 };
@@ -590,6 +597,54 @@ function convertSupabaseNode(row, assetRows, detailRows) {
     counterarguments: counterarguments.filter(Boolean).length ? counterarguments.filter(Boolean) : fallbackNode.counterarguments,
     sources: sources.filter(Boolean).length ? sources.filter(Boolean) : fallbackNode.sources
   };
+}
+
+function convertSupabaseUpcomingEvent(row) {
+  return {
+    datetime: row.event_time,
+    nextLabel: firstValue(row, ["title"], "Scheduled market event"),
+    category: firstValue(row, ["category"], "Market Event"),
+    title: firstValue(row, ["title"], "Scheduled market event"),
+    short: firstValue(row, ["source"], "Scheduled market event"),
+    watch: toArray(row.tickers),
+    region: firstValue(row, ["region"], "global"),
+    importance: toNumber(row.importance, 0),
+    source: firstValue(row, ["source"], ""),
+    sourceUrl: firstValue(row, ["source_url"], "")
+  };
+}
+
+function useFallbackUpcomingEvents() {
+  upcomingEvents = fallbackUpcomingEvents.slice();
+}
+
+async function loadUpcomingEvents() {
+  try {
+    const now = encodeURIComponent(new Date().toISOString());
+    const rows = await supabaseFetch(`upcoming_events?select=*&status=eq.published&event_time=gte.${now}&order=event_time.asc`);
+
+    if (!Array.isArray(rows) || !rows.length) {
+      useFallbackUpcomingEvents();
+      updateTopHeader();
+      if (activeView === "home" && eventMode === "upcoming" && detailScreen.hidden) renderList();
+      return;
+    }
+
+    upcomingEvents = rows
+      .map(convertSupabaseUpcomingEvent)
+      .filter((event) => new Date(event.datetime).getTime() >= Date.now())
+      .sort((a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime());
+
+    if (!upcomingEvents.length) useFallbackUpcomingEvents();
+
+    updateTopHeader();
+    if (activeView === "home" && eventMode === "upcoming" && detailScreen.hidden) renderList();
+  } catch (error) {
+    console.warn("Clarifin Supabase upcoming events load failed. Using fallback events.", error);
+    useFallbackUpcomingEvents();
+    updateTopHeader();
+    if (activeView === "home" && eventMode === "upcoming" && detailScreen.hidden) renderList();
+  }
 }
 
 async function loadPublishedNodes() {
@@ -877,7 +932,7 @@ function renderUpcomingCards() {
         <article class="event-card upcoming-card liquid-glass">
           <div class="card-header">
             <span class="category-pill">${escapeHtml(event.category)}</span>
-            <img src="${getUpcomingFlag(event.title)}" class="region-flag" alt="Region" onerror="this.style.display='none'" />
+            <img src="${event.region ? getRegionFlag(event.region) : getUpcomingFlag(event.title)}" class="region-flag" alt="Region" onerror="this.style.display='none'" />
           </div>
           <h2>${escapeHtml(event.title)}</h2>
           <p>${escapeHtml(event.short)}</p>
@@ -1005,6 +1060,7 @@ brandButton.setAttribute("tabindex", "0");
 
 renderList();
 loadPublishedNodes();
+loadUpcomingEvents();
 
     </script>
   </body>
