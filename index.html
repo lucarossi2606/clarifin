@@ -601,6 +601,7 @@ function convertSupabaseNode(row, assetRows, detailRows) {
 
 function convertSupabaseUpcomingEvent(row) {
   return {
+    id: firstValue(row, ["id"], ""),
     datetime: row.event_time,
     nextLabel: firstValue(row, ["title"], "Scheduled market event"),
     category: firstValue(row, ["category"], "Market Event"),
@@ -610,7 +611,17 @@ function convertSupabaseUpcomingEvent(row) {
     region: firstValue(row, ["region"], "global"),
     importance: toNumber(row.importance, 50),
     source: firstValue(row, ["source"], ""),
-    sourceUrl: firstValue(row, ["source_url"], "")
+    sourceUrl: firstValue(row, ["source_url"], ""),
+    companyName: firstValue(row, ["company_name"], ""),
+    eventType: firstValue(row, ["event_type"], ""),
+    country: firstValue(row, ["country"], ""),
+    expectedValue: firstValue(row, ["expected_value"], ""),
+    previousValue: firstValue(row, ["previous_value"], ""),
+    actualValue: firstValue(row, ["actual_value"], ""),
+    epsEstimate: firstValue(row, ["eps_estimate"], ""),
+    revenueEstimate: firstValue(row, ["revenue_estimate"], ""),
+    fiscalDateEnding: firstValue(row, ["fiscal_date_ending"], ""),
+    dataQuality: firstValue(row, ["data_quality"], "")
   };
 }
 
@@ -977,13 +988,13 @@ function getUpcomingImportance(event) {
 
 function renderUpcomingCards() {
   eventList.innerHTML = getSortedUpcomingEvents()
-    .map((event) => {
+    .map((event, index) => {
       const earnings = isEarningsEvent(event);
       const importance = earnings ? null : getUpcomingImportance(event);
       const watchItems = Array.isArray(event.watch) ? event.watch : [];
 
       return `
-        <article class="event-card upcoming-card liquid-glass">
+        <button class="event-card upcoming-card liquid-glass" data-upcoming-index="${index}" type="button">
           <div class="card-header">
             <span class="category-pill">${escapeHtml(event.category)}</span>
             <img src="${event.region ? getRegionFlag(event.region) : getUpcomingFlag(event.title)}" class="region-flag" alt="Region" onerror="this.style.display='none'" />
@@ -1002,7 +1013,7 @@ function renderUpcomingCards() {
             </div>
           ` : ""}
           <span class="timestamp">${escapeHtml(formatUpcomingTime(event.datetime))}</span>
-        </article>
+        </button>
       `;
     })
     .join("");
@@ -1043,6 +1054,110 @@ function section(title, body, open = false) {
   `;
 }
 
+function hasValue(value) {
+  return value !== undefined && value !== null && String(value).trim() !== "";
+}
+
+function formatDetailDateTime(dateString) {
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function cleanSourceLabel(source) {
+  const label = String(source || "").trim();
+  return label.toLowerCase() === "manual entry" ? "" : label;
+}
+
+function formatFactualValue(value) {
+  if (!hasValue(value)) return "";
+  if (typeof value === "number") return new Intl.NumberFormat("en-US").format(value);
+  return String(value);
+}
+
+function detailRows(rows) {
+  const visibleRows = rows.filter((row) => hasValue(row.value));
+  if (!visibleRows.length) return "";
+
+  return `
+    <ul class="asset-list">
+      ${visibleRows.map((row) => `
+        <li class="asset-card">
+          <div class="asset-top"><h3>${escapeHtml(row.label)}</h3></div>
+          <p>${row.html || escapeHtml(formatFactualValue(row.value))}</p>
+        </li>
+      `).join("")}
+    </ul>
+  `;
+}
+
+function renderUpcomingDetail(event) {
+  const watchItems = Array.isArray(event.watch) ? event.watch : [];
+  const importance = getUpcomingImportance(event);
+  const source = cleanSourceLabel(event.source);
+  const sourceHtml = event.sourceUrl
+    ? `<a href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(source || event.sourceUrl)}</a>`
+    : "";
+
+  selectedNodeId = null;
+  activeView = "home";
+  eventMode = "upcoming";
+  setActiveNav("home");
+  listScreen.hidden = true;
+  detailScreen.hidden = false;
+  ensureBottomNavVisible();
+  scrollAppToTop();
+  updateTopHeader();
+
+  document.querySelector("#node-category").textContent = event.category;
+  document.querySelector("#node-title").textContent = event.title;
+  document.querySelector("#node-summary").textContent = getUpcomingEventDescription(event);
+
+  document.querySelector("#impact-label").hidden = !importance;
+  document.querySelector("#impact-label").textContent = importance ? `Importance ${importance}` : "";
+  document.querySelector("#confidence-label").hidden = false;
+  document.querySelector("#confidence-label").textContent = `Region ${String(event.region || "global").toUpperCase()}`;
+
+  saveButton.hidden = true;
+  saveButton.classList.remove("saved");
+
+  const eventDetails = detailRows([
+    { label: "Event date/time", value: formatDetailDateTime(event.datetime) },
+    { label: "Region", value: event.region || "global" },
+    { label: "Watch assets", value: watchItems.join(", ") },
+    { label: "Importance", value: importance }
+  ]);
+
+  const earningsFacts = detailRows([
+    { label: "Company", value: event.companyName },
+    { label: "Ticker(s)", value: watchItems.join(", ") },
+    { label: "EPS estimate", value: event.epsEstimate },
+    { label: "Revenue estimate", value: event.revenueEstimate },
+    { label: "Fiscal date ending", value: event.fiscalDateEnding },
+    { label: "Data quality", value: event.dataQuality },
+    { label: "Source", value: source, html: sourceHtml }
+  ]);
+
+  const macroFacts = detailRows([
+    { label: "Country", value: event.country },
+    { label: "Expected value", value: event.expectedValue },
+    { label: "Previous value", value: event.previousValue },
+    { label: "Actual value", value: event.actualValue },
+    { label: "Source", value: source, html: sourceHtml }
+  ]);
+
+  detailSections.innerHTML = [
+    section("Event details", eventDetails || "<p>No event details available.</p>", true),
+    section("Factual data", isEarningsEvent(event) ? (earningsFacts || "<p>No factual data available yet.</p>") : (macroFacts || "<p>No factual data available yet.</p>"), true)
+  ].join("");
+}
+
 function renderDetail(node) {
   selectedNodeId = node.id;
   listScreen.hidden = true;
@@ -1057,8 +1172,11 @@ function renderDetail(node) {
   
   document.querySelector("#impact-label").textContent = `Impact ${node.impact} / ${node.impactLabel}`;
   document.querySelector("#confidence-label").textContent = `Confidence ${node.confidence} / ${node.confidenceLabel}`;
+  document.querySelector("#impact-label").hidden = false;
+  document.querySelector("#confidence-label").hidden = false;
 
   const isSaved = savedNodeIds.includes(node.id);
+  saveButton.hidden = false;
   saveButton.textContent = isSaved ? "Saved" : "Save";
   saveButton.classList.toggle("saved", isSaved);
 
@@ -1079,8 +1197,15 @@ function renderDetail(node) {
 
 eventList.addEventListener("click", (event) => {
   const card = event.target.closest(".event-card");
-  if (!card || !card.dataset.node) return;
-  renderDetail(getNode(card.dataset.node));
+  if (!card) return;
+  if (card.dataset.node) {
+    renderDetail(getNode(card.dataset.node));
+    return;
+  }
+  if (card.dataset.upcomingIndex) {
+    const upcomingEvent = getSortedUpcomingEvents()[Number(card.dataset.upcomingIndex)];
+    if (upcomingEvent) renderUpcomingDetail(upcomingEvent);
+  }
 });
 
 document.querySelector("#back-button").addEventListener("click", renderList);
