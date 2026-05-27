@@ -356,7 +356,7 @@ const fallbackNodes = [
     sources: ["Earnings Calls", "Company Filings", "Gartner", "SemiAnalysis"]
   }
 ];
-let nodes = sortNodesNewestFirst(fallbackNodes);
+let nodes = [];
 
 const fallbackUpcomingEvents = [
   {
@@ -446,6 +446,14 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(number) ? number : fallback;
 }
 
+function getImpactLabel(score) {
+  const impact = toNumber(score, 0);
+  if (impact >= 90) return "Very high";
+  if (impact >= 75) return "High";
+  if (impact >= 55) return "Medium";
+  return "Low / Watch";
+}
+
 function slugify(value) {
   return String(value || "node")
     .toLowerCase()
@@ -523,6 +531,12 @@ function normalizeAsset(asset) {
   };
 }
 
+function isValidatedAsset(asset) {
+  const ticker = String(asset?.ticker || "").trim().toUpperCase();
+  if (!ticker || ["UNKNOWN", "N/A", "NA", "NONE", "TBD", "UNVERIFIED"].includes(ticker)) return false;
+  return true;
+}
+
 function relatedNodeId(row, allowOwnId = false) {
   const value = firstValue(row, ["node_id", "nodeId", "node", "clarifin_node_id", "parent_node_id"], allowOwnId ? firstValue(row, ["id"], "") : "");
   return value ? String(value) : "";
@@ -572,30 +586,31 @@ function convertSupabaseNode(row, assetRows, detailRows) {
   const detail = detailRows[0] || {};
   const title = firstValue(row, ["title", "headline", "name"], "Untitled node");
   const id = String(firstValue(row, ["id", "slug"], slugify(title)));
-  const fallbackNode = fallbackNodes.find((node) => node.id === id || node.title === title) || fallbackNodes[0];
   const chains = toArray(firstValue(detail, ["chains", "causal_chain", "causal_chains", "causalChains"], firstValue(row, ["chains", "causal_chains"], []))).map(normalizeChain);
   const scenarios = toArray(firstValue(detail, ["scenarios"], firstValue(row, ["scenarios"], []))).map(normalizeScenario);
   const counterarguments = toArray(firstValue(detail, ["counterarguments", "counter_arguments", "counters"], firstValue(row, ["counterarguments", "counter_arguments"], []))).map((item) => typeof item === "string" ? item : firstValue(item, ["body", "text", "argument"], ""));
   const sources = toArray(firstValue(detail, ["sources"], firstValue(row, ["sources"], []))).map((item) => typeof item === "string" ? item : firstValue(item, ["name", "title", "url"], ""));
+  const impact = toNumber(firstValue(row, ["impact", "impact_score", "impactScore"], 50), 50);
+  const confidence = toNumber(firstValue(row, ["confidence", "confidence_score", "confidenceScore"], 50), 50);
 
   return {
     id,
-    category: firstValue(row, ["category", "topic", "type"], fallbackNode.category),
+    category: firstValue(row, ["category", "topic", "type"], "Market Event"),
     title,
-    short: firstValue(row, ["short", "summary", "subtitle", "description"], firstValue(detail, ["summary", "short"], fallbackNode.short)),
-    impact: toNumber(firstValue(row, ["impact", "impact_score", "impactScore"], fallbackNode.impact), fallbackNode.impact),
-    impactLabel: firstValue(row, ["impactLabel", "impact_label"], fallbackNode.impactLabel),
-    confidence: toNumber(firstValue(row, ["confidence", "confidence_score", "confidenceScore"], fallbackNode.confidence), fallbackNode.confidence),
-    confidenceLabel: firstValue(row, ["confidenceLabel", "confidence_label"], fallbackNode.confidenceLabel),
-    region: firstValue(row, ["region", "market", "geography"], fallbackNode.region || "global"),
-    published_at: firstValue(row, ["published_at", "publishedAt"], firstValue(row, ["created_at", "createdAt"], fallbackNode.published_at || fallbackNode.created_at || "")),
-    created_at: firstValue(row, ["created_at", "createdAt"], fallbackNode.created_at || fallbackNode.published_at || ""),
-    whyMatters: firstValue(detail, ["whyMatters", "why_matters", "why_it_matters"], firstValue(row, ["whyMatters", "why_matters", "why_it_matters"], fallbackNode.whyMatters)),
-    chains: chains.length ? chains : fallbackNode.chains,
-    affectedAssets: assetRows.length ? assetRows.map(normalizeAsset).filter((asset) => asset.ticker) : fallbackNode.affectedAssets,
-    scenarios: scenarios.length ? scenarios : fallbackNode.scenarios,
-    counterarguments: counterarguments.filter(Boolean).length ? counterarguments.filter(Boolean) : fallbackNode.counterarguments,
-    sources: sources.filter(Boolean).length ? sources.filter(Boolean) : fallbackNode.sources
+    short: firstValue(row, ["short", "summary", "subtitle", "description"], firstValue(detail, ["summary", "short"], "No summary available yet.")),
+    impact,
+    impactLabel: firstValue(row, ["impactLabel", "impact_label"], getImpactLabel(impact)),
+    confidence,
+    confidenceLabel: firstValue(row, ["confidenceLabel", "confidence_label"], getImpactLabel(confidence)),
+    region: firstValue(row, ["region", "market", "geography"], "global"),
+    published_at: firstValue(row, ["published_at", "publishedAt"], firstValue(row, ["created_at", "createdAt"], "")),
+    created_at: firstValue(row, ["created_at", "createdAt"], ""),
+    whyMatters: firstValue(detail, ["whyMatters", "why_matters", "why_it_matters"], firstValue(row, ["whyMatters", "why_matters", "why_it_matters"], "No deeper explanation available yet.")),
+    chains,
+    affectedAssets: assetRows.map(normalizeAsset).filter(isValidatedAsset),
+    scenarios: scenarios.filter((scenario) => scenario.title || scenario.body),
+    counterarguments: counterarguments.filter(Boolean),
+    sources: sources.filter(Boolean)
   };
 }
 
@@ -829,7 +844,8 @@ function getNode(id) {
 }
 
 function getTickers(node) {
-  return node.affectedAssets
+  return (Array.isArray(node.affectedAssets) ? node.affectedAssets : [])
+    .filter(isValidatedAsset)
     .slice()
     .sort((a, b) => directionOrder[a.direction] - directionOrder[b.direction])
     .slice(0, 4)
@@ -1180,10 +1196,27 @@ function renderDetail(node) {
   saveButton.textContent = isSaved ? "Saved" : "Save";
   saveButton.classList.toggle("saved", isSaved);
 
-  const chainsHTML = `<ul class="chain-list">${node.chains.map(c => `<li class="chain-step"><strong>${escapeHtml(c.title)}</strong><p>Event: ${escapeHtml(c.event)}</p><p>Impact: ${escapeHtml(c.sectorImpact)}</p></li>`).join("")}</ul>`;
-  const assetsHTML = `<ul class="asset-list">${node.affectedAssets.map(a => `<li class="asset-card"><div class="asset-top"><h3>${escapeHtml(a.ticker)}</h3><span class="direction-${a.direction}">${escapeHtml(a.direction)}</span></div><p>${escapeHtml(a.reason)}</p></li>`).join("")}</ul>`;
-  const scenariosHTML = `<ul class="scenario-list">${node.scenarios.map(s => `<li class="scenario-item"><strong>${escapeHtml(s.title)}:</strong><p>${escapeHtml(s.body)}</p></li>`).join("")}</ul>`;
-  const countersHTML = `<ul class="counter-list">${node.counterarguments.map(c => `<li><p>${escapeHtml(c)}</p></li>`).join("")}</ul>`;
+  const chains = Array.isArray(node.chains) ? node.chains : [];
+  const affectedAssets = Array.isArray(node.affectedAssets) ? node.affectedAssets.filter(isValidatedAsset) : [];
+  const scenarios = Array.isArray(node.scenarios) ? node.scenarios : [];
+  const counterarguments = Array.isArray(node.counterarguments) ? node.counterarguments : [];
+  const sources = Array.isArray(node.sources) ? node.sources : [];
+
+  const chainsHTML = chains.length
+    ? `<ul class="chain-list">${chains.map(c => `<li class="chain-step"><strong>${escapeHtml(c.title)}</strong><p>Event: ${escapeHtml(c.event)}</p><p>Impact: ${escapeHtml(c.sectorImpact)}</p></li>`).join("")}</ul>`
+    : "<p>No causal chains available yet.</p>";
+  const assetsHTML = affectedAssets.length
+    ? `<ul class="asset-list">${affectedAssets.map(a => `<li class="asset-card"><div class="asset-top"><h3>${escapeHtml(a.ticker)}</h3><span class="direction-${a.direction}">${escapeHtml(a.direction)}</span></div><p>${escapeHtml(a.reason)}</p></li>`).join("")}</ul>`
+    : "<p>No validated affected assets yet.</p>";
+  const scenariosHTML = scenarios.length
+    ? `<ul class="scenario-list">${scenarios.map(s => `<li class="scenario-item"><strong>${escapeHtml(s.title)}:</strong><p>${escapeHtml(s.body)}</p></li>`).join("")}</ul>`
+    : "<p>No scenarios available yet.</p>";
+  const countersHTML = counterarguments.length
+    ? `<ul class="counter-list">${counterarguments.map(c => `<li><p>${escapeHtml(c)}</p></li>`).join("")}</ul>`
+    : "<p>No counterarguments available yet.</p>";
+  const sourcesHTML = sources.length
+    ? `<p>${sources.map(escapeHtml).join(", ")}</p>`
+    : "<p>No sources available yet.</p>";
 
   detailSections.innerHTML = [
     section("Why it matters", `<p>${escapeHtml(node.whyMatters)}</p>`, true),
@@ -1191,7 +1224,7 @@ function renderDetail(node) {
     section("Affected Assets", assetsHTML),
     section("Scenarios", scenariosHTML),
     section("Counterarguments", countersHTML),
-    section("Sources", `<p>${node.sources.join(", ")}</p>`)
+    section("Sources", sourcesHTML)
   ].join("");
 }
 
