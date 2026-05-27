@@ -104,6 +104,7 @@ button { border: 0; font: inherit; background: none; padding: 0; cursor: pointer
   transition: transform 0.2s ease, box-shadow 0.2s ease; display: block; width: 100%;
 }
 .event-card.upcoming-card { padding-bottom: 44px; }
+.event-card.upcoming-card h2, .event-card.upcoming-card > p { padding-right: 52px; }
 .event-card.liquid-glass, .detail-hero.liquid-glass, .detail-card.liquid-glass { box-shadow: inset 0 2px 5px rgba(255, 255, 255, 0.72), inset 0 -1px 4px rgba(0, 0, 0, 0.02), 0 7px 20px rgba(0, 0, 0, 0.045); }
 .event-card:hover { transform: translateY(-4px) scale(1.01); box-shadow: 0 12px 28px rgba(0, 0, 0, 0.08); }
 .event-card:active { transform: scale(0.98); }
@@ -537,6 +538,20 @@ function isValidatedAsset(asset) {
   return true;
 }
 
+function normalizeResearchExposure(exposure) {
+  const possibleTickers = toArray(firstValue(exposure, ["possible_tickers", "possibleTickers", "possible_tickers_to_check"], []))
+    .map((ticker) => String(ticker || "").trim().toUpperCase())
+    .filter((ticker) => ticker && !["UNKNOWN", "N/A", "NA", "NONE", "TBD", "UNVERIFIED"].includes(ticker));
+
+  return {
+    theme: firstValue(exposure, ["theme", "title", "asset_group"], ""),
+    whyRelevant: firstValue(exposure, ["why_relevant", "whyRelevant", "reason", "description"], ""),
+    possibleTickers,
+    dataNeeded: firstValue(exposure, ["data_needed", "dataNeeded", "needs_verification"], ""),
+    timeHorizon: firstValue(exposure, ["time_horizon", "timeHorizon", "horizon"], "")
+  };
+}
+
 function relatedNodeId(row, allowOwnId = false) {
   const value = firstValue(row, ["node_id", "nodeId", "node", "clarifin_node_id", "parent_node_id"], allowOwnId ? firstValue(row, ["id"], "") : "");
   return value ? String(value) : "";
@@ -582,7 +597,7 @@ async function fetchRelatedRows(tableName, nodeIds) {
   }
 }
 
-function convertSupabaseNode(row, assetRows, detailRows) {
+function convertSupabaseNode(row, assetRows, detailRows, exposureRows = []) {
   const detail = detailRows[0] || {};
   const title = firstValue(row, ["title", "headline", "name"], "Untitled node");
   const id = String(firstValue(row, ["id", "slug"], slugify(title)));
@@ -608,6 +623,7 @@ function convertSupabaseNode(row, assetRows, detailRows) {
     whyMatters: firstValue(detail, ["whyMatters", "why_matters", "why_it_matters"], firstValue(row, ["whyMatters", "why_matters", "why_it_matters"], "No deeper explanation available yet.")),
     chains,
     affectedAssets: assetRows.map(normalizeAsset).filter(isValidatedAsset),
+    exposuresToWatch: exposureRows.map(normalizeResearchExposure).filter((exposure) => exposure.theme || exposure.whyRelevant || exposure.possibleTickers.length || exposure.dataNeeded),
     scenarios: scenarios.filter((scenario) => scenario.title || scenario.body),
     counterarguments: counterarguments.filter(Boolean),
     sources: sources.filter(Boolean)
@@ -636,6 +652,8 @@ function convertSupabaseUpcomingEvent(row) {
     epsEstimate: firstValue(row, ["eps_estimate"], ""),
     revenueEstimate: firstValue(row, ["revenue_estimate"], ""),
     fiscalDateEnding: firstValue(row, ["fiscal_date_ending"], ""),
+    actualEps: firstValue(row, ["actual_eps", "eps_actual", "eps"], ""),
+    actualRevenue: firstValue(row, ["actual_revenue", "revenue_actual", "revenue"], ""),
     dataQuality: firstValue(row, ["data_quality"], "")
   };
 }
@@ -676,15 +694,17 @@ async function loadPublishedNodes() {
       .map((row) => firstValue(row, ["id", "slug"], ""))
       .filter(Boolean)
       .map(String);
-    const [assetRows, detailRows] = await Promise.all([
+    const [assetRows, detailRows, exposureRows] = await Promise.all([
       fetchRelatedRows("affected_assets", nodeIds),
-      fetchRelatedRows("node_details", nodeIds)
+      fetchRelatedRows("node_details", nodeIds),
+      fetchRelatedRows("node_research_exposures", nodeIds)
     ]);
     const assetsByNode = groupByNodeId(assetRows);
     const detailsByNode = groupByNodeId(detailRows, true);
+    const exposuresByNode = groupByNodeId(exposureRows);
     nodes = sortNodesNewestFirst(publishedRows.map((row) => {
       const nodeId = String(firstValue(row, ["id", "slug"], ""));
-      return convertSupabaseNode(row, assetsByNode[nodeId] || [], detailsByNode[nodeId] || []);
+      return convertSupabaseNode(row, assetsByNode[nodeId] || [], detailsByNode[nodeId] || [], exposuresByNode[nodeId] || []);
     }));
 
     if (selectedNodeId) {
@@ -788,10 +808,14 @@ function formatUpcomingTime(dateString) {
   return formatShortDate(eventDate);
 }
 
-function getUpcomingCardDateLabel(dateString) {
+function formatUpcomingCardTimestamp(dateString) {
   const eventDate = new Date(dateString);
   if (Number.isNaN(eventDate.getTime())) return "";
   const time = eventDate.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  if (isSameCalendarDay(eventDate, tomorrow)) return `tomorrow, ${time}`;
   return `${formatShortDate(eventDate)}, ${time}`;
 }
 
@@ -1017,10 +1041,9 @@ function renderUpcomingCards() {
           </div>
           <h2>${escapeHtml(event.title)}</h2>
           <p>${escapeHtml(getUpcomingEventDescription(event))}</p>
-          ${!earnings ? `
+          ${!earnings && importance ? `
             <div class="card-meta">
-              ${getUpcomingTimeLabel(event.datetime) ? `<span class="score-pill gray">${escapeHtml(getUpcomingTimeLabel(event.datetime))}</span>` : ""}
-              ${importance ? `<span class="score-pill yellow">${importance}</span>` : ""}
+              <span class="score-pill yellow">${importance}</span>
             </div>
           ` : ""}
           ${watchItems.length ? `
@@ -1028,7 +1051,7 @@ function renderUpcomingCards() {
               ${watchItems.map((item) => `<span class="ticker-chip neutral">${escapeHtml(item)}</span>`).join("")}
             </div>
           ` : ""}
-          <span class="timestamp">${escapeHtml(formatUpcomingTime(event.datetime))}</span>
+          <span class="timestamp">${escapeHtml(formatUpcomingCardTimestamp(event.datetime))}</span>
         </button>
       `;
     })
@@ -1114,13 +1137,6 @@ function detailRows(rows) {
 }
 
 function renderUpcomingDetail(event) {
-  const watchItems = Array.isArray(event.watch) ? event.watch : [];
-  const importance = getUpcomingImportance(event);
-  const source = cleanSourceLabel(event.source);
-  const sourceHtml = event.sourceUrl
-    ? `<a href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(source || event.sourceUrl)}</a>`
-    : "";
-
   selectedNodeId = null;
   activeView = "home";
   eventMode = "upcoming";
@@ -1135,43 +1151,31 @@ function renderUpcomingDetail(event) {
   document.querySelector("#node-title").textContent = event.title;
   document.querySelector("#node-summary").textContent = getUpcomingEventDescription(event);
 
-  document.querySelector("#impact-label").hidden = !importance;
-  document.querySelector("#impact-label").textContent = importance ? `Importance ${importance}` : "";
-  document.querySelector("#confidence-label").hidden = false;
-  document.querySelector("#confidence-label").textContent = `Region ${String(event.region || "global").toUpperCase()}`;
+  document.querySelector("#impact-label").hidden = true;
+  document.querySelector("#impact-label").textContent = "";
+  document.querySelector("#confidence-label").hidden = true;
+  document.querySelector("#confidence-label").textContent = "";
 
   saveButton.hidden = true;
   saveButton.classList.remove("saved");
 
-  const eventDetails = detailRows([
-    { label: "Event date/time", value: formatDetailDateTime(event.datetime) },
-    { label: "Region", value: event.region || "global" },
-    { label: "Watch assets", value: watchItems.join(", ") },
-    { label: "Importance", value: importance }
-  ]);
-
   const earningsFacts = detailRows([
-    { label: "Company", value: event.companyName },
-    { label: "Ticker(s)", value: watchItems.join(", ") },
     { label: "EPS estimate", value: event.epsEstimate },
     { label: "Revenue estimate", value: event.revenueEstimate },
-    { label: "Fiscal date ending", value: event.fiscalDateEnding },
-    { label: "Data quality", value: event.dataQuality },
-    { label: "Source", value: source, html: sourceHtml }
+    { label: "Actual EPS", value: event.actualEps },
+    { label: "Actual revenue", value: event.actualRevenue }
   ]);
 
   const macroFacts = detailRows([
-    { label: "Country", value: event.country },
-    { label: "Expected value", value: event.expectedValue },
-    { label: "Previous value", value: event.previousValue },
-    { label: "Actual value", value: event.actualValue },
-    { label: "Source", value: source, html: sourceHtml }
+    { label: "Expected", value: event.expectedValue },
+    { label: "Previous", value: event.previousValue },
+    { label: "Actual", value: event.actualValue }
   ]);
 
-  detailSections.innerHTML = [
-    section("Event details", eventDetails || "<p>No event details available.</p>", true),
-    section("Factual data", isEarningsEvent(event) ? (earningsFacts || "<p>No factual data available yet.</p>") : (macroFacts || "<p>No factual data available yet.</p>"), true)
-  ].join("");
+  const factualData = isEarningsEvent(event) ? earningsFacts : macroFacts;
+  detailSections.innerHTML = factualData
+    ? section("Factual data", factualData, true)
+    : section("Factual data", "<p>No additional factual data available yet.</p>", true);
 }
 
 function renderDetail(node) {
@@ -1198,6 +1202,7 @@ function renderDetail(node) {
 
   const chains = Array.isArray(node.chains) ? node.chains : [];
   const affectedAssets = Array.isArray(node.affectedAssets) ? node.affectedAssets.filter(isValidatedAsset) : [];
+  const exposuresToWatch = Array.isArray(node.exposuresToWatch) ? node.exposuresToWatch : [];
   const scenarios = Array.isArray(node.scenarios) ? node.scenarios : [];
   const counterarguments = Array.isArray(node.counterarguments) ? node.counterarguments : [];
   const sources = Array.isArray(node.sources) ? node.sources : [];
@@ -1208,6 +1213,19 @@ function renderDetail(node) {
   const assetsHTML = affectedAssets.length
     ? `<ul class="asset-list">${affectedAssets.map(a => `<li class="asset-card"><div class="asset-top"><h3>${escapeHtml(a.ticker)}</h3><span class="direction-${a.direction}">${escapeHtml(a.direction)}</span></div><p>${escapeHtml(a.reason)}</p></li>`).join("")}</ul>`
     : "<p>No validated affected assets yet.</p>";
+  const exposuresHTML = exposuresToWatch.length
+    ? `<ul class="asset-list">${exposuresToWatch.map(exposure => `
+      <li class="asset-card">
+        <div class="asset-top">
+          <h3>${escapeHtml(exposure.theme || "Exposure to research")}</h3>
+          ${exposure.timeHorizon ? `<span>${escapeHtml(exposure.timeHorizon)}</span>` : ""}
+        </div>
+        ${exposure.whyRelevant ? `<p>${escapeHtml(exposure.whyRelevant)}</p>` : ""}
+        ${exposure.possibleTickers.length ? `<div class="ticker-row">${exposure.possibleTickers.map(ticker => `<span class="ticker-chip neutral">${escapeHtml(ticker)}</span>`).join("")}</div>` : ""}
+        ${exposure.dataNeeded ? `<p><strong>Needs verification:</strong> ${escapeHtml(exposure.dataNeeded)}</p>` : ""}
+      </li>
+    `).join("")}</ul>`
+    : "";
   const scenariosHTML = scenarios.length
     ? `<ul class="scenario-list">${scenarios.map(s => `<li class="scenario-item"><strong>${escapeHtml(s.title)}:</strong><p>${escapeHtml(s.body)}</p></li>`).join("")}</ul>`
     : "<p>No scenarios available yet.</p>";
@@ -1222,6 +1240,7 @@ function renderDetail(node) {
     section("Why it matters", `<p>${escapeHtml(node.whyMatters)}</p>`, true),
     section("Causal Chains", chainsHTML),
     section("Affected Assets", assetsHTML),
+    ...(exposuresHTML ? [section("Exposures to watch", exposuresHTML)] : []),
     section("Scenarios", scenariosHTML),
     section("Counterarguments", countersHTML),
     section("Sources", sourcesHTML)
