@@ -310,13 +310,14 @@ const finalDraftSchema = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["theme", "why_relevant", "possible_tickers_to_check", "data_needed", "time_horizon"],
+        required: ["theme", "why_relevant", "possible_tickers_to_check", "data_needed", "time_horizon", "confidence"],
         properties: {
           theme: { type: "string" },
           why_relevant: { type: "string" },
           possible_tickers_to_check: { type: "array", items: { type: "string" } },
           data_needed: { type: "string" },
           time_horizon: { type: "string" },
+          confidence: { type: "integer", minimum: 0, maximum: 100 },
         },
       },
     },
@@ -633,18 +634,21 @@ function getAssetsToResearch(validatedDraft: Record<string, unknown>, researchPl
     possible_tickers_to_check: Array.isArray(channel.possible_public_assets_to_check) ? channel.possible_public_assets_to_check : [],
     data_needed: Array.isArray(channel.missing_data) ? channel.missing_data.join("; ") : "",
     time_horizon: String(channel.time_horizon || ""),
+    confidence: normalizeScore(channel.confidence, 35),
   }));
 
+  const fallbackNeeded = generated.length < 3;
   const normalized = [
     ...generated,
-    ...planAssets.map((asset) => ({
+    ...(fallbackNeeded ? planAssets.map((asset) => ({
       theme: String(asset.asset_or_ticker || "Asset/theme to research"),
       why_relevant: String(asset.why_it_might_matter || ""),
       possible_tickers_to_check: [],
       data_needed: String(asset.evidence_from_input || asset.needs_verification ? "Verify the asset, ticker mapping, exposure and direction before treating it as affected." : ""),
       time_horizon: "",
-    })),
-    ...channelAssets,
+      confidence: asset.needs_verification ? 25 : 35,
+    })) : []),
+    ...(fallbackNeeded ? channelAssets : []),
   ].map((item) => ({
     theme: String(item.theme || "").trim(),
     why_relevant: String(item.why_relevant || "").trim(),
@@ -653,6 +657,7 @@ function getAssetsToResearch(validatedDraft: Record<string, unknown>, researchPl
       : [],
     data_needed: String(item.data_needed || "").trim(),
     time_horizon: String(item.time_horizon || "").trim(),
+    confidence: normalizeScore(item.confidence, 35),
   })).filter((item) => item.theme || item.why_relevant || item.possible_tickers_to_check.length || item.data_needed);
 
   const seen = new Set<string>();
@@ -1013,7 +1018,7 @@ async function createValidatedDraft(input: {
           "- why_matters must explain broader investor relevance, not just summarize the article.",
           "- causal_chain is the main value of the node. Use the research_plan transmission_channels to explain how the event can travel across governance, capital allocation, infrastructure, supply chains, demand, commodities, rates, FX, private/public-market links, or other relevant channels.",
           "- For each causal chain, include the event/trigger, a 2-4 step mechanism, sectors or asset groups affected, possible direction, time horizon, and what needs verification. Fit those details into the existing fields: event, mechanism, sector_impact, asset_impact, and watch.",
-          "- assets_to_research should hold themes, sector groups, commodity/rate/currency exposures, indirect vehicles, and possible tickers that need verification before becoming affected_assets.",
+          "- assets_to_research should hold themes, sector groups, commodity/rate/currency exposures, indirect vehicles, and possible tickers that need verification before becoming affected_assets. Include confidence from 0-100 for each exposure; use lower confidence when the link is broad, indirect, or needs verification.",
           "- Explain direct, indirect, and delayed impacts, but keep unverified indirect assets out of affected_assets.",
           "- Impact and confidence are 0-100 scores, not 1-5 ratings.",
           "- Avoid generic phrases unless supported by a specific mechanism.",
@@ -1165,6 +1170,25 @@ Deno.serve(async (req) => {
       if (assetsError) throw new Error(`Could not insert affected assets: ${assetsError.message}`);
     }
 
+    const researchExposures = assetsToResearch.map((exposure: Record<string, unknown>) => ({
+      node_id: String(nodeId),
+      theme: String(exposure.theme || "").trim(),
+      why_relevant: String(exposure.why_relevant || "").trim(),
+      possible_tickers: Array.isArray(exposure.possible_tickers_to_check)
+        ? uniqueStrings(exposure.possible_tickers_to_check).filter((ticker) => !isInvalidAssetLabel(ticker))
+        : [],
+      data_needed: String(exposure.data_needed || "").trim(),
+      time_horizon: String(exposure.time_horizon || "").trim(),
+      confidence: normalizeScore(exposure.confidence, 35),
+    })).filter((exposure) => exposure.theme || exposure.why_relevant || exposure.possible_tickers.length || exposure.data_needed);
+
+    if (researchExposures.length) {
+      const { error: exposureError } = await supabase.from("node_research_exposures").insert(researchExposures);
+      if (exposureError) {
+        warnings.push(`node_research_exposures was not saved: ${exposureError.message}`);
+      }
+    }
+
     const { error: detailsError } = await supabase.from("node_details").insert({
       node_id: nodeId,
       why_matters: generatedNode.why_matters,
@@ -1183,6 +1207,7 @@ Deno.serve(async (req) => {
       evidence_map: validatedDraft.evidence_map,
       quality_gate: validatedDraft.quality_gate,
       missing_data: validatedDraft.missing_data,
+      assets_to_research: assetsToResearch,
     });
 
     if (researchRunError) {
