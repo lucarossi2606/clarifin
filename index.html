@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -147,7 +147,7 @@ button { border: 0; font: inherit; background: none; padding: 0; cursor: pointer
 details.detail-card summary { padding: var(--sp-5); font-size: 16px; font-weight: 700; color: var(--text-main); list-style: none; display: flex; justify-content: space-between; align-items: center; }
 details.detail-card summary::-webkit-details-marker { display: none; }
 details.detail-card summary::after { content: "+"; font-size: 18px; font-weight: 700; color: var(--text-muted); }
-details.detail-card[open] summary::after { content: "−"; }
+details.detail-card[open] summary::after { content: "âˆ’"; }
 
 .detail-body { padding: 0 var(--sp-5) var(--sp-5) var(--sp-5); font-size: 14px; line-height: 1.5; color: var(--text-muted); font-weight: 400; }
 .detail-body p, .detail-body li { font-family: inherit; font-size: 14px; line-height: 1.5; color: var(--text-muted); font-weight: 400; }
@@ -221,7 +221,7 @@ details.detail-card[open] summary::after { content: "−"; }
 
         <section class="screen detail-screen" id="detail-screen" hidden>
           <div class="detail-controls">
-            <button class="action-btn liquid-glass" id="back-button" type="button">← Back</button>
+            <button class="action-btn liquid-glass" id="back-button" type="button">â† Back</button>
             <button class="action-btn liquid-glass" id="save-node" type="button">Save</button>
           </div>
 
@@ -232,6 +232,8 @@ details.detail-card[open] summary::after { content: "−"; }
             <div class="signal-row">
               <span class="score-pill yellow" id="impact-label"></span>
               <span class="score-pill gray" id="confidence-label"></span>
+                          <span class="score-pill gray" id="event-type-label" hidden></span>
+              <span class="score-pill gray" id="event-status-label" hidden></span>
             </div>
           </article>
 
@@ -522,13 +524,28 @@ function normalizeScenario(item) {
   };
 }
 
+function normalizeAssetClass(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  const allowed = ["index", "bond", "commodity", "currency", "stock", "etf", "rate", "other"];
+  return allowed.includes(normalized) ? normalized : "";
+}
+
+function formatLabel(value) {
+  return String(value || "")
+    .replace(/_/g, " ")
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 function normalizeAsset(asset) {
   return {
-    ticker: firstValue(asset, ["ticker", "symbol", "asset_ticker"], ""),
+    ticker: firstValue(asset, ["ticker", "ticker_or_asset", "symbol", "asset_ticker"], ""),
     name: firstValue(asset, ["name", "asset_name", "company"], ""),
+    assetClass: normalizeAssetClass(firstValue(asset, ["asset_class", "assetClass", "class"], "")),
     direction: normalizeDirection(firstValue(asset, ["direction", "impact_direction", "sentiment"], "mixed")),
     strength: firstValue(asset, ["strength", "impact_strength", "confidence"], "Watch"),
-    reason: firstValue(asset, ["reason", "rationale", "summary", "description"], "")
+    reason: firstValue(asset, ["reason", "rationale", "summary", "description"], ""),
+    uncertainty: firstValue(asset, ["uncertainty", "risk", "caveat"], "")
   };
 }
 
@@ -539,14 +556,23 @@ function isValidatedAsset(asset) {
 }
 
 function normalizeResearchExposure(exposure) {
-  const possibleTickers = toArray(firstValue(exposure, ["possible_tickers", "possibleTickers", "possible_tickers_to_check"], []))
+  const sectorProxyTickers = toArray(firstValue(exposure, [
+    "sector_proxy_tickers",
+    "sectorProxyTickers",
+    "possible_tickers",
+    "possibleTickers",
+    "possible_tickers_to_check"
+  ], []))
     .map((ticker) => String(ticker || "").trim().toUpperCase())
     .filter((ticker) => ticker && !["UNKNOWN", "N/A", "NA", "NONE", "TBD", "UNVERIFIED"].includes(ticker));
 
   return {
     theme: firstValue(exposure, ["theme", "title", "asset_group"], ""),
+    sectorOrThemeType: firstValue(exposure, ["sector_or_theme_type", "sectorOrThemeType", "type"], ""),
     whyRelevant: firstValue(exposure, ["why_relevant", "whyRelevant", "reason", "description"], ""),
-    possibleTickers,
+    sectorProxyTickers,
+    possibleTickers: sectorProxyTickers,
+    directionHint: normalizeDirection(firstValue(exposure, ["direction_hint", "directionHint", "direction"], "mixed")),
     dataNeeded: firstValue(exposure, ["data_needed", "dataNeeded", "needs_verification"], ""),
     timeHorizon: firstValue(exposure, ["time_horizon", "timeHorizon", "horizon"], ""),
     confidence: toNumber(firstValue(exposure, ["confidence", "confidence_score", "confidenceScore"], ""), 0)
@@ -612,7 +638,7 @@ async function loadResearchExposuresForNode(nodeId) {
   }
   return exposureRows
     .map(normalizeResearchExposure)
-    .filter((exposure) => exposure.theme || exposure.whyRelevant || exposure.possibleTickers.length || exposure.dataNeeded || exposure.timeHorizon);
+    .filter((exposure) => exposure.theme || exposure.whyRelevant || exposure.sectorProxyTickers.length || exposure.dataNeeded || exposure.timeHorizon);
 }
 
 function convertSupabaseNode(row, assetRows, detailRows, exposureRows = []) {
@@ -629,6 +655,8 @@ function convertSupabaseNode(row, assetRows, detailRows, exposureRows = []) {
   return {
     id,
     category: firstValue(row, ["category", "topic", "type"], "Market Event"),
+    eventType: firstValue(row, ["event_type", "eventType"], ""),
+    eventStatus: firstValue(row, ["event_status", "eventStatus"], ""),
     title,
     short: firstValue(row, ["short", "summary", "subtitle", "description"], firstValue(detail, ["summary", "short"], "No summary available yet.")),
     impact,
@@ -641,7 +669,8 @@ function convertSupabaseNode(row, assetRows, detailRows, exposureRows = []) {
     whyMatters: firstValue(detail, ["whyMatters", "why_matters", "why_it_matters"], firstValue(row, ["whyMatters", "why_matters", "why_it_matters"], "No deeper explanation available yet.")),
     chains,
     affectedAssets: assetRows.map(normalizeAsset).filter(isValidatedAsset),
-    exposuresToWatch: exposureRows.map(normalizeResearchExposure).filter((exposure) => exposure.theme || exposure.whyRelevant || exposure.possibleTickers.length || exposure.dataNeeded || exposure.timeHorizon),
+    researchExposures: exposureRows.map(normalizeResearchExposure).filter((exposure) => exposure.theme || exposure.whyRelevant || exposure.sectorProxyTickers.length || exposure.dataNeeded || exposure.timeHorizon),
+    exposuresToWatch: exposureRows.map(normalizeResearchExposure).filter((exposure) => exposure.theme || exposure.whyRelevant || exposure.sectorProxyTickers.length || exposure.dataNeeded || exposure.timeHorizon),
     isSupabaseNode: true,
     exposuresLoaded: exposureRows.length > 0,
     scenarios: scenarios.filter((scenario) => scenario.title || scenario.body),
@@ -722,12 +751,14 @@ async function loadPublishedNodes() {
     const assetsByNode = groupByNodeId(assetRows);
     const detailsByNode = groupByNodeId(detailRows, true);
     const exposuresByNode = groupByNodeId(exposureRows);
+    console.log("Clarifin exposures loaded", exposureRows);
     if (!exposureRows.length) {
       console.warn("Clarifin Supabase: no node_research_exposures rows returned for published nodes.", { nodeIds });
     }
     nodes = sortNodesNewestFirst(publishedRows.map((row) => {
       const nodeId = String(firstValue(row, ["id", "slug"], ""));
       const nodeKey = nodeLookupKey(nodeId);
+      console.log("Clarifin exposures for node", nodeId, exposuresByNode[nodeKey] || []);
       return convertSupabaseNode(row, assetsByNode[nodeKey] || [], detailsByNode[nodeKey] || [], exposuresByNode[nodeKey] || []);
     }));
 
@@ -1179,6 +1210,10 @@ function renderUpcomingDetail(event) {
   document.querySelector("#impact-label").textContent = "";
   document.querySelector("#confidence-label").hidden = true;
   document.querySelector("#confidence-label").textContent = "";
+  document.querySelector("#event-type-label").hidden = true;
+  document.querySelector("#event-type-label").textContent = "";
+  document.querySelector("#event-status-label").hidden = true;
+  document.querySelector("#event-status-label").textContent = "";
 
   saveButton.hidden = true;
   saveButton.classList.remove("saved");
@@ -1216,8 +1251,12 @@ function renderDetail(node) {
   
   document.querySelector("#impact-label").textContent = `Impact ${node.impact} / ${node.impactLabel}`;
   document.querySelector("#confidence-label").textContent = `Confidence ${node.confidence} / ${node.confidenceLabel}`;
+  document.querySelector("#event-type-label").textContent = node.eventType ? formatLabel(node.eventType) : "";
+  document.querySelector("#event-status-label").textContent = node.eventStatus ? formatLabel(node.eventStatus) : "";
   document.querySelector("#impact-label").hidden = false;
   document.querySelector("#confidence-label").hidden = false;
+  document.querySelector("#event-type-label").hidden = !node.eventType;
+  document.querySelector("#event-status-label").hidden = !node.eventStatus;
 
   const isSaved = savedNodeIds.includes(node.id);
   saveButton.hidden = false;
@@ -1226,7 +1265,7 @@ function renderDetail(node) {
 
   const chains = Array.isArray(node.chains) ? node.chains : [];
   const affectedAssets = Array.isArray(node.affectedAssets) ? node.affectedAssets.filter(isValidatedAsset) : [];
-  const exposuresToWatch = Array.isArray(node.exposuresToWatch) ? node.exposuresToWatch : [];
+  const exposuresToWatch = Array.isArray(node.exposuresToWatch) ? node.exposuresToWatch : (Array.isArray(node.researchExposures) ? node.researchExposures : []);
   const scenarios = Array.isArray(node.scenarios) ? node.scenarios : [];
   const counterarguments = Array.isArray(node.counterarguments) ? node.counterarguments : [];
   const sources = Array.isArray(node.sources) ? node.sources : [];
@@ -1235,20 +1274,24 @@ function renderDetail(node) {
     ? `<ul class="chain-list">${chains.map(c => `<li class="chain-step"><strong>${escapeHtml(c.title)}</strong><p>Event: ${escapeHtml(c.event)}</p><p>Impact: ${escapeHtml(c.sectorImpact)}</p></li>`).join("")}</ul>`
     : "<p>No causal chains available yet.</p>";
   const assetsHTML = affectedAssets.length
-    ? `<ul class="asset-list">${affectedAssets.map(a => `<li class="asset-card"><div class="asset-top"><h3>${escapeHtml(a.ticker)}</h3><span class="direction-${a.direction}">${escapeHtml(a.direction)}</span></div><p>${escapeHtml(a.reason)}</p></li>`).join("")}</ul>`
-    : "<p>No validated affected assets yet.</p>";
+    ? `<ul class="asset-list">${affectedAssets.map(a => `<li class="asset-card"><div class="asset-top"><h3>${escapeHtml(a.ticker)}</h3><span class="direction-${a.direction}">${escapeHtml(a.direction)}</span></div>${a.assetClass ? `<p><strong>Asset class:</strong> ${escapeHtml(formatLabel(a.assetClass))}</p>` : ""}<p>${escapeHtml(a.reason)}</p>${a.uncertainty ? `<p><strong>Uncertainty:</strong> ${escapeHtml(a.uncertainty)}</p>` : ""}</li>`).join("")}</ul>`
+    : "<p>No concrete affected assets yet.</p>";
   const exposuresHTML = exposuresToWatch.length
-    ? `<ul class="asset-list">${exposuresToWatch.map(exposure => `
+    ? `<ul class="asset-list">${exposuresToWatch.map(exposure => {
+      const proxyTickers = exposure.sectorProxyTickers || exposure.possibleTickers || [];
+      return `
       <li class="asset-card">
         <div class="asset-top">
-          <h3>${escapeHtml(exposure.theme || "Exposure to research")}</h3>
-          ${exposure.timeHorizon ? `<span>${escapeHtml(exposure.timeHorizon)}</span>` : ""}
+          <h3>${escapeHtml(exposure.theme || "Exposure to watch")}</h3>
+          ${exposure.directionHint ? `<span class="direction-${exposure.directionHint}">${escapeHtml(exposure.directionHint)}</span>` : ""}
         </div>
+        ${exposure.sectorOrThemeType ? `<p><strong>Type:</strong> ${escapeHtml(formatLabel(exposure.sectorOrThemeType))}</p>` : ""}
         ${exposure.whyRelevant ? `<p>${escapeHtml(exposure.whyRelevant)}</p>` : ""}
-        ${exposure.possibleTickers.length ? `<div class="ticker-row">${exposure.possibleTickers.map(ticker => `<span class="ticker-chip neutral">${escapeHtml(ticker)}</span>`).join("")}</div>` : ""}
-        ${exposure.dataNeeded ? `<p><strong>Needs verification:</strong> ${escapeHtml(exposure.dataNeeded)}</p>` : ""}
-      </li>
-    `).join("")}</ul>`
+        ${proxyTickers.length ? `<p><strong>Sector proxies:</strong></p><div class="ticker-row">${proxyTickers.map(ticker => `<span class="ticker-chip neutral">${escapeHtml(ticker)}</span>`).join("")}</div>` : ""}
+        ${exposure.timeHorizon ? `<p><strong>Time horizon:</strong> ${escapeHtml(formatLabel(exposure.timeHorizon))}</p>` : ""}
+        ${exposure.dataNeeded ? `<p><strong>Data needed:</strong> ${escapeHtml(exposure.dataNeeded)}</p>` : ""}
+      </li>`;
+    }).join("")}</ul>`
     : "";
   const scenariosHTML = scenarios.length
     ? `<ul class="scenario-list">${scenarios.map(s => `<li class="scenario-item"><strong>${escapeHtml(s.title)}:</strong><p>${escapeHtml(s.body)}</p></li>`).join("")}</ul>`
@@ -1274,6 +1317,7 @@ function renderDetail(node) {
     node.exposuresLoaded = true;
     loadResearchExposuresForNode(node.id).then((exposures) => {
       if (!exposures.length) return;
+      node.researchExposures = exposures;
       node.exposuresToWatch = exposures;
       if (selectedNodeId === node.id) renderDetail(node);
     }).catch((error) => {
@@ -1339,3 +1383,7 @@ loadUpcomingEvents();
     </script>
   </body>
 </html>
+
+
+
+

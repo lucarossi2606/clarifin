@@ -1,4 +1,4 @@
-import "https://esm.sh/@supabase/functions-js/src/edge-runtime.d.ts";
+﻿import "https://esm.sh/@supabase/functions-js/src/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -16,6 +16,17 @@ const assetTypeEnum = [
   "rate",
   "index",
   "unknown",
+];
+
+const assetClassEnum = [
+  "index",
+  "bond",
+  "commodity",
+  "currency",
+  "stock",
+  "etf",
+  "rate",
+  "other",
 ];
 
 const transmissionChannelEnum = [
@@ -37,12 +48,99 @@ const transmissionChannelEnum = [
   "other",
 ];
 
+const allowedCategories = [
+  "Geopolitics",
+  "Macro",
+  "Central Banks",
+  "Earnings",
+  "Corporate",
+  "Technology",
+  "Energy",
+  "Commodities",
+  "Regulation",
+  "Markets",
+  "Consumer",
+  "Financials",
+  "Healthcare",
+  "Real Estate",
+  "Crypto",
+  "Other",
+];
+
+const allowedEventTypes = [
+  "Product Launch",
+  "Merger / Acquisition",
+  "Merger Speculation",
+  "Strategic Partnership",
+  "Capital Allocation",
+  "Ownership / Governance",
+  "Guidance Update",
+  "Restructuring",
+  "IPO / Listing",
+  "Litigation",
+  "Analyst Rating",
+  "Economic Data Release",
+  "Inflation Data",
+  "Labor Market Data",
+  "GDP Release",
+  "Retail Sales",
+  "PMI / ISM",
+  "Rate Decision",
+  "Central Bank Speech",
+  "Policy Guidance",
+  "Geopolitical Escalation",
+  "Geopolitical De-escalation",
+  "Conflict Risk",
+  "Sanctions",
+  "Trade Restrictions",
+  "Shipping Disruption",
+  "Energy Security",
+  "Diplomatic Negotiation",
+  "Commodity Price Move",
+  "Oil Supply Shock",
+  "Gas / LNG Supply",
+  "Currency Move",
+  "Bond Yield Move",
+  "Equity Market Move",
+  "Credit Stress",
+  "Liquidity Event",
+  "AI Infrastructure",
+  "Semiconductor Supply Chain",
+  "Cloud / Software Demand",
+  "Cybersecurity Event",
+  "Data Center / Power Demand",
+  "Earnings Release",
+  "Earnings Preview",
+  "Earnings Guidance",
+  "Margin Update",
+  "Revenue Update",
+  "Regulatory Action",
+  "Antitrust",
+  "Export Controls",
+  "Tax / Subsidy Policy",
+  "Environmental Regulation",
+  "Other",
+];
+
+const allowedEventStatuses = [
+  "confirmed",
+  "scheduled",
+  "report",
+  "speculation",
+  "rumor",
+  "denied",
+  "mixed_reports",
+  "unknown",
+];
+
 const nodeSchema = {
   type: "object",
   additionalProperties: false,
   required: [
     "title",
     "category",
+    "event_type",
+    "event_status",
     "short",
     "impact",
     "confidence",
@@ -57,7 +155,9 @@ const nodeSchema = {
   ],
   properties: {
     title: { type: "string" },
-    category: { type: "string" },
+    category: { type: "string", enum: allowedCategories },
+    event_type: { type: "string", enum: allowedEventTypes },
+    event_status: { type: "string", enum: allowedEventStatuses },
     short: { type: "string" },
     impact: { type: "integer", minimum: 0, maximum: 100 },
     confidence: { type: "integer", minimum: 0, maximum: 100 },
@@ -71,10 +171,12 @@ const nodeSchema = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["ticker", "name", "direction", "strength", "reason", "evidence", "uncertainty"],
+        required: ["ticker_or_asset", "ticker", "name", "asset_class", "direction", "strength", "reason", "evidence", "uncertainty"],
         properties: {
+          ticker_or_asset: { type: "string" },
           ticker: { type: "string" },
           name: { type: "string" },
+          asset_class: { type: "string", enum: assetClassEnum },
           direction: { type: "string", enum: ["positive", "negative", "mixed", "neutral"] },
           strength: { type: "string" },
           reason: { type: "string" },
@@ -149,10 +251,11 @@ const researchPlanSchema = {
     event_classification: {
       type: "object",
       additionalProperties: false,
-      required: ["event_type", "event_status", "time_sensitivity", "primary_theme", "secondary_themes"],
+      required: ["category", "event_type", "event_status", "time_sensitivity", "primary_theme", "secondary_themes"],
       properties: {
-        event_type: { type: "string" },
-        event_status: { type: "string", enum: ["confirmed", "report", "rumor", "speculation", "scheduled", "unknown"] },
+        category: { type: "string", enum: allowedCategories },
+        event_type: { type: "string", enum: allowedEventTypes },
+        event_status: { type: "string", enum: allowedEventStatuses },
         time_sensitivity: { type: "string", enum: ["immediate", "near_term", "long_term", "unknown"] },
         primary_theme: { type: "string" },
         secondary_themes: { type: "array", items: { type: "string" } },
@@ -310,11 +413,24 @@ const finalDraftSchema = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["theme", "why_relevant", "possible_tickers_to_check", "data_needed", "time_horizon", "confidence"],
+        required: [
+          "theme",
+          "sector_or_theme_type",
+          "why_relevant",
+          "sector_proxy_tickers",
+          "direction_hint",
+          "possible_tickers_to_check",
+          "data_needed",
+          "time_horizon",
+          "confidence",
+        ],
         properties: {
           theme: { type: "string" },
+          sector_or_theme_type: { type: "string" },
           why_relevant: { type: "string" },
+          sector_proxy_tickers: { type: "array", items: { type: "string" } },
           possible_tickers_to_check: { type: "array", items: { type: "string" } },
+          direction_hint: { type: "string", enum: ["positive", "negative", "mixed", "neutral", "watch"] },
           data_needed: { type: "string" },
           time_horizon: { type: "string" },
           confidence: { type: "integer", minimum: 0, maximum: 100 },
@@ -430,6 +546,26 @@ function isKnownRegionTicker(ticker: string) {
     || normalized.endsWith(".MI");
 }
 
+function normalizeTaxonomyValue(value: unknown, allowed: string[], fallback: string) {
+  const raw = String(value || "").trim();
+  const exact = allowed.find((item) => item === raw);
+  if (exact) return exact;
+  const comparable = raw.toLowerCase().replace(/[\s_/-]+/g, " ").trim();
+  const loose = allowed.find((item) => item.toLowerCase().replace(/[\s_/-]+/g, " ").trim() === comparable);
+  return loose || fallback;
+}
+
+function normalizeCategory(value: unknown) {
+  return normalizeTaxonomyValue(value, allowedCategories, "Other");
+}
+
+function normalizeEventType(value: unknown) {
+  return normalizeTaxonomyValue(value, allowedEventTypes, "Other");
+}
+
+function normalizeEventStatus(value: unknown) {
+  return normalizeTaxonomyValue(value, allowedEventStatuses, "unknown");
+}
 function normalizeGeneratedRegion(generated: Record<string, unknown>) {
   const affectedAssets = Array.isArray(generated.affected_assets) ? generated.affected_assets : [];
   const primaryAsset = affectedAssets[0] as Record<string, unknown> | undefined;
@@ -466,12 +602,47 @@ function normalizeGeneratedRegion(generated: Record<string, unknown>) {
   return "global";
 }
 
+function applyTaxonomyGuardrails(plan: Record<string, unknown>, rawEventText: string) {
+  const classification = plan.event_classification as Record<string, unknown> | undefined;
+  if (!classification) return;
+
+  classification.category = normalizeCategory(classification.category);
+  classification.event_type = normalizeEventType(classification.event_type);
+  classification.event_status = normalizeEventStatus(classification.event_status);
+
+  const raw = rawEventText.toLowerCase();
+  const hasReportedSource = /\b(reportedly|according to|report says|reported|source says|sources say)\b/.test(raw);
+  const hasPossibilityLanguage = /\b(possibility|possible|discussed|discussion|considering|exploring|speculation|rumor|rumour)\b/.test(raw);
+  const hasCombinationLanguage = /\b(combin\w*|merger|merge|acquisition|takeover|deal)\b/.test(raw);
+  const hasDenialLanguage = /\b(denied|denies|denial|officials denied|mixed reports)\b/.test(raw);
+  const hasDeEscalationLanguage = /\b(de-escalation|deescalation|ceasefire|agreement|deal to reduce tensions|diplomatic talks|negotiation)\b/.test(raw);
+  const hasEscalationLanguage = /\b(escalation|attack|strike|invasion|conflict risk|sanctions|shipping disruption|blockade)\b/.test(raw);
+
+  if (hasCombinationLanguage && hasPossibilityLanguage) {
+    classification.category = "Corporate";
+    classification.event_type = "Merger Speculation";
+    classification.event_status = hasReportedSource ? "report" : "speculation";
+  }
+
+  if (hasDeEscalationLanguage && (classification.category === "Geopolitics" || raw.includes("iran") || raw.includes("conflict") || raw.includes("tensions"))) {
+    classification.category = "Geopolitics";
+    classification.event_type = "Geopolitical De-escalation";
+    if (hasDenialLanguage) classification.event_status = "mixed_reports";
+    else if (hasReportedSource) classification.event_status = "report";
+  } else if (hasEscalationLanguage && classification.category === "Geopolitics") {
+    classification.event_type = "Geopolitical Escalation";
+    if (hasReportedSource && classification.event_status === "unknown") classification.event_status = "report";
+  }
+
+  plan.event_classification = classification;
+}
 function summarizeResearchPlan(plan: Record<string, unknown>) {
   const classification = plan.event_classification as Record<string, unknown> | undefined;
   const entities = plan.entities as Record<string, unknown> | undefined;
   const transmissionChannels = Array.isArray(plan.transmission_channels) ? plan.transmission_channels : [];
   return {
-    event_type: classification?.event_type || "",
+    category: classification?.category || "Other",
+    event_type: classification?.event_type || "Other",
     event_status: classification?.event_status || "unknown",
     time_sensitivity: classification?.time_sensitivity || "unknown",
     primary_theme: classification?.primary_theme || "",
@@ -621,6 +792,19 @@ function isInvalidAssetLabel(value: unknown) {
     || normalized === "UNVERIFIED";
 }
 
+const broadExposureProxySet = new Set([
+  "SPY", "QQQ", "DIA", "IWM", "DAX", "SX5E", "EXS1",
+  "XLE", "XLF", "XLV", "XLP", "XLY", "XLI", "XLK", "XLU", "XLRE",
+  "USO", "GLD", "SLV", "UNG", "TLT", "BND", "IEF", "HYG", "LQD",
+  "DXY", "EUR/USD", "USD/JPY", "GBP/USD", "BRENT", "WTI", "GOLD",
+]);
+
+function cleanSectorProxyTickers(values: unknown[]) {
+  return uniqueStrings(values)
+    .map((ticker) => String(ticker || "").trim().toUpperCase())
+    .filter((ticker) => !isInvalidAssetLabel(ticker) && broadExposureProxySet.has(ticker));
+}
+
 function getAssetsToResearch(validatedDraft: Record<string, unknown>, researchPlan: Record<string, unknown>) {
   const generated = Array.isArray(validatedDraft.assets_to_research)
     ? validatedDraft.assets_to_research as Record<string, unknown>[]
@@ -628,37 +812,57 @@ function getAssetsToResearch(validatedDraft: Record<string, unknown>, researchPl
   const planAssets = Array.isArray(researchPlan.potentially_affected_assets_to_research)
     ? researchPlan.potentially_affected_assets_to_research as Record<string, unknown>[]
     : [];
-  const channelAssets = getTransmissionChannels(researchPlan).map((channel) => ({
-    theme: String(channel.channel || "Transmission channel"),
-    why_relevant: String(channel.mechanism || ""),
-    possible_tickers_to_check: Array.isArray(channel.possible_public_assets_to_check) ? channel.possible_public_assets_to_check : [],
-    data_needed: Array.isArray(channel.missing_data) ? channel.missing_data.join("; ") : "",
-    time_horizon: String(channel.time_horizon || ""),
-    confidence: normalizeScore(channel.confidence, 35),
-  }));
+  const channelAssets = getTransmissionChannels(researchPlan).map((channel) => {
+    const proxyTickers = Array.isArray(channel.possible_public_assets_to_check)
+      ? cleanSectorProxyTickers(channel.possible_public_assets_to_check)
+      : [];
+    return {
+      theme: String(channel.channel || "Transmission channel").replace(/_/g, " "),
+      sector_or_theme_type: "transmission_channel",
+      why_relevant: String(channel.mechanism || ""),
+      sector_proxy_tickers: proxyTickers,
+      possible_tickers_to_check: proxyTickers,
+      direction_hint: "mixed",
+      data_needed: Array.isArray(channel.missing_data) ? channel.missing_data.join("; ") : "",
+      time_horizon: String(channel.time_horizon || ""),
+      confidence: normalizeScore(channel.confidence, 35),
+    };
+  });
 
   const fallbackNeeded = generated.length < 3;
   const normalized = [
     ...generated,
     ...(fallbackNeeded ? planAssets.map((asset) => ({
-      theme: String(asset.asset_or_ticker || "Asset/theme to research"),
+      theme: String(asset.asset_or_ticker || "Exposure to research"),
+      sector_or_theme_type: "theme",
       why_relevant: String(asset.why_it_might_matter || ""),
+      sector_proxy_tickers: [],
       possible_tickers_to_check: [],
-      data_needed: String(asset.evidence_from_input || asset.needs_verification ? "Verify the asset, ticker mapping, exposure and direction before treating it as affected." : ""),
+      direction_hint: "mixed",
+      data_needed: String(asset.evidence_from_input || asset.needs_verification ? "Verify the sector/theme, proxy mapping, exposure and direction before treating it as concrete." : ""),
       time_horizon: "",
       confidence: asset.needs_verification ? 25 : 35,
     })) : []),
     ...(fallbackNeeded ? channelAssets : []),
-  ].map((item) => ({
-    theme: String(item.theme || "").trim(),
-    why_relevant: String(item.why_relevant || "").trim(),
-    possible_tickers_to_check: Array.isArray(item.possible_tickers_to_check)
-      ? uniqueStrings(item.possible_tickers_to_check).filter((ticker) => !isInvalidAssetLabel(ticker))
-      : [],
-    data_needed: String(item.data_needed || "").trim(),
-    time_horizon: String(item.time_horizon || "").trim(),
-    confidence: normalizeScore(item.confidence, 35),
-  })).filter((item) => item.theme || item.why_relevant || item.possible_tickers_to_check.length || item.data_needed);
+  ].map((item) => {
+    const sectorProxyTickers = Array.isArray(item.sector_proxy_tickers)
+      ? item.sector_proxy_tickers
+      : Array.isArray(item.possible_tickers_to_check)
+        ? item.possible_tickers_to_check
+        : [];
+    const cleanProxyTickers = cleanSectorProxyTickers(sectorProxyTickers);
+    return {
+      theme: String(item.theme || "").trim(),
+      sector_or_theme_type: String(item.sector_or_theme_type || "theme").trim(),
+      why_relevant: String(item.why_relevant || "").trim(),
+      sector_proxy_tickers: cleanProxyTickers,
+      possible_tickers_to_check: cleanProxyTickers,
+      direction_hint: String(item.direction_hint || "mixed").trim().toLowerCase(),
+      data_needed: String(item.data_needed || "").trim(),
+      time_horizon: String(item.time_horizon || "").trim(),
+      confidence: normalizeScore(item.confidence, 35),
+    };
+  }).filter((item) => item.theme || item.why_relevant || item.sector_proxy_tickers.length || item.data_needed);
 
   const seen = new Set<string>();
   return normalized.filter((item) => {
@@ -668,7 +872,6 @@ function getAssetsToResearch(validatedDraft: Record<string, unknown>, researchPl
     return true;
   }).slice(0, 12);
 }
-
 function isThinText(value: unknown) {
   return String(value || "").trim().split(/\s+/).filter(Boolean).length < 12;
 }
@@ -799,7 +1002,8 @@ function applyConservativeGuardrails(args: {
         ticker,
         name: ticker,
         direction: marketReaction ? marketReaction.direction : "neutral",
-        strength: "Watch",
+        asset_class: "other",
+        strength: "watch",
         reason: [
           `${ticker} appears in the input or was provided by the user, so it can be tracked as a directly mentioned public-market symbol.`,
           marketReaction ? `Evidence: ${marketReaction.evidence}` : "Evidence: the ticker was directly mentioned by the user/input.",
@@ -926,6 +1130,7 @@ async function createResearchPlan(input: {
         content: [
           "You are Clarifin's cautious financial research planner.",
           "Do not draft a final node. Create a research plan only.",
+          "Use only the allowed Clarifin taxonomy values for category, event_type, and event_status. Never invent custom category names.",
           "Do not browse the web and do not pretend web research happened.",
           "Use only raw_event_text, user-provided tickers, and source URL labels.",
           "A source URL is not source content. Do not treat a URL as verified evidence.",
@@ -938,8 +1143,11 @@ async function createResearchPlan(input: {
           "Build transmission channels before deciding affected assets:",
           "- Do not stop at directly mentioned tickers.",
           "- Identify economically plausible channels, but label them as hypotheses until verified.",
-          "- Indirect assets can appear as possible_public_assets_to_check, but they should not become final affected_assets without evidence.",
+          "- Indirect concrete instruments can appear as possible_public_assets_to_check, but they should not become final affected_assets without evidence.",
           "- Transmission channels should help a private investor understand why the event matters beyond a watchlist ticker.",
+          "- Exposures are sectors, themes, economic areas, equity sectors, or industry groups. They are not concrete affected assets.",
+          "- Equity sector ETFs can be listed as sector proxies inside Exposures, but the exposure theme must remain the main title.",
+          "- For macro or geopolitical events, scan cross-asset channels such as commodities, shipping and insurance costs, transport fuel users, inflation, rates and bonds, safe havens, currencies, defense/security, consumer demand, risk appetite, and regional energy security. Keep each as a hypothesis until verified.",
           "- Use the channel taxonomy generically. For example, related-party reports can raise governance and capital_allocation channels; shared infrastructure can raise AI_compute or energy_infrastructure channels; private entities linked to public symbols can raise private_public_market_link channels.",
         ].join("\n"),
       },
@@ -984,7 +1192,16 @@ async function createValidatedDraft(input: {
           "You are Clarifin's cautious evidence-aware financial research assistant.",
           "You must not browse the web. You must not pretend web/API research happened.",
           "Your job is to generate a draft only after evidence mapping, affected-asset validation, and a quality gate.",
+          "Use only the allowed Clarifin taxonomy values for category, event_type, and event_status. Never invent custom category names.",
+          "If an event describes a reported possible combination, merger discussion, takeover possibility, or deal exploration without a confirmed transaction, use event_type=Merger Speculation, not Merger / Acquisition. Use event_status=report when attributed to a report/source, speculation when not attributed, and rumor only for unsupported market chatter.",
           "The final node should explain the important transmission channels even when some assets remain unverified.",
+          "",
+          "Taxonomy rules:",
+          `- Allowed categories: ${allowedCategories.join(", ")}`,
+          `- Allowed event_type values: ${allowedEventTypes.join(", ")}`,
+          `- Allowed event_status values: ${allowedEventStatuses.join(", ")}`,
+          "- category is the broad main category; event_type is the specific event type; event_status is certainty/status.",
+          "- For uncertain events, choose category by economic topic and put uncertainty in event_status.",
           "",
           "Evidence mapping rules:",
           "- Classify each important claim as input_fact, source_fact, market_reaction, inference, unverified, or missing.",
@@ -994,10 +1211,10 @@ async function createValidatedDraft(input: {
           "",
           "Affected asset validation rules:",
           "- No affected asset without evidence.",
-          "- Never create affected_assets with ticker or name UNKNOWN, N/A, none, broad sector names, or placeholder labels.",
-          "- Only use affected_assets for concrete public tickers/assets that are directly mentioned, user-provided, or clearly verified inside the input.",
+          "- Never create affected_assets with ticker/name UNKNOWN, N/A, none, broad sector names, equity sector names, or placeholder labels.",
+          "- Only use affected_assets for concrete tradable market instruments that are directly mentioned, user-provided, or clearly verified inside the input: stocks, index/index ETFs, bond/rate proxies, commodities/proxies, currencies, or ETFs/funds.",
           "- If the event is macro/geopolitical and no concrete ticker is provided, it is acceptable for affected_assets to be an empty array.",
-          "- Broad groups such as sectors, commodities, currencies, bonds, transport, producers, insurers, or regional markets belong in causal_chain or assets_to_research unless a concrete ticker is verified.",
+          "- Broad groups such as sectors, themes, economic areas, equity sectors, industry groups, producers, transport, insurers, or regional markets belong in causal_chain or assets_to_research. Concrete commodities, currencies, rates, ETFs, indices, or stocks may be affected_assets only when the instrument itself is concrete and evidence-supported.",
           "- A directly mentioned public ticker may be included when the reason clearly states the direct evidence and uncertainty.",
           "- A ticker is evidence-supported when it is directly mentioned with a cashtag, explicitly provided by the user, or tied to a stated market reaction.",
           "- Directly mentioned assets may be included, but direction still needs evidence.",
@@ -1009,16 +1226,20 @@ async function createValidatedDraft(input: {
           "- Private companies must be kept in research planning and missing data, not inserted as normal public affected_assets unless a direct public ticker is verified.",
           "- ETFs/funds must not be treated as the underlying company.",
           "- If a user-provided ticker looks like an indirect exposure vehicle, ETF, fund, SPV, or proxy, do not treat it as the underlying private company. Treat it as an instrument requiring verification of holdings/exposure. Use evidence_type=user_mentioned_ticker_needs_verification.",
-          "- Peers, competitors, suppliers, broad sector ETFs, and luxury peers require an explicit and specific causal chain.",
+          "- Peers, competitors, suppliers, and luxury peers require an explicit and specific causal chain. Broad equity sectors remain Exposures; sector ETFs should usually be sector_proxy_tickers inside Exposures unless the ETF itself is directly mentioned or evidence-supported as the tradable instrument.",
           "- In reported related-party transactions or merger discussions, a slight positive price move does not erase governance and capital-allocation risk; direction should usually be mixed unless evidence is strong.",
           "",
           "Writing rules:",
           "- No investment advice, no buy/sell/hold recommendations, no performance promises.",
           "- Be specific and conservative.",
           "- why_matters must explain broader investor relevance, not just summarize the article.",
-          "- causal_chain is the main value of the node. Use the research_plan transmission_channels to explain how the event can travel across governance, capital allocation, infrastructure, supply chains, demand, commodities, rates, FX, private/public-market links, or other relevant channels.",
+          "- causal_chain is the main value of the node. Use the research_plan transmission_channels to explain event -> economic channel -> market effect -> sector/asset impact across governance, capital allocation, infrastructure, supply chains, demand, commodities, rates, FX, private/public-market links, or other relevant channels.",
           "- For each causal chain, include the event/trigger, a 2-4 step mechanism, sectors or asset groups affected, possible direction, time horizon, and what needs verification. Fit those details into the existing fields: event, mechanism, sector_impact, asset_impact, and watch.",
-          "- assets_to_research should hold themes, sector groups, commodity/rate/currency exposures, indirect vehicles, and possible tickers that need verification before becoming affected_assets. Include confidence from 0-100 for each exposure; use lower confidence when the link is broad, indirect, or needs verification.",
+          "- assets_to_research is the Exposures layer. Each item must be a sector, theme, economic area, equity sector, or industry group with theme, sector_or_theme_type, why_relevant, sector_proxy_tickers, direction_hint, data_needed, time_horizon, and confidence. Do not use it as a list of concrete affected assets.",
+          "- For broad macro or geopolitical events, include 4-7 exposure items when economically relevant, including direct, indirect, and delayed channels. Do not stop at the first obvious sector.",
+          "- Direction matters: distinguish escalation from de-escalation, tighter from easier financial conditions, demand acceleration from demand weakness, and margin expansion from margin pressure. Set direction_hint from the event sign, not from a generic playbook.",
+          "- Use positive or negative direction_hint when the event sign clearly eases or pressures an exposure if confirmed. Use mixed only when opposing forces are central or the input is too vague.",
+          "- sector_proxy_tickers should be broad proxies such as sector ETFs, index ETFs, commodity proxies, rate/bond proxies, or currency proxies. Do not use individual company stocks as sector proxies unless the instrument itself is a broad proxy.",
           "- Explain direct, indirect, and delayed impacts, but keep unverified indirect assets out of affected_assets.",
           "- Impact and confidence are 0-100 scores, not 1-5 ratings.",
           "- Avoid generic phrases unless supported by a specific mechanism.",
@@ -1060,6 +1281,10 @@ async function createValidatedDraft(input: {
 
 function normalizeGeneratedNode(generated: Record<string, unknown>, sourceUrls: string[]) {
   const node = generated.node as Record<string, unknown>;
+  const classification = generated.event_classification as Record<string, unknown> | undefined;
+  node.category = normalizeCategory(classification?.category || node.category);
+  node.event_type = normalizeEventType(classification?.event_type || node.event_type);
+  node.event_status = normalizeEventStatus(classification?.event_status || node.event_status);
   node.impact = normalizeScore(node.impact, 40);
   node.confidence = normalizeScore(node.confidence, 35);
 
@@ -1068,16 +1293,24 @@ function normalizeGeneratedNode(generated: Record<string, unknown>, sourceUrls: 
       const reason = String(asset.reason || "").trim();
       const evidence = String(asset.evidence || "").trim();
       const uncertainty = String(asset.uncertainty || "").trim();
-      const ticker = String(asset.ticker || "").trim().toUpperCase();
-      const name = String(asset.name || "").trim();
+      const ticker = String(asset.ticker_or_asset || asset.ticker || "").trim().toUpperCase();
+      const assetClass = assetClassEnum.includes(String(asset.asset_class || "").trim().toLowerCase())
+        ? String(asset.asset_class).trim().toLowerCase()
+        : "other";
+      const name = String(asset.name || ticker).trim();
+      const strength = String(asset.strength || "watch").trim().toLowerCase();
 
       return {
         ticker,
+        ticker_or_asset: ticker,
         name: isInvalidAssetLabel(name) ? ticker : name,
+        asset_class: assetClass,
         direction: safeDirection(asset.direction),
-        strength: String(asset.strength || "Watch").trim(),
+        strength: ["high", "medium", "watch"].includes(strength) ? strength : "watch",
+        uncertainty,
         reason: [
           reason,
+          `Asset class: ${assetClass}.`,
           evidence ? `Evidence: ${evidence}` : "",
           uncertainty ? `Uncertainty: ${uncertainty}` : "",
         ].filter(Boolean).join(" "),
@@ -1089,7 +1322,6 @@ function normalizeGeneratedNode(generated: Record<string, unknown>, sourceUrls: 
   node.region = normalizeGeneratedRegion(node);
   return node;
 }
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return jsonResponse({ error: "Use POST for generate-node." }, 405);
@@ -1118,6 +1350,7 @@ Deno.serve(async (req) => {
       apiKey: openAiApiKey,
       model,
     });
+    applyTaxonomyGuardrails(researchPlan, rawEventText);
 
     const validatedDraft = await createValidatedDraft({
       raw_event_text: rawEventText,
@@ -1129,6 +1362,10 @@ Deno.serve(async (req) => {
     });
 
     const generatedNode = normalizeGeneratedNode(validatedDraft, sourceUrls);
+    const taxonomyClassification = researchPlan.event_classification as Record<string, unknown> | undefined;
+    generatedNode.category = normalizeCategory(taxonomyClassification?.category || generatedNode.category);
+    generatedNode.event_type = normalizeEventType(taxonomyClassification?.event_type || generatedNode.event_type);
+    generatedNode.event_status = normalizeEventStatus(taxonomyClassification?.event_status || generatedNode.event_status);
     applyConservativeGuardrails({
       generatedNode,
       validatedDraft,
@@ -1143,6 +1380,8 @@ Deno.serve(async (req) => {
       .insert({
         title: generatedNode.title,
         category: generatedNode.category,
+        event_type: generatedNode.event_type,
+        event_status: generatedNode.event_status,
         short: generatedNode.short,
         impact: generatedNode.impact,
         confidence: generatedNode.confidence,
@@ -1163,6 +1402,8 @@ Deno.serve(async (req) => {
       direction: asset.direction,
       strength: asset.strength,
       reason: asset.reason,
+      asset_class: asset.asset_class,
+      uncertainty: asset.uncertainty,
     }));
 
     if (affectedAssets.length) {
@@ -1170,17 +1411,25 @@ Deno.serve(async (req) => {
       if (assetsError) throw new Error(`Could not insert affected assets: ${assetsError.message}`);
     }
 
-    const researchExposures = assetsToResearch.map((exposure: Record<string, unknown>) => ({
-      node_id: String(nodeId),
-      theme: String(exposure.theme || "").trim(),
-      why_relevant: String(exposure.why_relevant || "").trim(),
-      possible_tickers: Array.isArray(exposure.possible_tickers_to_check)
-        ? uniqueStrings(exposure.possible_tickers_to_check).filter((ticker) => !isInvalidAssetLabel(ticker))
-        : [],
-      data_needed: String(exposure.data_needed || "").trim(),
-      time_horizon: String(exposure.time_horizon || "").trim(),
-      confidence: normalizeScore(exposure.confidence, 35),
-    })).filter((exposure) => exposure.theme || exposure.why_relevant || exposure.possible_tickers.length || exposure.data_needed);
+    const researchExposures = assetsToResearch.map((exposure: Record<string, unknown>) => {
+      const sectorProxyTickers = Array.isArray(exposure.sector_proxy_tickers)
+        ? cleanSectorProxyTickers(exposure.sector_proxy_tickers)
+        : Array.isArray(exposure.possible_tickers_to_check)
+          ? cleanSectorProxyTickers(exposure.possible_tickers_to_check)
+          : [];
+      return {
+        node_id: String(nodeId),
+        theme: String(exposure.theme || "").trim(),
+        sector_or_theme_type: String(exposure.sector_or_theme_type || "theme").trim(),
+        why_relevant: String(exposure.why_relevant || "").trim(),
+        possible_tickers: sectorProxyTickers,
+        sector_proxy_tickers: sectorProxyTickers,
+        direction_hint: String(exposure.direction_hint || "mixed").trim().toLowerCase(),
+        data_needed: String(exposure.data_needed || "").trim(),
+        time_horizon: String(exposure.time_horizon || "").trim(),
+        confidence: normalizeScore(exposure.confidence, 35),
+      };
+    }).filter((exposure) => exposure.theme || exposure.why_relevant || exposure.sector_proxy_tickers.length || exposure.data_needed);
 
     if (researchExposures.length) {
       const { error: exposureError } = await supabase.from("node_research_exposures").insert(researchExposures);
@@ -1235,3 +1484,22 @@ Deno.serve(async (req) => {
     }, 500);
   }
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

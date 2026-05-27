@@ -27,16 +27,11 @@ alter table public.node_research_exposures enable row level security;
 
 drop policy if exists "Public can read exposures for published nodes" on public.node_research_exposures;
 drop policy if exists "Public can read exposures for published or draft nodes" on public.node_research_exposures;
-create policy "Public can read exposures for published or draft nodes"
+drop policy if exists "Public can read node research exposures" on public.node_research_exposures;
+create policy "Public can read node research exposures"
   on public.node_research_exposures
   for select
-  using (
-    exists (
-      select 1
-      from public.nodes
-      where nodes.id::text = node_research_exposures.node_id
-        and nodes.status in ('published', 'draft')
-    )
-  );
+  to anon
+  using (true);
 
 grant select on public.node_research_exposures to anon, authenticated;
