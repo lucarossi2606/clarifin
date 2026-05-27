@@ -558,9 +558,13 @@ function relatedNodeId(row, allowOwnId = false) {
   return value ? String(value) : "";
 }
 
+function nodeLookupKey(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 function groupByNodeId(rows, allowOwnId = false) {
   return rows.reduce((groups, row) => {
-    const nodeId = relatedNodeId(row, allowOwnId);
+    const nodeId = nodeLookupKey(relatedNodeId(row, allowOwnId));
     if (!nodeId) return groups;
     if (!groups[nodeId]) groups[nodeId] = [];
     groups[nodeId].push(row);
@@ -581,21 +585,34 @@ async function supabaseFetch(path) {
 
 async function fetchRelatedRows(tableName, nodeIds) {
   if (!nodeIds.length) return [];
+  const nodeKeys = nodeIds.map(nodeLookupKey).filter(Boolean);
   const encodedIds = nodeIds.map((id) => encodeURIComponent(id)).join(",");
   for (const column of ["node_id", "nodeId", "node", "clarifin_node_id"]) {
     try {
-      return await supabaseFetch(`${tableName}?select=*&${column}=in.(${encodedIds})`);
+      const rows = await supabaseFetch(`${tableName}?select=*&${column}=in.(${encodedIds})`);
+      return rows.filter((row) => nodeKeys.includes(nodeLookupKey(relatedNodeId(row, tableName === "node_details"))));
     } catch (error) {
       console.warn(`Clarifin Supabase: ${tableName} lookup by ${column} failed.`, error);
     }
   }
   try {
     const rows = await supabaseFetch(`${tableName}?select=*`);
-    return rows.filter((row) => nodeIds.includes(relatedNodeId(row, tableName === "node_details")));
+    return rows.filter((row) => nodeKeys.includes(nodeLookupKey(relatedNodeId(row, tableName === "node_details"))));
   } catch (error) {
     console.warn(`Clarifin Supabase: ${tableName} unavailable.`, error);
     return [];
   }
+}
+
+async function loadResearchExposuresForNode(nodeId) {
+  const exposureRows = await fetchRelatedRows("node_research_exposures", [nodeId]);
+  if (!exposureRows.length) {
+    console.warn("Clarifin Supabase: no node_research_exposures rows returned for selected node.", { nodeId });
+    return [];
+  }
+  return exposureRows
+    .map(normalizeResearchExposure)
+    .filter((exposure) => exposure.theme || exposure.whyRelevant || exposure.possibleTickers.length || exposure.dataNeeded || exposure.timeHorizon);
 }
 
 function convertSupabaseNode(row, assetRows, detailRows, exposureRows = []) {
@@ -624,7 +641,9 @@ function convertSupabaseNode(row, assetRows, detailRows, exposureRows = []) {
     whyMatters: firstValue(detail, ["whyMatters", "why_matters", "why_it_matters"], firstValue(row, ["whyMatters", "why_matters", "why_it_matters"], "No deeper explanation available yet.")),
     chains,
     affectedAssets: assetRows.map(normalizeAsset).filter(isValidatedAsset),
-    exposuresToWatch: exposureRows.map(normalizeResearchExposure).filter((exposure) => exposure.theme || exposure.whyRelevant || exposure.possibleTickers.length || exposure.dataNeeded),
+    exposuresToWatch: exposureRows.map(normalizeResearchExposure).filter((exposure) => exposure.theme || exposure.whyRelevant || exposure.possibleTickers.length || exposure.dataNeeded || exposure.timeHorizon),
+    isSupabaseNode: true,
+    exposuresLoaded: exposureRows.length > 0,
     scenarios: scenarios.filter((scenario) => scenario.title || scenario.body),
     counterarguments: counterarguments.filter(Boolean),
     sources: sources.filter(Boolean)
@@ -703,9 +722,13 @@ async function loadPublishedNodes() {
     const assetsByNode = groupByNodeId(assetRows);
     const detailsByNode = groupByNodeId(detailRows, true);
     const exposuresByNode = groupByNodeId(exposureRows);
+    if (!exposureRows.length) {
+      console.warn("Clarifin Supabase: no node_research_exposures rows returned for published nodes.", { nodeIds });
+    }
     nodes = sortNodesNewestFirst(publishedRows.map((row) => {
       const nodeId = String(firstValue(row, ["id", "slug"], ""));
-      return convertSupabaseNode(row, assetsByNode[nodeId] || [], detailsByNode[nodeId] || [], exposuresByNode[nodeId] || []);
+      const nodeKey = nodeLookupKey(nodeId);
+      return convertSupabaseNode(row, assetsByNode[nodeKey] || [], detailsByNode[nodeKey] || [], exposuresByNode[nodeKey] || []);
     }));
 
     if (selectedNodeId) {
@@ -1246,6 +1269,17 @@ function renderDetail(node) {
     section("Counterarguments", countersHTML),
     section("Sources", sourcesHTML)
   ].join("");
+
+  if (node.isSupabaseNode && !exposuresToWatch.length && !node.exposuresLoaded) {
+    node.exposuresLoaded = true;
+    loadResearchExposuresForNode(node.id).then((exposures) => {
+      if (!exposures.length) return;
+      node.exposuresToWatch = exposures;
+      if (selectedNodeId === node.id) renderDetail(node);
+    }).catch((error) => {
+      console.warn("Clarifin Supabase: could not load node_research_exposures for selected node.", { nodeId: node.id, error });
+    });
+  }
 }
 
 eventList.addEventListener("click", (event) => {
