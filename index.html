@@ -526,7 +526,7 @@ function normalizeScenario(item) {
 
 function normalizeAssetClass(value) {
   const normalized = String(value || "").trim().toLowerCase();
-  const allowed = ["index", "bond", "commodity", "currency", "stock", "etf", "rate", "other"];
+  const allowed = ["index", "bond", "commodity", "currency", "stock", "rate", "other"];
   return allowed.includes(normalized) ? normalized : "";
 }
 
@@ -536,6 +536,42 @@ function formatLabel(value) {
     .trim()
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
+
+const SECTOR_ETF_PROXIES = new Set(["XLE", "XLF", "XLV", "XLP", "XLY", "XLI", "XLK", "XLU", "XLRE", "XLB"]);
+const INVALID_ASSET_LABELS = new Set(["UNKNOWN", "N/A", "NA", "NONE", "TBD", "UNVERIFIED"]);
+const BROAD_THEME_LABELS = new Set([
+  "ENERGY",
+  "OIL & GAS",
+  "OIL AND GAS",
+  "SHIPPING",
+  "TRANSPORTATION",
+  "AIRLINES",
+  "AIRLINES / TRANSPORT",
+  "DEFENSE",
+  "CONSUMER DISCRETIONARY",
+  "CONSUMER STAPLES",
+  "FINANCIALS",
+  "HEALTH CARE",
+  "HEALTHCARE",
+  "INDUSTRIALS",
+  "TECHNOLOGY",
+  "UTILITIES",
+  "REAL ESTATE",
+  "MATERIALS",
+  "RATE-SENSITIVE SECTORS",
+  "INFLATION-SENSITIVE SECTORS",
+  "LNG",
+  "SUPPLY CHAIN",
+  "AI INFRASTRUCTURE",
+  "SEMICONDUCTOR SUPPLY CHAIN",
+  "OIL PRODUCERS",
+  "ENERGY PRODUCERS",
+  "DEFENSE STOCKS",
+  "GOLD MINERS",
+  "BOND MARKETS",
+  "GROWTH EQUITIES",
+  "SAFE HAVENS"
+]);
 
 function normalizeAsset(asset) {
   return {
@@ -551,7 +587,11 @@ function normalizeAsset(asset) {
 
 function isValidatedAsset(asset) {
   const ticker = String(asset?.ticker || "").trim().toUpperCase();
-  if (!ticker || ["UNKNOWN", "N/A", "NA", "NONE", "TBD", "UNVERIFIED"].includes(ticker)) return false;
+  const name = String(asset?.name || "").trim().toUpperCase();
+  if (!ticker || INVALID_ASSET_LABELS.has(ticker)) return false;
+  if (SECTOR_ETF_PROXIES.has(ticker)) return false;
+  if (BROAD_THEME_LABELS.has(ticker) || BROAD_THEME_LABELS.has(name)) return false;
+  if (String(asset?.assetClass || "").trim().toLowerCase() === "etf") return false;
   return true;
 }
 
@@ -564,7 +604,7 @@ function normalizeResearchExposure(exposure) {
     "possible_tickers_to_check"
   ], []))
     .map((ticker) => String(ticker || "").trim().toUpperCase())
-    .filter((ticker) => ticker && !["UNKNOWN", "N/A", "NA", "NONE", "TBD", "UNVERIFIED"].includes(ticker));
+    .filter((ticker) => ticker && SECTOR_ETF_PROXIES.has(ticker));
 
   return {
     theme: firstValue(exposure, ["theme", "title", "asset_group"], ""),
@@ -1274,7 +1314,7 @@ function renderDetail(node) {
     ? `<ul class="chain-list">${chains.map(c => `<li class="chain-step"><strong>${escapeHtml(c.title)}</strong><p>Event: ${escapeHtml(c.event)}</p><p>Impact: ${escapeHtml(c.sectorImpact)}</p></li>`).join("")}</ul>`
     : "<p>No causal chains available yet.</p>";
   const assetsHTML = affectedAssets.length
-    ? `<ul class="asset-list">${affectedAssets.map(a => `<li class="asset-card"><div class="asset-top"><h3>${escapeHtml(a.ticker)}</h3><span class="direction-${a.direction}">${escapeHtml(a.direction)}</span></div>${a.assetClass ? `<p><strong>Asset class:</strong> ${escapeHtml(formatLabel(a.assetClass))}</p>` : ""}<p>${escapeHtml(a.reason)}</p>${a.uncertainty ? `<p><strong>Uncertainty:</strong> ${escapeHtml(a.uncertainty)}</p>` : ""}</li>`).join("")}</ul>`
+    ? `<ul class="asset-list">${affectedAssets.map(a => `<li class="asset-card"><div class="asset-top"><h3>${escapeHtml(a.ticker)}</h3><span class="direction-${a.direction}">${escapeHtml(a.direction)}</span></div>${a.assetClass ? `<p><strong>Asset class:</strong> ${escapeHtml(formatLabel(a.assetClass))}</p>` : ""}${a.strength ? `<p><strong>Strength:</strong> ${escapeHtml(formatLabel(a.strength))}</p>` : ""}<p>${escapeHtml(a.reason)}</p>${a.uncertainty ? `<p><strong>Uncertainty:</strong> ${escapeHtml(a.uncertainty)}</p>` : ""}</li>`).join("")}</ul>`
     : "<p>No concrete affected assets yet.</p>";
   const exposuresHTML = exposuresToWatch.length
     ? `<ul class="asset-list">${exposuresToWatch.map(exposure => {
