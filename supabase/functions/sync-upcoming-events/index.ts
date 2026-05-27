@@ -139,6 +139,30 @@ type FmpEarningsEvent = {
   company?: string;
   companyName?: string;
   name?: string;
+  eps?: number | string | null;
+  epsEstimated?: number | string | null;
+  epsEstimate?: number | string | null;
+  estimatedEps?: number | string | null;
+  revenue?: number | string | null;
+  revenueEstimated?: number | string | null;
+  revenueEstimate?: number | string | null;
+  estimatedRevenue?: number | string | null;
+  fiscalDateEnding?: string;
+  fiscal_date_ending?: string;
+};
+
+type FmpMacroEvent = {
+  event?: string;
+  name?: string;
+  title?: string;
+  country?: string;
+  region?: string;
+  currency?: string;
+  date?: string;
+  time?: string;
+  hour?: string;
+  dateTime?: string;
+  datetime?: string;
 };
 
 type UpcomingEventInsert = {
@@ -151,6 +175,16 @@ type UpcomingEventInsert = {
   source_url: null;
   tickers: string[];
   status: string;
+  company_name?: string | null;
+  event_type?: string | null;
+  country?: string | null;
+  expected_value?: string | null;
+  previous_value?: string | null;
+  actual_value?: string | null;
+  eps_estimate?: number | null;
+  revenue_estimate?: number | null;
+  fiscal_date_ending?: string | null;
+  data_quality?: string | null;
 };
 
 function jsonResponse(body: unknown, status = 200) {
@@ -216,6 +250,24 @@ function cleanTicker(value: unknown) {
   return String(value || "").trim().toUpperCase();
 }
 
+function cleanTitle(value: unknown) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeText(value: unknown) {
+  return cleanTitle(value)
+    .toLowerCase()
+    .replace(/[\u2010-\u2015]/g, "-");
+}
+
+function toOptionalNumber(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 function getTickerImportance(ticker: string) {
   return IMPORTANCE_BY_TICKER[ticker] ?? 85;
 }
@@ -224,13 +276,19 @@ function getTickerRegion(ticker: string) {
   return EUROPE_TICKERS.has(ticker) ? "eu" : "us";
 }
 
-function getEventDate(event: FmpEarningsEvent) {
+function getTickerCountry(ticker: string) {
+  if (EUROPE_TICKERS.has(ticker)) return "EU";
+  if (IMPORTANT_TICKERS.includes(ticker)) return "US";
+  return null;
+}
+
+function getEventDate(event: FmpEarningsEvent | FmpMacroEvent) {
   const date = String(event.date || event.dateTime || event.datetime || "").trim();
   const match = date.match(/\d{4}-\d{2}-\d{2}/);
   return match?.[0] || "";
 }
 
-function parseApiDateTime(event: FmpEarningsEvent) {
+function parseApiDateTime(event: FmpEarningsEvent | FmpMacroEvent) {
   // If FMP returns a full date-time, use it directly.
   const fullDateTime = String(event.dateTime || event.datetime || "").trim();
   if (fullDateTime) {
@@ -255,9 +313,8 @@ function parseApiDateTime(event: FmpEarningsEvent) {
   return viennaDateTimeToUtcIso(date, 22, 0);
 }
 
-async function fetchFmpEarningsCalendar(apiKey: string, from: string, to: string) {
-  // FMP earnings calendar endpoint supports from/to date filters.
-  const url = new URL("https://financialmodelingprep.com/stable/earnings-calendar");
+async function fetchFmpCalendar<T>(endpoint: string, apiKey: string, from: string, to: string) {
+  const url = new URL(endpoint);
   url.searchParams.set("from", from);
   url.searchParams.set("to", to);
   url.searchParams.set("apikey", apiKey);
@@ -270,7 +327,25 @@ async function fetchFmpEarningsCalendar(apiKey: string, from: string, to: string
 
   const data = await response.json();
   if (!Array.isArray(data)) throw new Error("FMP returned an unexpected response shape.");
-  return data as FmpEarningsEvent[];
+  return data as T[];
+}
+
+async function fetchFmpEarningsCalendar(apiKey: string, from: string, to: string) {
+  return fetchFmpCalendar<FmpEarningsEvent>(
+    "https://financialmodelingprep.com/stable/earnings-calendar",
+    apiKey,
+    from,
+    to,
+  );
+}
+
+async function fetchFmpEconomicCalendar(apiKey: string, from: string, to: string) {
+  return fetchFmpCalendar<FmpMacroEvent>(
+    "https://financialmodelingprep.com/stable/economic-calendar",
+    apiKey,
+    from,
+    to,
+  );
 }
 
 function convertFmpEvent(event: FmpEarningsEvent): UpcomingEventInsert | null {
@@ -289,6 +364,165 @@ function convertFmpEvent(event: FmpEarningsEvent): UpcomingEventInsert | null {
     source: "Financial Modeling Prep",
     source_url: null,
     tickers: [ticker],
+    status: "published",
+    company_name: cleanTitle(event.company || event.companyName || event.name) || null,
+    event_type: "earnings",
+    country: getTickerCountry(ticker),
+    expected_value: null,
+    previous_value: null,
+    actual_value: null,
+    eps_estimate: toOptionalNumber(event.epsEstimated ?? event.epsEstimate ?? event.estimatedEps ?? event.eps),
+    revenue_estimate: toOptionalNumber(event.revenueEstimated ?? event.revenueEstimate ?? event.estimatedRevenue ?? event.revenue),
+    fiscal_date_ending: cleanTitle(event.fiscalDateEnding || event.fiscal_date_ending) || null,
+    data_quality: "api_calendar",
+  };
+}
+
+function getMacroEventName(event: FmpMacroEvent) {
+  return cleanTitle(event.event || event.name || event.title);
+}
+
+function getMacroRegion(event: FmpMacroEvent, name: string) {
+  const country = normalizeText(event.country || event.region || event.currency);
+  const normalizedName = normalizeText(name);
+
+  if (
+    country === "us" ||
+    country === "usa" ||
+    country.includes("united states") ||
+    country.includes("u.s.") ||
+    country.includes("usd") ||
+    normalizedName.includes("fed") ||
+    normalizedName.includes("fomc")
+  ) {
+    return "us";
+  }
+
+  if (
+    country.includes("euro area") ||
+    country.includes("eurozone") ||
+    country.includes("european union") ||
+    country.includes("eur") ||
+    normalizedName.includes("ecb")
+  ) {
+    return "eu";
+  }
+
+  return "global";
+}
+
+function isAllowedMacroEvent(name: string) {
+  const normalized = normalizeText(name);
+  const compact = normalized.replace(/[^a-z0-9]+/g, " ");
+
+  return [
+    "cpi",
+    "core cpi",
+    "ppi",
+    "nonfarm payrolls",
+    "non farm payrolls",
+    "nfp",
+    "unemployment rate",
+    "gdp",
+    "retail sales",
+    "ism",
+    "pmi",
+    "consumer confidence",
+    "fed interest rate decision",
+    "fomc",
+    "ecb interest rate decision",
+  ].some((keyword) => compact.includes(keyword));
+}
+
+function getMacroCategory(name: string) {
+  const normalized = normalizeText(name);
+  if (
+    normalized.includes("fed interest rate decision") ||
+    normalized.includes("fomc") ||
+    normalized.includes("ecb interest rate decision")
+  ) {
+    return "Central Banks";
+  }
+
+  return "Macro";
+}
+
+function getMacroImportance(name: string) {
+  const normalized = normalizeText(name);
+  if (
+    normalized.includes("cpi") ||
+    normalized.includes("fed") ||
+    normalized.includes("ecb") ||
+    normalized.includes("fomc") ||
+    normalized.includes("nonfarm payrolls") ||
+    normalized.includes("non-farm payrolls") ||
+    normalized.includes("nfp")
+  ) {
+    return 95;
+  }
+
+  if (
+    normalized.includes("gdp") ||
+    normalized.includes("ppi") ||
+    normalized.includes("ism") ||
+    normalized.includes("pmi") ||
+    normalized.includes("retail sales")
+  ) {
+    return 85;
+  }
+
+  return 75;
+}
+
+function getMacroTickers(name: string, region: string) {
+  const normalized = normalizeText(name);
+  if (region === "eu" || normalized.includes("ecb")) return ["EXS1", "SX7E", "EURUSD", "VNA"];
+  return ["SPY", "QQQ", "TLT", "DXY"];
+}
+
+function getAvailableFactualFields(event: UpcomingEventInsert) {
+  const update: Record<string, string | number | null> = {};
+
+  for (const key of [
+    "company_name",
+    "event_type",
+    "country",
+    "expected_value",
+    "previous_value",
+    "actual_value",
+    "eps_estimate",
+    "revenue_estimate",
+    "fiscal_date_ending",
+    "data_quality",
+  ] as const) {
+    const value = event[key];
+    if (value !== undefined && value !== null && value !== "") {
+      update[key] = value;
+    }
+  }
+
+  return update;
+}
+
+function convertFmpMacroEvent(event: FmpMacroEvent): UpcomingEventInsert | null {
+  const title = getMacroEventName(event);
+  if (!title || !isAllowedMacroEvent(title)) return null;
+
+  const region = getMacroRegion(event, title);
+  if (!["us", "eu"].includes(region)) return null;
+
+  const eventTime = parseApiDateTime(event);
+  if (!eventTime) return null;
+
+  return {
+    title,
+    category: getMacroCategory(title),
+    region,
+    event_time: eventTime,
+    importance: getMacroImportance(title),
+    source: "Financial Modeling Prep",
+    source_url: null,
+    tickers: getMacroTickers(title, region),
     status: "published",
   };
 }
@@ -316,13 +550,32 @@ Deno.serve(async (req) => {
     const from = formatDateForApi(today);
     const to = formatDateForApi(addDays(today, 30));
 
-    const fmpEvents = await fetchFmpEarningsCalendar(fmpApiKey, from, to);
-    const convertedEvents = fmpEvents
+    const fmpEarningsEvents = await fetchFmpEarningsCalendar(fmpApiKey, from, to);
+    let fmpMacroEvents: FmpMacroEvent[] = [];
+    let macroError: string | null = null;
+
+    try {
+      fmpMacroEvents = await fetchFmpEconomicCalendar(fmpApiKey, from, to);
+    } catch (error) {
+      // Keep earnings sync working even if the macro endpoint is not available on the FMP plan.
+      macroError = error instanceof Error ? error.message : String(error);
+    }
+
+    const convertedEarningsEvents = fmpEarningsEvents
       .map(convertFmpEvent)
-      .filter((event): event is UpcomingEventInsert => Boolean(event))
+      .filter((event): event is UpcomingEventInsert => Boolean(event));
+
+    const convertedMacroEvents = macroError
+      ? []
+      : fmpMacroEvents
+        .map(convertFmpMacroEvent)
+        .filter((event): event is UpcomingEventInsert => Boolean(event));
+
+    const convertedEvents = [...convertedEarningsEvents, ...convertedMacroEvents]
       .sort((a, b) => new Date(a.event_time).getTime() - new Date(b.event_time).getTime());
 
     const inserted = [];
+    const updated = [];
     const skipped = [];
 
     for (const event of convertedEvents) {
@@ -337,7 +590,22 @@ Deno.serve(async (req) => {
       if (existingError) throw existingError;
 
       if (existingRows && existingRows.length > 0) {
-        skipped.push({ title: event.title, event_time: event.event_time, reason: "duplicate" });
+        const factualFields = getAvailableFactualFields(event);
+
+        if (Object.keys(factualFields).length) {
+          const { data: updatedRow, error: updateError } = await supabase
+            .from("upcoming_events")
+            .update(factualFields)
+            .eq("id", existingRows[0].id)
+            .select("id,title,event_time")
+            .single();
+
+          if (updateError) throw updateError;
+          updated.push(updatedRow);
+        } else {
+          skipped.push({ title: event.title, event_time: event.event_time, reason: "duplicate" });
+        }
+
         continue;
       }
 
@@ -355,11 +623,20 @@ Deno.serve(async (req) => {
       ok: true,
       provider: "Financial Modeling Prep",
       date_range: { from, to },
-      fetched_count: fmpEvents.length,
-      matched_count: convertedEvents.length,
+      earnings: {
+        fetched_count: fmpEarningsEvents.length,
+        matched_count: convertedEarningsEvents.length,
+      },
+      macro: {
+        fetched_count: fmpMacroEvents.length,
+        matched_count: convertedMacroEvents.length,
+        error: macroError,
+      },
       inserted_count: inserted.length,
+      updated_count: updated.length,
       skipped_duplicate_count: skipped.length,
       inserted,
+      updated,
       skipped,
     });
   } catch (error) {

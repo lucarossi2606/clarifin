@@ -769,6 +769,12 @@ function getUpcomingCardDateLabel(dateString) {
   return `${formatShortDate(eventDate)}, ${time}`;
 }
 
+function getUpcomingTimeLabel(dateString) {
+  const eventDate = new Date(dateString);
+  if (Number.isNaN(eventDate.getTime())) return "";
+  return eventDate.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+}
+
 function getNextUpcomingEvent() {
   // Find the first future event after sorting all upcoming events by datetime.
   const now = Date.now();
@@ -926,7 +932,30 @@ function getPrimaryUpcomingTicker(event) {
 }
 
 function getUpcomingEventDescription(event) {
-  if (!isEarningsEvent(event)) return event.short || "Scheduled market event";
+  if (!isEarningsEvent(event)) {
+    const title = String(event.title || "").toLowerCase();
+    const category = String(event.category || "").toLowerCase();
+    const rawShort = String(event.short || "").trim();
+
+    if (title.includes("cpi")) {
+      return "Inflation data can reset rate-cut expectations and move yields, growth stocks and the dollar. Watch headline CPI, core CPI and shelter inflation.";
+    }
+
+    if (title.includes("fed") && (title.includes("interest") || title.includes("rate") || title.includes("decision"))) {
+      return "The Fed decision can shift rate expectations, bond yields, equity valuations and the dollar. Watch the statement, dot plot and Powell's press conference.";
+    }
+
+    if (title.includes("ecb") && (title.includes("interest") || title.includes("rate") || title.includes("decision"))) {
+      return "The ECB decision can move European banks, real estate, bonds and EUR/USD. Watch inflation language, growth concerns and guidance on future cuts.";
+    }
+
+    if (category.includes("macro") || category.includes("central bank")) {
+      return "This scheduled macro event may affect rates, currencies, equities and risk appetite depending on the outcome versus expectations.";
+    }
+
+    if (!rawShort || rawShort.toLowerCase() === "manual entry") return "Scheduled market event.";
+    return rawShort;
+  }
 
   const ticker = getPrimaryUpcomingTicker(event);
   const descriptions = {
@@ -963,7 +992,7 @@ function renderUpcomingCards() {
           <p>${escapeHtml(getUpcomingEventDescription(event))}</p>
           ${!earnings ? `
             <div class="card-meta">
-              <span class="score-pill gray">${escapeHtml(getUpcomingCardDateLabel(event.datetime))}</span>
+              ${getUpcomingTimeLabel(event.datetime) ? `<span class="score-pill gray">${escapeHtml(getUpcomingTimeLabel(event.datetime))}</span>` : ""}
               ${importance ? `<span class="score-pill yellow">${importance}</span>` : ""}
             </div>
           ` : ""}

@@ -41,13 +41,15 @@ const nodeSchema = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["ticker", "name", "direction", "strength", "reason"],
+        required: ["ticker", "name", "direction", "strength", "reason", "evidence", "uncertainty"],
         properties: {
           ticker: { type: "string" },
           name: { type: "string" },
           direction: { type: "string", enum: ["positive", "negative", "mixed", "neutral"] },
           strength: { type: "string" },
           reason: { type: "string" },
+          evidence: { type: "string" },
+          uncertainty: { type: "string" },
         },
       },
     },
@@ -194,6 +196,30 @@ async function createClarifinNodeWithOpenAI(input: {
             "- Impact must be lower if the event is not clearly market-moving.",
             "- Generate only plausible affected assets and explain the mechanism, not a prediction.",
             "",
+            "Strict affected-asset rules:",
+            "- Do not invent affected assets.",
+            "- Include an affected asset only if it was explicitly provided as a ticker by the user, directly mentioned in the raw event text, or has a clearly explained causal link from the event.",
+            "- Do not mark an asset positive just because a company announced something strategically interesting.",
+            "- Distinguish strategic long-term relevance, immediate market reaction, investor concern, and uncertainty.",
+            "- If the raw event text mentions a stock-price reaction, that reaction must anchor the direction.",
+            "- Example: if Ferrari stock fell after an EV announcement, RACE should be negative or mixed, not positive, unless the text gives strong contrary evidence.",
+            "- If evidence is weak, use direction = mixed or neutral.",
+            "- Do not include luxury peers like LVMH unless the source text explicitly discusses luxury-sector read-throughs or you can explain a concrete mechanism.",
+            "- Avoid generic phrases such as 'could attract new customers', 'may shift market dynamics', or 'stronger brand position' unless backed by specific evidence.",
+            "- Each affected asset must include ticker, direction, strength, reason, evidence, and uncertainty.",
+            "- The reason must explain the causal mechanism and must mention whether the direction reflects immediate market reaction, investor concern, long-term strategy, or uncertainty.",
+            "",
+            "Missing-data rule:",
+            "- If important information is missing, say so in the node. Example: Missing data: no verified market reaction, no management guidance, no margin details.",
+            "- Put missing data in why_matters, causal_chain watch fields, counterarguments, or affected-asset uncertainty where relevant.",
+            "",
+            "Internal quality check before returning JSON:",
+            "- Are all affected assets justified by user tickers, direct mention, or a concrete causal link?",
+            "- Is each direction supported by evidence in the raw text?",
+            "- Did you incorporate any stated stock-price reaction?",
+            "- Are generic statements replaced with specific reasoning?",
+            "- Are missing data points flagged instead of guessed?",
+            "",
             "Built-in Clarifin causal playbook. Use as guidance, not as automatic truth:",
             "- Inflation hotter than expected: inflation up -> rate-cut expectations down -> yields up -> dollar stronger -> growth stocks and real estate pressured -> banks mixed depending on credit quality.",
             "- Oil supply shock: oil prices up -> inflation pressure up -> airlines/chemicals pressured -> energy producers benefit -> central banks have less room to cut.",
@@ -214,6 +240,11 @@ async function createClarifinNodeWithOpenAI(input: {
             "- Impact and confidence are 0-100 scores.",
             "- If the event is unclear or weakly sourced, lower confidence.",
             "- Affected assets must be plausible and may be positive, negative, mixed, or neutral.",
+            "- For each affected asset, include reason, evidence, and uncertainty.",
+            "- Include only assets that are provided as user tickers, directly mentioned, or connected by a concrete causal mechanism.",
+            "- If a stock-price reaction is described, use it when setting direction.",
+            "- If evidence is weak or mixed, direction must be mixed or neutral.",
+            "- Avoid broad peer read-throughs unless the raw text supports them directly.",
             "- Do not include any buy/sell recommendation.",
             `- ${sourceInstruction}`,
             `- ${tickerInstruction}`,
@@ -251,13 +282,23 @@ async function createClarifinNodeWithOpenAI(input: {
   const generated = JSON.parse(content);
   generated.impact = clampScore(generated.impact, 50);
   generated.confidence = clampScore(generated.confidence, 40);
-  generated.affected_assets = (generated.affected_assets || []).map((asset: Record<string, unknown>) => ({
-    ticker: String(asset.ticker || "").trim().toUpperCase(),
-    name: String(asset.name || "").trim(),
-    direction: safeDirection(asset.direction),
-    strength: String(asset.strength || "Watch").trim(),
-    reason: String(asset.reason || "").trim(),
-  })).filter((asset: Record<string, string>) => asset.ticker && asset.reason);
+  generated.affected_assets = (generated.affected_assets || []).map((asset: Record<string, unknown>) => {
+    const reason = String(asset.reason || "").trim();
+    const evidence = String(asset.evidence || "").trim();
+    const uncertainty = String(asset.uncertainty || "").trim();
+
+    return {
+      ticker: String(asset.ticker || "").trim().toUpperCase(),
+      name: String(asset.name || "").trim(),
+      direction: safeDirection(asset.direction),
+      strength: String(asset.strength || "Watch").trim(),
+      reason: [
+        reason,
+        evidence ? `Evidence: ${evidence}` : "",
+        uncertainty ? `Uncertainty: ${uncertainty}` : "",
+      ].filter(Boolean).join(" "),
+    };
+  }).filter((asset: Record<string, string>) => asset.ticker && asset.reason);
 
   generated.sources = input.source_urls.length ? input.source_urls : ["User provided event text"];
   return generated;
