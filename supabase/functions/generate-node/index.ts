@@ -469,6 +469,45 @@ const finalDraftSchema = {
   },
 };
 
+const candidateAssetEvaluationSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["accepted_assets", "rejected_assets", "summary"],
+  properties: {
+    accepted_assets: {
+      type: "array",
+      maxItems: 10,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["candidate_asset", "candidate_name", "asset_class", "direction", "reason", "confidence"],
+        properties: {
+          candidate_asset: { type: "string" },
+          candidate_name: { type: "string" },
+          asset_class: { type: "string", enum: assetClassEnum },
+          direction: { type: "string", enum: ["positive", "negative", "neutral", "mixed", "strongly positive", "strongly negative"] },
+          reason: { type: "string" },
+          confidence: { type: "integer", minimum: 0, maximum: 100 },
+        },
+      },
+    },
+    rejected_assets: {
+      type: "array",
+      maxItems: 24,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["candidate_asset", "reason"],
+        properties: {
+          candidate_asset: { type: "string" },
+          reason: { type: "string" },
+        },
+      },
+    },
+    summary: { type: "string" },
+  },
+};
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body, null, 2), {
     status,
@@ -705,6 +744,237 @@ function collectTransmissionMissingData(plan: Record<string, unknown>) {
     .filter(Boolean);
 }
 
+function getResearchEntities(plan: Record<string, unknown>) {
+  const entities = plan.entities as Record<string, unknown> | undefined;
+  return {
+    directly_mentioned_companies: cleanStringArray(entities?.directly_mentioned_companies),
+    private_companies_or_entities: cleanStringArray(entities?.private_companies_or_entities),
+    public_tickers_mentioned: cleanStringArray(entities?.public_tickers_mentioned).map((ticker) => ticker.toUpperCase()),
+    people_mentioned: cleanStringArray(entities?.people_mentioned),
+    products_or_business_lines: cleanStringArray(entities?.products_or_business_lines),
+    geographies: cleanStringArray(entities?.geographies),
+  };
+}
+
+function getDetectedRegions(plan: Record<string, unknown>) {
+  const entities = getResearchEntities(plan);
+  const classification = plan.event_classification as Record<string, unknown> | undefined;
+  return uniqueStrings([
+    ...entities.geographies,
+    classification?.primary_theme,
+    ...(Array.isArray(classification?.secondary_themes) ? classification.secondary_themes : []),
+  ]).slice(0, 12);
+}
+
+function cleanSearchTerm(value: unknown) {
+  return String(value || "")
+    .replace(/https?:\/\/\S+/gi, " ")
+    .replace(/[$#]/g, " ")
+    .replace(/[^\p{L}\p{N}\s./&-]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function quoteGdeltTerm(term: string) {
+  const cleaned = cleanSearchTerm(term);
+  if (!cleaned) return "";
+  return /\s/.test(cleaned) ? `"${cleaned}"` : cleaned;
+}
+
+function keywordTermsFromText(text: string) {
+  const stopWords = new Set([
+    "after",
+    "again",
+    "around",
+    "could",
+    "from",
+    "have",
+    "into",
+    "over",
+    "said",
+    "says",
+    "that",
+    "their",
+    "this",
+    "with",
+    "would",
+    "about",
+    "according",
+    "reported",
+    "reportedly",
+    "possible",
+    "investors",
+    "market",
+    "markets",
+  ]);
+  return uniqueStrings(
+    text
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s-]/gu, " ")
+      .split(/\s+/)
+      .filter((word) => word.length > 3 && !stopWords.has(word)),
+  ).slice(0, 8);
+}
+
+function buildGdeltQuery(plan: Record<string, unknown>, rawEventText: string) {
+  const entities = getResearchEntities(plan);
+  const classification = plan.event_classification as Record<string, unknown> | undefined;
+  const eventType = String(classification?.event_type || "").toLowerCase();
+  const primaryEntities = uniqueStrings([
+    ...entities.directly_mentioned_companies,
+    ...entities.private_companies_or_entities,
+    ...entities.public_tickers_mentioned,
+    ...entities.geographies,
+  ]).slice(0, 3);
+  const eventSearchTerms: string[] = [];
+  if (eventType.includes("escalation") || eventType.includes("conflict")) eventSearchTerms.push("military tensions", "security risk");
+  if (eventType.includes("de-escalation") || eventType.includes("diplomatic")) eventSearchTerms.push("diplomatic talks", "de-escalation");
+  if (eventType.includes("merger")) eventSearchTerms.push("merger talks", "deal speculation");
+  if (eventType.includes("inflation")) eventSearchTerms.push("inflation data");
+  if (eventType.includes("rate decision")) eventSearchTerms.push("rate decision");
+  if (eventType.includes("earnings")) eventSearchTerms.push("earnings");
+  const eventTerms = uniqueStrings([
+    ...eventSearchTerms,
+    ...keywordTermsFromText(rawEventText),
+  ])
+    .map(cleanSearchTerm)
+    .filter((term) => term.length > 2)
+    .filter((term) => !["Other", "unknown", "geopolitics", "governance", "demand"].includes(term))
+    .slice(0, 3);
+  const queryTerms = uniqueStrings([...primaryEntities, ...eventTerms])
+    .map(quoteGdeltTerm)
+    .filter(Boolean)
+    .slice(0, 5);
+  return queryTerms.join(" ").slice(0, 240);
+}
+
+function domainFromUrl(value: unknown) {
+  const url = String(value || "").trim();
+  if (!url) return "";
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+async function fetchGdeltRelatedNews(query: string) {
+  const warnings: string[] = [];
+  if (!query) {
+    return { related_news: [], source_domains: [], warnings: ["GDELT research unavailable: no usable query."] };
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(query)}&mode=ArtList&format=json&maxrecords=10&sort=hybridrel&timespan=30d`;
+
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) {
+      return {
+        related_news: [],
+        source_domains: [],
+        warnings: [`GDELT research unavailable: HTTP ${response.status}.`],
+      };
+    }
+
+    const payload = await response.json();
+    const articles = Array.isArray(payload.articles) ? payload.articles : [];
+    const relatedNews = articles
+      .map((article: Record<string, unknown>) => {
+        const urlValue = String(article.url || "").trim();
+        const domain = String(article.domain || "").trim() || domainFromUrl(urlValue);
+        return {
+          title: String(article.title || "").trim(),
+          url: urlValue,
+          domain,
+          date: String(article.seendate || article.datetime || article.date || "").trim(),
+        };
+      })
+      .filter((article: Record<string, unknown>) => article.title || article.url)
+      .slice(0, 10);
+    const sourceDomains = uniqueStrings(relatedNews.map((article) => article.domain)).slice(0, 10);
+    return { related_news: relatedNews, source_domains: sourceDomains, warnings };
+  } catch (_error) {
+    return {
+      related_news: [],
+      source_domains: [],
+      warnings: ["GDELT research unavailable."],
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function buildResearchFactPack(args: {
+  rawEventText: string;
+  researchPlan: Record<string, unknown>;
+  gdeltQuery: string;
+  gdeltResult: Record<string, unknown>;
+  candidateAssets: Record<string, unknown>[];
+}) {
+  const classification = args.researchPlan.event_classification as Record<string, unknown> | undefined;
+  const entities = getResearchEntities(args.researchPlan);
+  const regions = getDetectedRegions(args.researchPlan);
+  const relatedNews = Array.isArray(args.gdeltResult.related_news)
+    ? args.gdeltResult.related_news as Record<string, unknown>[]
+    : [];
+  const sourceDomains = Array.isArray(args.gdeltResult.source_domains)
+    ? args.gdeltResult.source_domains as string[]
+    : [];
+  const gdeltWarnings = Array.isArray(args.gdeltResult.warnings)
+    ? args.gdeltResult.warnings as string[]
+    : [];
+  const missingData = uniqueStrings([
+    ...(Array.isArray(args.researchPlan.data_needed_before_strong_conclusion) ? args.researchPlan.data_needed_before_strong_conclusion : []),
+    ...(Array.isArray(args.researchPlan.not_known_from_input) ? args.researchPlan.not_known_from_input : []),
+    ...collectTransmissionMissingData(args.researchPlan),
+    relatedNews.length ? "" : "No recent related GDELT headlines were found for the lightweight query.",
+    "Full article text was not fetched in this version.",
+  ]);
+  const eventStatus = normalizeEventStatus(classification?.event_status || "unknown");
+  const eventStatusHint = relatedNews.length >= 3 && sourceDomains.length >= 2
+    ? `${eventStatus}; multiple related GDELT headlines found, but full articles were not read`
+    : `${eventStatus}; weak or limited GDELT headline signal`;
+
+  return {
+    normalized_query: args.gdeltQuery,
+    detected_entities: entities,
+    detected_regions: regions,
+    event_status_hint: eventStatusHint,
+    related_news_count: relatedNews.length,
+    related_news_headlines: relatedNews,
+    source_domains: sourceDomains,
+    research_warnings: uniqueStrings(gdeltWarnings),
+    missing_data: missingData,
+    candidate_assets_from_exposure_map: args.candidateAssets,
+  };
+}
+
+function summarizeResearchFactPack(factPack: Record<string, unknown>) {
+  return {
+    normalized_query: factPack.normalized_query || "",
+    event_status_hint: factPack.event_status_hint || "",
+    related_news_count: factPack.related_news_count || 0,
+    source_domains: Array.isArray(factPack.source_domains) ? factPack.source_domains : [],
+    research_warnings: Array.isArray(factPack.research_warnings) ? factPack.research_warnings : [],
+    missing_data_count: Array.isArray(factPack.missing_data) ? factPack.missing_data.length : 0,
+    candidate_assets_count: Array.isArray(factPack.candidate_assets_from_exposure_map)
+      ? factPack.candidate_assets_from_exposure_map.length
+      : 0,
+  };
+}
+
+function mergeCandidateLists(first: Record<string, unknown>[], second: Record<string, unknown>[]) {
+  const seen = new Set<string>();
+  return [...first, ...second].filter((candidate) => {
+    const key = `${candidate.exposure_key || ""}|${candidate.candidate_asset || ""}`.toUpperCase();
+    if (!key.trim() || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function extractCashtags(rawEventText: string) {
   return [...rawEventText.matchAll(/\$([A-Z][A-Z0-9.]{0,12})\b/g)]
     .map((match) => match[1].trim().toUpperCase())
@@ -850,9 +1120,13 @@ const broadSectorLabelSet = new Set([
 
 const broadConcreteAffectedAssetSet = new Set([
   "SPY", "QQQ", "DIA", "IWM", "DAX", "SX5E", "EXS1",
-  "TLT", "BND", "IEF", "US10Y", "BUND YIELD",
-  "BRENT", "WTI", "BRENT CRUDE", "WTI CRUDE", "USO", "GLD",
+  "TLT", "BND", "IEF", "SHY", "US10Y", "BUND YIELD",
+  "BRENT", "WTI", "BRENT CRUDE", "WTI CRUDE", "USO", "GLD", "GOLD",
   "DXY", "EUR/USD", "USD/JPY", "GBP/USD",
+  "LMT", "NOC", "RTX", "GD",
+  "CCL", "RCL", "NCLH",
+  "DAL", "UAL", "AAL", "LUV",
+  "EEM", "EWZ", "EWW",
 ]);
 
 function cleanSectorProxyTickers(values: unknown[]) {
@@ -1280,6 +1554,214 @@ function getAssetsToResearch(validatedDraft: Record<string, unknown>, researchPl
     return true;
   }).slice(0, 12);
 }
+
+function exposureMatchKeys(exposure: Record<string, unknown>) {
+  const text = [
+    exposure.theme,
+    exposure.sector_or_theme_type,
+    exposure.why_relevant,
+    exposure.data_needed,
+  ].map((value) => String(value || "").toLowerCase()).join(" ");
+  const keys = new Set<string>();
+
+  if (textIncludesAny(text, ["defense", "aerospace", "military", "missile", "naval", "surveillance"])) keys.add("defense_aerospace");
+  if (textIncludesAny(text, ["cruise", "caribbean travel", "tourism", "travel demand"])) keys.add("cruise_caribbean_travel");
+  if (textIncludesAny(text, ["airline", "airlines", "transport", "aviation"])) keys.add("airlines_transport");
+  if (textIncludesAny(text, ["safe haven", "safe-haven", "gold", "risk hedge"])) keys.add("safe_havens_gold");
+  if (textIncludesAny(text, ["oil", "crude", "energy price", "energy prices", "brent", "wti"])) keys.add("oil_energy_prices");
+  if (textIncludesAny(text, ["bond", "bonds", "duration", "interest rate", "rates", "treasury", "yield", "yields"])) keys.add("bonds_duration_rates");
+  if (textIncludesAny(text, ["broad equities", "risk sentiment", "risk appetite", "s&p", "nasdaq", "equity market", "stock market"])) keys.add("broad_us_equities_risk");
+  if (textIncludesAny(text, ["emerging market", "emerging markets", "latam", "latin america", "brazil", "mexico"])) keys.add("emerging_markets_latam");
+
+  return [...keys];
+}
+
+async function getExposureAssetMapCandidates(supabase: any, assetsToResearch: Record<string, unknown>[], eventSign: string) {
+  const { data, error } = await supabase
+    .from("exposure_asset_map")
+    .select("exposure_key, exposure_label, exposure_type, candidate_asset, candidate_name, asset_class, default_direction_escalation, default_direction_deescalation, rationale, region, priority")
+    .eq("is_active", true)
+    .order("priority", { ascending: false });
+
+  if (error) throw new Error(`Could not load exposure asset map: ${error.message}`);
+
+  const rows = Array.isArray(data) ? data as Record<string, unknown>[] : [];
+  const keysByExposure = assetsToResearch.map((exposure) => ({
+    exposure,
+    keys: exposureMatchKeys(exposure),
+  }));
+  const seen = new Set<string>();
+  const candidates: Record<string, unknown>[] = [];
+
+  for (const row of rows) {
+    const key = String(row.exposure_key || "");
+    const match = keysByExposure.find((item) => item.keys.includes(key));
+    if (!match) continue;
+    const candidate = String(row.candidate_asset || "").trim().toUpperCase();
+    if (!candidate || isSectorEtfProxy(candidate) || isInvalidAssetLabel(candidate)) continue;
+    if (seen.has(candidate)) continue;
+    seen.add(candidate);
+    const defaultDirection = eventSign === "easing"
+      ? row.default_direction_deescalation
+      : eventSign === "tightening"
+        ? row.default_direction_escalation
+        : "neutral";
+    candidates.push({
+      exposure_key: key,
+      exposure_theme: match.exposure.theme || row.exposure_label,
+      exposure_direction_hint: match.exposure.direction_hint || "",
+      candidate_asset: candidate,
+      candidate_name: row.candidate_name || candidate,
+      asset_class: row.asset_class || "other",
+      default_direction: defaultDirection || "neutral",
+      rationale: row.rationale || "",
+      region: row.region || "",
+      priority: row.priority || 50,
+    });
+  }
+
+  return candidates.slice(0, 24);
+}
+
+function normalizeMappedDirection(value: unknown) {
+  const direction = String(value || "neutral").trim().toLowerCase();
+  if (direction === "strongly positive") return { direction: "positive", strength: "high" };
+  if (direction === "strongly negative") return { direction: "negative", strength: "high" };
+  const clean = safeDirection(direction);
+  return { direction: clean, strength: clean === "neutral" ? "watch" : "medium" };
+}
+
+function equivalentAssetKeys(value: unknown) {
+  const ticker = String(value || "").trim().toUpperCase();
+  if (ticker === "BRENT" || ticker === "BRENT CRUDE") return ["BRENT", "BRENT CRUDE"];
+  if (ticker === "WTI" || ticker === "WTI CRUDE") return ["WTI", "WTI CRUDE"];
+  if (ticker === "GOLD" || ticker === "GLD") return ["GOLD", "GLD"];
+  return [ticker];
+}
+
+function hasEquivalentAsset(assets: Record<string, unknown>[], ticker: string) {
+  const keys = equivalentAssetKeys(ticker);
+  return assets.some((asset) => equivalentAssetKeys(asset.ticker).some((key) => keys.includes(key)));
+}
+
+async function evaluateMappedCandidateAssets(args: {
+  apiKey: string;
+  model: string;
+  rawEventText: string;
+  generatedNode: Record<string, unknown>;
+  assetsToResearch: Record<string, unknown>[];
+  candidates: Record<string, unknown>[];
+}) {
+  if (!args.candidates.length) {
+    return { accepted_assets: [], rejected_assets: [], summary: "No mapped candidates matched the detected exposures." };
+  }
+
+  return await callOpenAIJson({
+    apiKey: args.apiKey,
+    model: args.model,
+    temperature: 0.05,
+    schemaName: "clarifin_exposure_asset_candidate_evaluation",
+    schema: candidateAssetEvaluationSchema,
+    messages: [
+      {
+        role: "system",
+        content: [
+          "You evaluate controlled candidate affected assets for Clarifin.",
+          "You must not invent assets. You may only accept or reject the supplied candidates.",
+          "Accept a candidate only if the detected exposure and event mechanism fit the raw event.",
+          "Do not accept sector ETFs such as XLE, XLF, XLV, XLP, XLY, XLI, XLK, XLU, XLRE, XLB.",
+          "Do not call ordinary stocks or commodity proxies sector ETFs. AAL, DAL, UAL, LUV, LMT, NOC, RTX, GD, CCL, RCL, NCLH are stocks. USO and GLD are commodity proxies.",
+          "Prefer broad instruments and clearly linked stocks. For individual stocks, require a concrete sector or business link.",
+          "Be selective. Do not accept every peer in a group when two representative assets are enough.",
+          "If the raw text explicitly names an exposure group such as defense contractors, cruise operators, airlines, safe-haven assets, or oil prices, and matching controlled candidates exist, accept 1-2 representative candidates unless the mechanism clearly does not fit.",
+          "If the raw text explicitly names multiple separate exposure groups, evaluate each group separately. A cruise candidate does not cover an airline channel; a defense candidate does not cover a safe-haven channel.",
+          "For an explicitly named group with a fitting mechanism, include at least one representative candidate unless the candidate is too indirect or the mechanism contradicts the event.",
+          "If the event direction is clear but unconfirmed, choose the likely direction and explain uncertainty in the reason instead of defaulting to mixed.",
+          "Use mixed only when the direction is genuinely unclear or opposing forces are central.",
+          "Keep reasons short and specific. No investment advice, no buy/sell/hold language, no performance promises.",
+        ].join("\n"),
+      },
+      {
+        role: "user",
+        content: [
+          "Evaluate these controlled candidates for this Clarifin node.",
+          "",
+          "Raw event text:",
+          args.rawEventText,
+          "",
+          "Generated node summary:",
+          JSON.stringify({
+            title: args.generatedNode.title,
+            category: args.generatedNode.category,
+            event_type: args.generatedNode.event_type,
+            event_status: args.generatedNode.event_status,
+            short: args.generatedNode.short,
+            causal_chain: args.generatedNode.causal_chain,
+          }, null, 2),
+          "",
+          "Detected exposures:",
+          JSON.stringify(args.assetsToResearch, null, 2),
+          "",
+          "Controlled candidate assets:",
+          JSON.stringify(args.candidates, null, 2),
+        ].join("\n"),
+      },
+    ],
+  });
+}
+
+function mergeMappedAffectedAssets(generatedNode: Record<string, unknown>, evaluation: Record<string, unknown>, candidates: Record<string, unknown>[]) {
+  const accepted = Array.isArray(evaluation.accepted_assets) ? evaluation.accepted_assets as Record<string, unknown>[] : [];
+  const assets = Array.isArray(generatedNode.affected_assets) ? generatedNode.affected_assets as Record<string, unknown>[] : [];
+  const candidateByTicker = new Map(candidates.map((candidate) => [String(candidate.candidate_asset || "").trim().toUpperCase(), candidate]));
+  const exposureLimits: Record<string, number> = {
+    defense_aerospace: 2,
+    cruise_caribbean_travel: 2,
+    airlines_transport: 2,
+    safe_havens_gold: 1,
+    oil_energy_prices: 1,
+    bonds_duration_rates: 1,
+    broad_us_equities_risk: 1,
+    emerging_markets_latam: 1,
+  };
+  const exposureCounts: Record<string, number> = {};
+  let mappedAdded = 0;
+  const markChannelCovered = (key: string, tickers: string[]) => {
+    if (tickers.some((ticker) => hasEquivalentAsset(assets, ticker))) {
+      exposureCounts[key] = exposureLimits[key] || 1;
+    }
+  };
+  markChannelCovered("oil_energy_prices", ["BRENT", "BRENT CRUDE", "WTI", "WTI CRUDE", "USO"]);
+  markChannelCovered("safe_havens_gold", ["GLD", "GOLD"]);
+  markChannelCovered("bonds_duration_rates", ["TLT", "BND", "US10Y"]);
+  markChannelCovered("broad_us_equities_risk", ["SPY", "QQQ", "IWM"]);
+
+  for (const item of accepted) {
+    const ticker = String(item.candidate_asset || "").trim().toUpperCase();
+    const sourceCandidate = candidateByTicker.get(ticker) || {};
+    const exposureKey = String(sourceCandidate.exposure_key || "other");
+    const limit = exposureLimits[exposureKey] || 1;
+    const assetClass = String(item.asset_class || "other").trim().toLowerCase();
+    if (mappedAdded >= 7) break;
+    if ((exposureCounts[exposureKey] || 0) >= limit) continue;
+    if (!ticker || hasEquivalentAsset(assets, ticker) || isSectorEtfProxy(ticker) || isInvalidAssetLabel(ticker)) continue;
+    const normalizedDirection = normalizeMappedDirection(item.direction);
+    assets.push({
+      ticker,
+      ticker_or_asset: ticker,
+      name: String(item.candidate_name || ticker).trim(),
+      asset_class: assetClassEnum.includes(assetClass) ? assetClass : "other",
+      direction: normalizedDirection.direction,
+      strength: normalizedDirection.strength,
+      reason: String(item.reason || "Mapped from a validated Clarifin exposure channel.").trim(),
+      uncertainty: "",
+    });
+    exposureCounts[exposureKey] = (exposureCounts[exposureKey] || 0) + 1;
+    mappedAdded += 1;
+  }
+
+  generatedNode.affected_assets = assets;
+}
 function isThinText(value: unknown) {
   return String(value || "").trim().split(/\s+/).filter(Boolean).length < 12;
 }
@@ -1640,6 +2122,7 @@ async function createValidatedDraft(input: {
   source_urls: string[];
   tickers: string[];
   research_plan: Record<string, unknown>;
+  research_fact_pack: Record<string, unknown>;
   apiKey: string;
   model: string;
 }) {
@@ -1658,7 +2141,8 @@ async function createValidatedDraft(input: {
         role: "system",
         content: [
           "You are Clarifin's cautious evidence-aware financial research assistant.",
-          "You must not browse the web. You must not pretend web/API research happened.",
+          "You must not browse the web. You may use the provided Research Fact Pack, which contains lightweight GDELT headline metadata and internal exposure-map candidates.",
+          "Do not pretend full article research happened. GDELT headlines are supporting context and source-count signals only, not final truth.",
           "Your job is to generate a draft only after evidence mapping, affected-asset validation, and a quality gate.",
           "Use only the allowed Clarifin taxonomy values for category, event_type, and event_status. Never invent custom category names.",
           "If an event describes a reported possible combination, merger discussion, takeover possibility, or deal exploration without a confirmed transaction, use event_type=Merger Speculation, not Merger / Acquisition. Use event_status=report when attributed to a report/source, speculation when not attributed, and rumor only for unsupported market chatter.",
@@ -1673,7 +2157,11 @@ async function createValidatedDraft(input: {
           "",
           "Evidence mapping rules:",
           "- Classify each important claim as input_fact, source_fact, market_reaction, inference, unverified, or missing.",
-          "- Because this version does not fetch source URLs, source_fact is allowed only when the user provided actual source text in raw_event_text.",
+          "- Because this version does not fetch full source URLs or full GDELT articles, source_fact is allowed only for exact user-provided source text or lightweight GDELT headline metadata. Never treat a headline as full article confirmation.",
+          "- Distinguish raw input claims from GDELT supporting headlines, internal candidate assets, and missing/unverified data.",
+          "- If related_news_count is low or source_domains are thin, lower confidence and say the event needs verification.",
+          "- If multiple related GDELT headlines from different domains appear, you may say related coverage exists, but do not say the event is confirmed unless the raw input itself confirms it.",
+          "- Candidate assets from exposure_asset_map are internal candidates only. Include them as affected_assets only if the event mechanism fits.",
           "- The final node must not present inference or unverified claims as confirmed fact.",
           "- Missing information should be explicitly flagged instead of guessed.",
           "",
@@ -1747,6 +2235,9 @@ async function createValidatedDraft(input: {
           "",
           "Research plan JSON:",
           JSON.stringify(input.research_plan, null, 2),
+          "",
+          "Research Fact Pack JSON:",
+          JSON.stringify(input.research_fact_pack, null, 2),
           "",
           "Raw event text:",
           input.raw_event_text,
@@ -1824,11 +2315,35 @@ Deno.serve(async (req) => {
     });
     applyTaxonomyGuardrails(researchPlan, rawEventText);
 
+    const eventSign = detectEventSign(rawEventText, researchPlan);
+    const preliminaryAssetsToResearch = getAssetsToResearch({ assets_to_research: [] }, researchPlan, rawEventText);
+    let candidateAssetsConsidered: Record<string, unknown>[] = [];
+
+    try {
+      candidateAssetsConsidered = await getExposureAssetMapCandidates(supabase, preliminaryAssetsToResearch, eventSign);
+    } catch (candidateError) {
+      warnings.push(`exposure_asset_map candidates were not available for the fact pack: ${candidateError instanceof Error ? candidateError.message : "unknown error"}`);
+    }
+
+    const gdeltQuery = buildGdeltQuery(researchPlan, rawEventText);
+    const gdeltResult = await fetchGdeltRelatedNews(gdeltQuery);
+    const researchFactPack = buildResearchFactPack({
+      rawEventText,
+      researchPlan,
+      gdeltQuery,
+      gdeltResult,
+      candidateAssets: candidateAssetsConsidered,
+    });
+    if (Array.isArray(researchFactPack.research_warnings)) {
+      warnings.push(...researchFactPack.research_warnings);
+    }
+
     const validatedDraft = await createValidatedDraft({
       raw_event_text: rawEventText,
       source_urls: sourceUrls,
       tickers,
       research_plan: researchPlan,
+      research_fact_pack: researchFactPack,
       apiKey: openAiApiKey,
       model,
     });
@@ -1846,6 +2361,27 @@ Deno.serve(async (req) => {
       tickers,
     });
     const assetsToResearch = getAssetsToResearch(validatedDraft, researchPlan, rawEventText);
+    let mappedCandidateEvaluation: Record<string, unknown> = {
+      accepted_assets: [],
+      rejected_assets: [],
+      summary: "Candidate evaluation did not run.",
+    };
+
+    try {
+      const finalCandidateAssets = await getExposureAssetMapCandidates(supabase, assetsToResearch, eventSign);
+      candidateAssetsConsidered = mergeCandidateLists(candidateAssetsConsidered, finalCandidateAssets);
+      mappedCandidateEvaluation = await evaluateMappedCandidateAssets({
+        apiKey: openAiApiKey,
+        model,
+        rawEventText,
+        generatedNode,
+        assetsToResearch,
+        candidates: candidateAssetsConsidered,
+      });
+      mergeMappedAffectedAssets(generatedNode, mappedCandidateEvaluation, candidateAssetsConsidered);
+    } catch (candidateError) {
+      warnings.push(`exposure_asset_map candidates were not applied: ${candidateError instanceof Error ? candidateError.message : "unknown error"}`);
+    }
 
     const { data: node, error: nodeError } = await supabase
       .from("nodes")
@@ -1867,8 +2403,12 @@ Deno.serve(async (req) => {
     if (nodeError) throw new Error(`Could not insert node draft: ${nodeError.message}`);
 
     const nodeId = node.id;
+    const acceptedMappedTickers = Array.isArray(mappedCandidateEvaluation.accepted_assets)
+      ? (mappedCandidateEvaluation.accepted_assets as Record<string, unknown>[]).map((asset) => String(asset.candidate_asset || "").trim().toUpperCase()).filter(Boolean)
+      : [];
+    const allowedAffectedEvidence = uniqueStrings([...tickers, ...extractCashtags(rawEventText), ...getPlanPublicTickers(researchPlan), ...acceptedMappedTickers]).map((ticker) => ticker.toUpperCase());
     const affectedAssets = generatedNode.affected_assets
-      .filter((asset: Record<string, unknown>) => isAllowedConcreteAffectedAsset(asset, uniqueStrings([...tickers, ...extractCashtags(rawEventText), ...getPlanPublicTickers(researchPlan)]).map((ticker) => ticker.toUpperCase())))
+      .filter((asset: Record<string, unknown>) => isAllowedConcreteAffectedAsset(asset, allowedAffectedEvidence))
       .map((asset: Record<string, unknown>) => ({
         node_id: nodeId,
         ticker: asset.ticker,
@@ -1937,17 +2477,43 @@ Deno.serve(async (req) => {
       warnings.push(`research_runs was not saved: ${researchRunError.message}`);
     }
 
+    const { error: factPackError } = await supabase.from("research_fact_packs").insert({
+      node_id: String(nodeId),
+      raw_event_text: rawEventText,
+      normalized_query: researchFactPack.normalized_query,
+      detected_entities: researchFactPack.detected_entities,
+      detected_regions: researchFactPack.detected_regions,
+      related_news_count: researchFactPack.related_news_count,
+      related_news: researchFactPack.related_news_headlines,
+      source_domains: researchFactPack.source_domains,
+      candidate_assets: researchFactPack.candidate_assets_from_exposure_map,
+      research_warnings: researchFactPack.research_warnings,
+      missing_data: researchFactPack.missing_data,
+    });
+
+    if (factPackError) {
+      warnings.push(`research_fact_packs was not saved: ${factPackError.message}`);
+    }
+
     return jsonResponse({
       ok: true,
       node_id: nodeId,
       status: "draft",
       research_plan_summary: summarizeResearchPlan(researchPlan),
+      research_fact_pack_summary: summarizeResearchFactPack(researchFactPack),
+      gdelt_query: researchFactPack.normalized_query,
+      related_news_count: researchFactPack.related_news_count,
+      related_news_headlines: researchFactPack.related_news_headlines,
+      source_domains: researchFactPack.source_domains,
       transmission_channels: getTransmissionChannels(researchPlan),
       assets_to_research: assetsToResearch,
+      candidate_assets_considered: candidateAssetsConsidered,
+      candidate_asset_evaluation: mappedCandidateEvaluation,
       missing_data: validatedDraft.missing_data,
       quality_gate_summary: summarizeQualityGate(validatedDraft.quality_gate),
       affected_assets_count: affectedAssets.length,
-      warnings: [...warnings, ...(Array.isArray(validatedDraft.warnings) ? validatedDraft.warnings : [])],
+      affected_assets_inserted: affectedAssets,
+      warnings: uniqueStrings([...warnings, ...(Array.isArray(validatedDraft.warnings) ? validatedDraft.warnings : [])]),
       generated: generatedNode,
     });
   } catch (error) {
