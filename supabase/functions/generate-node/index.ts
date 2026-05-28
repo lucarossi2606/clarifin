@@ -132,6 +132,23 @@ const allowedEventStatuses = [
   "unknown",
 ];
 
+const gdeltDocApiEndpoint = "https://api.gdeltproject.org/api/v2/doc/doc";
+const gdeltApiKeyNotice = "No GDELT API key required. No Supabase secret needed.";
+const gdeltEndpointSummary = {
+  endpoint: gdeltDocApiEndpoint,
+  method: "GET",
+  api_family: "GDELT DOC 2.0 API",
+  query_parameter: "query",
+  mode: "artlist",
+  format: "json",
+  maxrecords: 8,
+  sort: "hybridrel",
+  timespan: "14d",
+  url_encoding: "URLSearchParams",
+};
+const gdeltCacheTtlMs = 10 * 60 * 1000;
+const gdeltRequestCache = new Map<string, { expiresAt: number; result: Record<string, unknown> }>();
+
 const nodeSchema = {
   type: "object",
   additionalProperties: false,
@@ -518,6 +535,10 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
+function cloneForDebug<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value ?? null)) as T;
+}
+
 function cleanStringArray(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value.map((item) => String(item).trim()).filter(Boolean);
@@ -858,52 +879,271 @@ function domainFromUrl(value: unknown) {
   }
 }
 
+function gdeltWarningForStatus(status: string, httpStatus?: number | null) {
+  if (status === "rate_limited") return "GDELT rate-limited the request. Continuing without external headline support.";
+  if (status === "timeout") return "GDELT request timed out. Continuing without external headline support.";
+  if (status === "no_results") return "No recent related GDELT headlines were found for the lightweight query.";
+  if (status === "skipped") return "GDELT skipped: no usable query.";
+  if (httpStatus) return `GDELT research unavailable: HTTP ${httpStatus}. Continuing without external headline support.`;
+  return "GDELT research unavailable. Continuing without external headline support.";
+}
+
+function buildGdeltDiagnostics(args: {
+  attempted: boolean;
+  status: "success" | "no_results" | "rate_limited" | "timeout" | "failed" | "skipped";
+  query: string;
+  httpStatus?: number | null;
+  relatedHeadlineCount?: number;
+  warning?: string;
+  attempts?: number;
+  cacheHit?: boolean;
+  requestUrl?: string;
+}) {
+  const relatedHeadlineCount = Number(args.relatedHeadlineCount || 0);
+  return {
+    attempted: args.attempted,
+    http_request_attempted: args.attempted && !args.cacheHit && args.status !== "skipped",
+    succeeded: ["success", "no_results"].includes(args.status),
+    status: args.status,
+    query: args.query,
+    endpoint_summary: gdeltEndpointSummary,
+    http_status: args.httpStatus ?? null,
+    related_headline_count: relatedHeadlineCount,
+    warning: args.warning || (args.status === "success" ? "" : gdeltWarningForStatus(args.status, args.httpStatus ?? null)),
+    api_key_notice: gdeltApiKeyNotice,
+    attempts: args.attempts || 0,
+    cache_hit: Boolean(args.cacheHit),
+    request_url: args.requestUrl || "",
+  };
+}
+
+function buildGdeltUrl(query: string) {
+  const url = new URL(gdeltDocApiEndpoint);
+  url.search = new URLSearchParams({
+    query,
+    mode: String(gdeltEndpointSummary.mode),
+    format: String(gdeltEndpointSummary.format),
+    maxrecords: String(gdeltEndpointSummary.maxrecords),
+    sort: String(gdeltEndpointSummary.sort),
+    timespan: String(gdeltEndpointSummary.timespan),
+  }).toString();
+  return url.toString();
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function fetchGdeltRelatedNews(query: string) {
-  const warnings: string[] = [];
-  if (!query) {
-    return { related_news: [], source_domains: [], warnings: ["GDELT research unavailable: no usable query."] };
-  }
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
-  const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(query)}&mode=ArtList&format=json&maxrecords=10&sort=hybridrel&timespan=30d`;
-
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    if (!response.ok) {
-      return {
-        related_news: [],
-        source_domains: [],
-        warnings: [`GDELT research unavailable: HTTP ${response.status}.`],
-      };
-    }
-
-    const payload = await response.json();
-    const articles = Array.isArray(payload.articles) ? payload.articles : [];
-    const relatedNews = articles
-      .map((article: Record<string, unknown>) => {
-        const urlValue = String(article.url || "").trim();
-        const domain = String(article.domain || "").trim() || domainFromUrl(urlValue);
-        return {
-          title: String(article.title || "").trim(),
-          url: urlValue,
-          domain,
-          date: String(article.seendate || article.datetime || article.date || "").trim(),
-        };
-      })
-      .filter((article: Record<string, unknown>) => article.title || article.url)
-      .slice(0, 10);
-    const sourceDomains = uniqueStrings(relatedNews.map((article) => article.domain)).slice(0, 10);
-    return { related_news: relatedNews, source_domains: sourceDomains, warnings };
-  } catch (_error) {
+  const normalizedQuery = String(query || "").trim();
+  if (!normalizedQuery) {
+    const diagnostics = buildGdeltDiagnostics({
+      attempted: false,
+      status: "skipped",
+      query: "",
+      warning: gdeltWarningForStatus("skipped"),
+    });
     return {
       related_news: [],
       source_domains: [],
-      warnings: ["GDELT research unavailable."],
+      warnings: [diagnostics.warning],
+      diagnostics,
     };
-  } finally {
-    clearTimeout(timeoutId);
   }
+
+  const cacheKey = normalizedQuery.toLowerCase();
+  const cached = gdeltRequestCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    const cachedResult = cloneForDebug(cached.result);
+    const diagnostics = cachedResult.diagnostics as Record<string, unknown>;
+    cachedResult.diagnostics = {
+      ...diagnostics,
+      attempted: true,
+      http_request_attempted: false,
+      cache_hit: true,
+    };
+    return cachedResult;
+  }
+
+  const requestUrl = buildGdeltUrl(normalizedQuery);
+  const maxAttempts = 3;
+  const timeoutMs = 4500;
+  let lastHttpStatus: number | null = null;
+  let finalWarning = "";
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(requestUrl, { signal: controller.signal });
+      lastHttpStatus = response.status;
+      clearTimeout(timeoutId);
+
+      if (response.status === 429) {
+        finalWarning = gdeltWarningForStatus("rate_limited", response.status);
+        if (attempt < maxAttempts) {
+          const retryAfter = Number(response.headers.get("retry-after"));
+          const retryDelayMs = Number.isFinite(retryAfter) && retryAfter > 0
+            ? Math.min(1200, retryAfter * 1000)
+            : 350 + ((attempt - 1) * 450);
+          await delay(retryDelayMs);
+          continue;
+        }
+        const diagnostics = buildGdeltDiagnostics({
+          attempted: true,
+          status: "rate_limited",
+          query: normalizedQuery,
+          httpStatus: response.status,
+          warning: finalWarning,
+          attempts: attempt,
+          requestUrl,
+        });
+        return {
+          related_news: [],
+          source_domains: [],
+          warnings: [diagnostics.warning],
+          diagnostics,
+        };
+      }
+
+      if (!response.ok) {
+        finalWarning = gdeltWarningForStatus("failed", response.status);
+        if (response.status >= 500 && attempt < maxAttempts) {
+          await delay(350 + ((attempt - 1) * 450));
+          continue;
+        }
+        const diagnostics = buildGdeltDiagnostics({
+          attempted: true,
+          status: "failed",
+          query: normalizedQuery,
+          httpStatus: response.status,
+          warning: finalWarning,
+          attempts: attempt,
+          requestUrl,
+        });
+        return {
+          related_news: [],
+          source_domains: [],
+          warnings: [diagnostics.warning],
+          diagnostics,
+        };
+      }
+
+      const contentType = response.headers.get("content-type") || "";
+      if (!contentType.toLowerCase().includes("json")) {
+        const diagnostics = buildGdeltDiagnostics({
+          attempted: true,
+          status: "failed",
+          query: normalizedQuery,
+          httpStatus: response.status,
+          warning: "GDELT returned a non-JSON response. Continuing without external headline support.",
+          attempts: attempt,
+          requestUrl,
+        });
+        return {
+          related_news: [],
+          source_domains: [],
+          warnings: [diagnostics.warning],
+          diagnostics,
+        };
+      }
+
+      const payload = await response.json();
+      const articles = Array.isArray(payload.articles) ? payload.articles : [];
+      const relatedNews = articles
+        .map((article: Record<string, unknown>) => {
+          const urlValue = String(article.url || "").trim();
+          const domain = String(article.domain || "").trim() || domainFromUrl(urlValue);
+          return {
+            title: String(article.title || "").trim(),
+            url: urlValue,
+            domain,
+            date: String(article.seendate || article.datetime || article.date || "").trim(),
+          };
+        })
+        .filter((article: Record<string, unknown>) => article.title || article.url)
+        .slice(0, Number(gdeltEndpointSummary.maxrecords));
+      const sourceDomains = uniqueStrings(relatedNews.map((article) => article.domain)).slice(0, 10);
+      const status = relatedNews.length ? "success" : "no_results";
+      const diagnostics = buildGdeltDiagnostics({
+        attempted: true,
+        status,
+        query: normalizedQuery,
+        httpStatus: response.status,
+        relatedHeadlineCount: relatedNews.length,
+        warning: status === "no_results" ? gdeltWarningForStatus("no_results") : "",
+        attempts: attempt,
+        requestUrl,
+      });
+      const result = {
+        related_news: relatedNews,
+        source_domains: sourceDomains,
+        warnings: diagnostics.warning ? [diagnostics.warning] : [],
+        diagnostics,
+      };
+      gdeltRequestCache.set(cacheKey, {
+        expiresAt: Date.now() + gdeltCacheTtlMs,
+        result: cloneForDebug(result),
+      });
+      return result;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof DOMException && error.name === "AbortError") {
+        const diagnostics = buildGdeltDiagnostics({
+          attempted: true,
+          status: "timeout",
+          query: normalizedQuery,
+          httpStatus: lastHttpStatus,
+          warning: gdeltWarningForStatus("timeout"),
+          attempts: attempt,
+          requestUrl,
+        });
+        return {
+          related_news: [],
+          source_domains: [],
+          warnings: [diagnostics.warning],
+          diagnostics,
+        };
+      }
+
+      finalWarning = gdeltWarningForStatus("failed", lastHttpStatus);
+      if (attempt < maxAttempts) {
+        await delay(350 + ((attempt - 1) * 450));
+        continue;
+      }
+      const diagnostics = buildGdeltDiagnostics({
+        attempted: true,
+        status: "failed",
+        query: normalizedQuery,
+        httpStatus: lastHttpStatus,
+        warning: finalWarning,
+        attempts: attempt,
+        requestUrl,
+      });
+      return {
+        related_news: [],
+        source_domains: [],
+        warnings: [diagnostics.warning],
+        diagnostics,
+      };
+    }
+  }
+
+  const diagnostics = buildGdeltDiagnostics({
+    attempted: true,
+    status: "failed",
+    query: normalizedQuery,
+    httpStatus: lastHttpStatus,
+    warning: finalWarning || gdeltWarningForStatus("failed", lastHttpStatus),
+    attempts: maxAttempts,
+    requestUrl,
+  });
+  return {
+    related_news: [],
+    source_domains: [],
+    warnings: [diagnostics.warning],
+    diagnostics,
+  };
 }
 
 function buildResearchFactPack(args: {
@@ -925,6 +1165,11 @@ function buildResearchFactPack(args: {
   const gdeltWarnings = Array.isArray(args.gdeltResult.warnings)
     ? args.gdeltResult.warnings as string[]
     : [];
+  const gdeltDiagnostics = args.gdeltResult.diagnostics || buildGdeltDiagnostics({
+    attempted: false,
+    status: "skipped",
+    query: args.gdeltQuery,
+  });
   const missingData = uniqueStrings([
     ...(Array.isArray(args.researchPlan.data_needed_before_strong_conclusion) ? args.researchPlan.data_needed_before_strong_conclusion : []),
     ...(Array.isArray(args.researchPlan.not_known_from_input) ? args.researchPlan.not_known_from_input : []),
@@ -934,13 +1179,14 @@ function buildResearchFactPack(args: {
   ]);
   const eventStatus = normalizeEventStatus(classification?.event_status || "unknown");
   const eventStatusHint = relatedNews.length >= 3 && sourceDomains.length >= 2
-    ? `${eventStatus}; multiple related GDELT headlines found, but full articles were not read`
-    : `${eventStatus}; weak or limited GDELT headline signal`;
+    ? `${eventStatus}; multiple related GDELT headlines found, but headline metadata is not article confirmation`
+    : `${eventStatus}; weak, unavailable, or limited GDELT headline signal`;
 
   return {
     normalized_query: args.gdeltQuery,
     detected_entities: entities,
     detected_regions: regions,
+    gdelt_diagnostics: gdeltDiagnostics,
     event_status_hint: eventStatusHint,
     related_news_count: relatedNews.length,
     related_news_headlines: relatedNews,
@@ -955,6 +1201,7 @@ function summarizeResearchFactPack(factPack: Record<string, unknown>) {
   return {
     normalized_query: factPack.normalized_query || "",
     event_status_hint: factPack.event_status_hint || "",
+    gdelt_diagnostics: factPack.gdelt_diagnostics || {},
     related_news_count: factPack.related_news_count || 0,
     source_domains: Array.isArray(factPack.source_domains) ? factPack.source_domains : [],
     research_warnings: Array.isArray(factPack.research_warnings) ? factPack.research_warnings : [],
@@ -1162,7 +1409,7 @@ function isConcreteAffectedAssetLabel(value: unknown) {
   return looksLikeTicker && !normalized.includes("ETF") && !normalized.includes("STOCK") && !normalized.includes("SECTOR");
 }
 
-function isAllowedConcreteAffectedAsset(asset: Record<string, unknown>, acceptedTickerEvidence: string[]) {
+function getConcreteAffectedAssetRejectionReason(asset: Record<string, unknown>, acceptedTickerEvidence: string[]) {
   const ticker = String(asset.ticker || asset.ticker_or_asset || "").trim().toUpperCase();
   const name = String(asset.name || "").trim().toUpperCase();
   const assetClass = String(asset.asset_class || "other").trim().toLowerCase();
@@ -1170,13 +1417,20 @@ function isAllowedConcreteAffectedAsset(asset: Record<string, unknown>, accepted
   const looksLikeCrossAsset = /^[A-Z]{2,5}\/[A-Z]{2,5}$/.test(ticker) || ["US10Y", "BUND YIELD", "BRENT", "WTI", "BRENT CRUDE", "WTI CRUDE"].includes(ticker);
   const accepted = acceptedTickerEvidence.includes(ticker);
 
-  if (isInvalidAssetLabel(ticker) || isSectorEtfProxy(ticker)) return false;
-  if (isBroadSectorOrThemeLabel(ticker) || isBroadSectorOrThemeLabel(name)) return false;
-  if (assetClass === "sector" || assetClass === "etf") return false;
-  if (name && (name.includes("PRIVATE") || name.includes("NOT DIRECTLY TRADABLE"))) return false;
-  if (accepted && (looksLikeTicker || looksLikeCrossAsset)) return true;
-  if (broadConcreteAffectedAssetSet.has(ticker)) return true;
-  return false;
+  if (!ticker) return "Asset is missing a concrete ticker or instrument label.";
+  if (isInvalidAssetLabel(ticker)) return "Invalid placeholder asset labels are not allowed in affected_assets.";
+  if (isSectorEtfProxy(ticker)) return "Equity sector ETFs belong in research exposures, not final affected_assets.";
+  if (isBroadSectorOrThemeLabel(ticker) || isBroadSectorOrThemeLabel(name)) return "Broad sector or theme labels belong in research exposures, not final affected_assets.";
+  if (assetClass === "sector" || assetClass === "etf") return "Affected assets must be concrete instruments, not sector or generic ETF rows.";
+  if (name && (name.includes("PRIVATE") || name.includes("NOT DIRECTLY TRADABLE"))) return "Private or not-directly-tradable entities must stay in research/missing-data, not final affected_assets.";
+  if (accepted && (looksLikeTicker || looksLikeCrossAsset)) return "";
+  if (broadConcreteAffectedAssetSet.has(ticker)) return "";
+  if (!looksLikeTicker && !looksLikeCrossAsset) return "Asset label is not a recognized concrete ticker, cross-asset instrument, or approved macro proxy.";
+  return "Asset lacks direct ticker evidence or controlled-map support and is not in the concrete affected-asset allowlist.";
+}
+
+function isAllowedConcreteAffectedAsset(asset: Record<string, unknown>, acceptedTickerEvidence: string[]) {
+  return !getConcreteAffectedAssetRejectionReason(asset, acceptedTickerEvidence);
 }
 
 function textIncludesAny(text: string, terms: string[]) {
@@ -1674,7 +1928,10 @@ function hasConcreteOilChannel(text: string) {
     "wti",
     "uso",
     "fuel",
+    "energy price",
+    "energy prices",
     "energy supply",
+    "energy infrastructure",
     "petroleum",
     "lng",
     "gas supply",
@@ -1705,6 +1962,7 @@ function hasConcreteOilChannel(text: string) {
     "fuel costs",
     "fuel prices",
     "energy security",
+    "energy infrastructure",
     "commodity channel",
   ]);
   return hasOilTerm && hasConcreteChannel;
@@ -2039,10 +2297,105 @@ function runAffectedAssetQualityGate(args: {
   };
 }
 
+function exposureLooksLikeOilExposure(exposure: Record<string, unknown>) {
+  const text = [
+    exposure.theme,
+    exposure.sector_or_theme_type,
+    exposure.why_relevant,
+    exposure.data_needed,
+  ].map((value) => String(value || "").toLowerCase()).join(" ");
+  return textIncludesAny(text, [
+    "oil",
+    "crude",
+    "brent",
+    "wti",
+    "uso",
+    "fuel",
+    "energy price",
+    "energy prices",
+    "energy infrastructure",
+    "energy supply",
+  ]);
+}
+
+function validateResearchExposureForInsert(args: {
+  exposure: Record<string, unknown>;
+  rawEventText: string;
+  researchFactPack?: Record<string, unknown>;
+}) {
+  const rawAndFactText = `${args.rawEventText} ${getFactPackHeadlineText(args.researchFactPack)}`.toLowerCase();
+  if (exposureLooksLikeOilExposure(args.exposure) && !hasConcreteOilChannel(rawAndFactText)) {
+    return {
+      allowed: false,
+      reason: "Oil / energy exposures require a concrete oil supply, sanctions, shipping-route, fuel-cost, commodity-supply, or energy-infrastructure channel.",
+    };
+  }
+
+  return { allowed: true, reason: "" };
+}
+
+function buildResearchExposureRows(args: {
+  nodeId: string;
+  assetsToResearch: Record<string, unknown>[];
+  rawEventText: string;
+  researchFactPack?: Record<string, unknown>;
+}) {
+  const inserted: Record<string, unknown>[] = [];
+  const rejected: Record<string, unknown>[] = [];
+
+  for (const exposure of args.assetsToResearch) {
+    const sectorProxyTickers = Array.isArray(exposure.sector_proxy_tickers)
+      ? cleanSectorProxyTickers(exposure.sector_proxy_tickers)
+      : Array.isArray(exposure.possible_tickers_to_check)
+        ? cleanSectorProxyTickers(exposure.possible_tickers_to_check)
+        : [];
+    const row = {
+      node_id: String(args.nodeId),
+      theme: String(exposure.theme || "").trim(),
+      sector_or_theme_type: String(exposure.sector_or_theme_type || "theme").trim(),
+      why_relevant: String(exposure.why_relevant || "").trim(),
+      possible_tickers: sectorProxyTickers,
+      sector_proxy_tickers: sectorProxyTickers,
+      direction_hint: String(exposure.direction_hint || "mixed").trim().toLowerCase(),
+      data_needed: String(exposure.data_needed || "").trim(),
+      time_horizon: String(exposure.time_horizon || "").trim(),
+      confidence: normalizeScore(exposure.confidence, 35),
+    };
+
+    if (!row.theme && !row.why_relevant && !row.sector_proxy_tickers.length && !row.data_needed) {
+      rejected.push({
+        ...row,
+        exposure_rejection_reason: "Exposure row was empty after normalization.",
+        original_exposure: exposure,
+      });
+      continue;
+    }
+
+    const validation = validateResearchExposureForInsert({
+      exposure: row,
+      rawEventText: args.rawEventText,
+      researchFactPack: args.researchFactPack,
+    });
+    if (!validation.allowed) {
+      rejected.push({
+        ...row,
+        exposure_rejection_reason: validation.reason,
+        original_exposure: exposure,
+      });
+      continue;
+    }
+
+    inserted.push(row);
+  }
+
+  return { inserted, rejected };
+}
+
 function buildCandidateRejectionReport(args: {
   candidates: Record<string, unknown>[];
   evaluation: Record<string, unknown>;
   insertedAssets: Record<string, unknown>[];
+  finalHardValidationRemovedAssets: Record<string, unknown>[];
   serverRejectedAssets: Record<string, unknown>[];
   qualityGateRejectedAssets: Record<string, unknown>[];
   qualityGateDeduplicatedAssets: Record<string, unknown>[];
@@ -2057,6 +2410,10 @@ function buildCandidateRejectionReport(args: {
   const serverRejections = new Map<string, string>();
   for (const item of args.serverRejectedAssets) {
     addCandidateRejectionReason(serverRejections, String(item.ticker || ""), String(item.candidate_rejection_reason || "Server-side channel gate rejected this asset."));
+  }
+  const finalHardValidationRejections = new Map<string, string>();
+  for (const item of args.finalHardValidationRemovedAssets) {
+    addCandidateRejectionReason(finalHardValidationRejections, String(item.ticker || ""), String(item.final_hard_validation_reason || "Final hard validation removed this asset."));
   }
   const qualityGateRejections = new Map<string, string>();
   for (const item of [...args.qualityGateRejectedAssets, ...args.qualityGateDeduplicatedAssets]) {
@@ -2095,6 +2452,7 @@ function buildCandidateRejectionReport(args: {
         exposure_key: candidate.exposure_key || "",
         asset_class: candidate.asset_class || "other",
         candidate_rejection_reason: equivalentServerReason
+          || equivalentAssetKeys(ticker).map((key) => finalHardValidationRejections.get(key)).find(Boolean)
           || equivalentAssetKeys(ticker).map((key) => qualityGateRejections.get(key)).find(Boolean)
           || (!candidateGate.allowed ? candidateGate.reason : "")
           || aiRejected.get(ticker)
@@ -2843,6 +3201,10 @@ Deno.serve(async (req) => {
       warnings.push(`exposure_asset_map candidates were not applied: ${candidateError instanceof Error ? candidateError.message : "unknown error"}`);
     }
 
+    const debugAiProposedAssetsBeforeValidation = cloneForDebug(
+      Array.isArray(generatedNode.affected_assets) ? generatedNode.affected_assets : [],
+    );
+
     const { data: node, error: nodeError } = await supabase
       .from("nodes")
       .insert({
@@ -2868,9 +3230,18 @@ Deno.serve(async (req) => {
       : [];
     const directAffectedEvidence = uniqueStrings([...tickers, ...extractCashtags(rawEventText), ...getPlanPublicTickers(researchPlan)]).map((ticker) => ticker.toUpperCase());
     const allowedAffectedEvidence = uniqueStrings([...directAffectedEvidence, ...acceptedMappedTickers]).map((ticker) => ticker.toUpperCase());
+    const finalHardValidationRemovedAssets: Record<string, unknown>[] = [];
     const serverRejectedAffectedAssets: Record<string, unknown>[] = [];
     const eligibleAffectedAssets = generatedNode.affected_assets
-      .filter((asset: Record<string, unknown>) => isAllowedConcreteAffectedAsset(asset, allowedAffectedEvidence))
+      .filter((asset: Record<string, unknown>) => {
+        const hardValidationReason = getConcreteAffectedAssetRejectionReason(asset, allowedAffectedEvidence);
+        if (!hardValidationReason) return true;
+        finalHardValidationRemovedAssets.push({
+          ...asset,
+          final_hard_validation_reason: hardValidationReason,
+        });
+        return false;
+      })
       .filter((asset: Record<string, unknown>) => {
         const gate = strictChannelGate({
           asset,
@@ -2886,6 +3257,16 @@ Deno.serve(async (req) => {
         });
         return false;
       });
+
+    if (finalHardValidationRemovedAssets.length) {
+      const hardValidationWarnings = uniqueStrings(finalHardValidationRemovedAssets.map((asset) => String(asset.final_hard_validation_reason || "").trim()).filter(Boolean));
+      researchFactPack.research_warnings = uniqueStrings([
+        ...(Array.isArray(researchFactPack.research_warnings) ? researchFactPack.research_warnings : []),
+        ...hardValidationWarnings,
+      ]);
+      appendMissingData(validatedDraft, hardValidationWarnings);
+      warnings.push(...hardValidationWarnings);
+    }
 
     if (serverRejectedAffectedAssets.length) {
       const strictGateWarnings = uniqueStrings(serverRejectedAffectedAssets.map((asset) => String(asset.candidate_rejection_reason || "").trim()).filter(Boolean));
@@ -2919,21 +3300,32 @@ Deno.serve(async (req) => {
       warnings.push(...qualityGateWarnings);
     }
 
-    const affectedAssets = affectedAssetQualityGate.final_assets
+    const finalGeneratedAffectedAssets = affectedAssetQualityGate.final_assets
       .map((asset: Record<string, unknown>) => ({
-        node_id: nodeId,
-        ticker: asset.ticker,
-        name: asset.name,
-        direction: asset.direction,
-        strength: asset.strength,
-        reason: asset.reason,
-        asset_class: asset.asset_class,
-        uncertainty: asset.uncertainty,
+        ticker: String(asset.ticker || asset.ticker_or_asset || "").trim().toUpperCase(),
+        ticker_or_asset: String(asset.ticker || asset.ticker_or_asset || "").trim().toUpperCase(),
+        name: asset.name || asset.ticker,
+        asset_class: asset.asset_class || "other",
+        direction: safeDirection(asset.direction),
+        strength: String(asset.strength || "medium").trim().toLowerCase(),
+        reason: asset.reason || "",
+        uncertainty: asset.uncertainty || "",
       }));
+    const affectedAssets = finalGeneratedAffectedAssets.map((asset: Record<string, unknown>) => ({
+      node_id: nodeId,
+      ticker: asset.ticker,
+      name: asset.name,
+      direction: asset.direction,
+      strength: asset.strength,
+      reason: asset.reason,
+      asset_class: asset.asset_class,
+      uncertainty: asset.uncertainty,
+    }));
     const candidateAssetsRejected = buildCandidateRejectionReport({
       candidates: candidateAssetsConsidered,
       evaluation: mappedCandidateEvaluation,
       insertedAssets: affectedAssets,
+      finalHardValidationRemovedAssets,
       serverRejectedAssets: serverRejectedAffectedAssets,
       qualityGateRejectedAssets: affectedAssetQualityGate.rejected,
       qualityGateDeduplicatedAssets: affectedAssetQualityGate.deduplicated,
@@ -2948,25 +3340,26 @@ Deno.serve(async (req) => {
       if (assetsError) throw new Error(`Could not insert affected assets: ${assetsError.message}`);
     }
 
-    const researchExposures = assetsToResearch.map((exposure: Record<string, unknown>) => {
-      const sectorProxyTickers = Array.isArray(exposure.sector_proxy_tickers)
-        ? cleanSectorProxyTickers(exposure.sector_proxy_tickers)
-        : Array.isArray(exposure.possible_tickers_to_check)
-          ? cleanSectorProxyTickers(exposure.possible_tickers_to_check)
-          : [];
-      return {
-        node_id: String(nodeId),
-        theme: String(exposure.theme || "").trim(),
-        sector_or_theme_type: String(exposure.sector_or_theme_type || "theme").trim(),
-        why_relevant: String(exposure.why_relevant || "").trim(),
-        possible_tickers: sectorProxyTickers,
-        sector_proxy_tickers: sectorProxyTickers,
-        direction_hint: String(exposure.direction_hint || "mixed").trim().toLowerCase(),
-        data_needed: String(exposure.data_needed || "").trim(),
-        time_horizon: String(exposure.time_horizon || "").trim(),
-        confidence: normalizeScore(exposure.confidence, 35),
-      };
-    }).filter((exposure) => exposure.theme || exposure.why_relevant || exposure.sector_proxy_tickers.length || exposure.data_needed);
+    generatedNode.affected_assets = finalGeneratedAffectedAssets;
+
+    const researchExposureValidation = buildResearchExposureRows({
+      nodeId: String(nodeId),
+      assetsToResearch,
+      rawEventText,
+      researchFactPack,
+    });
+    const researchExposures = researchExposureValidation.inserted;
+    const rejectedResearchExposures = researchExposureValidation.rejected;
+
+    if (rejectedResearchExposures.length) {
+      const exposureWarnings = uniqueStrings(rejectedResearchExposures.map((exposure) => String(exposure.exposure_rejection_reason || "").trim()).filter(Boolean));
+      researchFactPack.research_warnings = uniqueStrings([
+        ...(Array.isArray(researchFactPack.research_warnings) ? researchFactPack.research_warnings : []),
+        ...exposureWarnings,
+      ]);
+      appendMissingData(validatedDraft, exposureWarnings);
+      warnings.push(...exposureWarnings);
+    }
 
     if (researchExposures.length) {
       const { error: exposureError } = await supabase.from("node_research_exposures").insert(researchExposures);
@@ -3018,26 +3411,76 @@ Deno.serve(async (req) => {
       warnings.push(`research_fact_packs was not saved: ${factPackError.message}`);
     }
 
+    const rejectedAssetsWithReasons = [
+      ...finalHardValidationRemovedAssets.map((asset) => ({
+        stage: "final_hard_validation",
+        ticker: asset.ticker || asset.ticker_or_asset || "",
+        name: asset.name || asset.ticker || asset.ticker_or_asset || "",
+        reason: asset.final_hard_validation_reason || "",
+      })),
+      ...serverRejectedAffectedAssets.map((asset) => ({
+        stage: "channel_gate",
+        ticker: asset.ticker || asset.ticker_or_asset || "",
+        name: asset.name || asset.ticker || asset.ticker_or_asset || "",
+        reason: asset.candidate_rejection_reason || "",
+      })),
+      ...affectedAssetQualityGate.rejected.map((asset: Record<string, unknown>) => ({
+        stage: "quality_gate",
+        ticker: asset.ticker || "",
+        name: asset.name || asset.ticker || "",
+        reason: asset.quality_gate_reason || "",
+      })),
+      ...affectedAssetQualityGate.deduplicated.map((asset: Record<string, unknown>) => ({
+        stage: "deduplicated",
+        ticker: asset.ticker || "",
+        name: asset.name || asset.ticker || "",
+        reason: asset.quality_gate_reason || "",
+      })),
+    ];
+
+    const affectedAssetValidationDiagnostics = {
+      final_affected_assets_inserted: affectedAssets,
+      debug_ai_proposed_assets_before_validation: debugAiProposedAssetsBeforeValidation,
+      rejected_by_final_hard_validation: finalHardValidationRemovedAssets,
+      rejected_by_channel_gate: serverRejectedAffectedAssets,
+      rejected_by_quality_gate: affectedAssetQualityGate.rejected,
+      deduplicated: affectedAssetQualityGate.deduplicated,
+    };
+
     return jsonResponse({
       ok: true,
       node_id: nodeId,
       status: "draft",
       research_plan_summary: summarizeResearchPlan(researchPlan),
       research_fact_pack_summary: summarizeResearchFactPack(researchFactPack),
+      gdelt_diagnostics: researchFactPack.gdelt_diagnostics,
+      gdelt_attempted: Boolean((researchFactPack.gdelt_diagnostics as Record<string, unknown> | undefined)?.attempted),
+      gdelt_status: (researchFactPack.gdelt_diagnostics as Record<string, unknown> | undefined)?.status || "skipped",
+      gdelt_api_key_notice: gdeltApiKeyNotice,
       gdelt_query: researchFactPack.normalized_query,
+      gdelt_endpoint_summary: gdeltEndpointSummary,
       related_news_count: researchFactPack.related_news_count,
       related_news_headlines: researchFactPack.related_news_headlines,
       source_domains: researchFactPack.source_domains,
       transmission_channels: getTransmissionChannels(researchPlan),
-      assets_to_research: assetsToResearch,
+      assets_to_research: researchExposures,
+      final_exposures_inserted: researchExposures,
+      exposures_inserted: researchExposures,
+      exposures_rejected: rejectedResearchExposures,
+      debug_assets_to_research_before_exposure_validation: assetsToResearch,
       candidate_assets_considered: candidateAssetsConsidered,
-      candidate_asset_evaluation: mappedCandidateEvaluation,
+      debug_candidate_asset_evaluation_before_server_gates: mappedCandidateEvaluation,
       candidate_assets_rejected: candidateAssetsRejected,
+      rejected_assets_with_reasons: rejectedAssetsWithReasons,
+      final_hard_validation_removed_assets: finalHardValidationRemovedAssets,
+      server_channel_gate_rejected_assets: serverRejectedAffectedAssets,
       affected_asset_quality_gate: {
         accepted: affectedAssetQualityGate.accepted,
         rejected: affectedAssetQualityGate.rejected,
         deduplicated: affectedAssetQualityGate.deduplicated,
       },
+      affected_asset_validation_diagnostics: affectedAssetValidationDiagnostics,
+      debug_ai_proposed_assets_before_validation: debugAiProposedAssetsBeforeValidation,
       missing_data: validatedDraft.missing_data,
       quality_gate_summary: summarizeQualityGate(validatedDraft.quality_gate),
       affected_assets_count: affectedAssets.length,

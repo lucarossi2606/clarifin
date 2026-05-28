@@ -160,6 +160,7 @@ details.detail-card[open] summary::after { content: "-"; }
 .asset-top { display: flex; justify-content: space-between; margin-bottom: 4px; }
 .asset-top h3 { margin: 0; font-size: 14px; font-weight: 700; color: var(--text-main); }
 .asset-top span { font-size: 12px; font-weight: 700; text-transform: capitalize; }
+.exposure-etfs { margin: 2px 0 0 0; color: var(--text-main); font-size: 13px; font-weight: 700; word-spacing: 6px; }
 .direction-positive { color: var(--green-text); }
 .direction-negative { color: var(--red-text); }
 .direction-mixed, .direction-neutral { color: var(--gray-text); }
@@ -436,7 +437,7 @@ function toArray(value) {
   if (!parsed) return [];
   if (typeof parsed === "string") {
     return parsed
-      .split(/\n|;/)
+      .split(/\n|;|,/)
       .map((item) => item.trim())
       .filter(Boolean);
   }
@@ -561,7 +562,8 @@ function formatLabel(value) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-const SECTOR_ETF_PROXIES = new Set(["XLE", "XLF", "XLV", "XLP", "XLY", "XLI", "XLK", "XLU", "XLRE", "XLB"]);
+const OFFICIAL_SECTOR_ETFS = ["XLY", "XLP", "XLE", "XLF", "XLV", "XLI", "XLB", "XLRE", "XLK", "XLC", "XLU"];
+const SECTOR_ETF_PROXIES = new Set(OFFICIAL_SECTOR_ETFS);
 const INVALID_ASSET_LABELS = new Set(["UNKNOWN", "N/A", "NA", "NONE", "TBD", "UNVERIFIED"]);
 const BROAD_THEME_LABELS = new Set([
   "ENERGY",
@@ -641,6 +643,37 @@ function normalizeResearchExposure(exposure) {
     timeHorizon: firstValue(exposure, ["time_horizon", "timeHorizon", "horizon"], ""),
     confidence: toNumber(firstValue(exposure, ["confidence", "confidence_score", "confidenceScore"], ""), 0)
   };
+}
+
+function getExposureSectorEtfs(exposure) {
+  const explicitTickers = toArray(exposure?.sectorProxyTickers || exposure?.possibleTickers || [])
+    .map((ticker) => String(ticker || "").trim().toUpperCase())
+    .filter((ticker) => SECTOR_ETF_PROXIES.has(ticker));
+  if (explicitTickers.length) {
+    return OFFICIAL_SECTOR_ETFS.filter((ticker) => explicitTickers.includes(ticker));
+  }
+
+  const text = [
+    exposure?.theme,
+    exposure?.whyRelevant,
+    exposure?.dataNeeded,
+  ].map((value) => String(value || "").toLowerCase()).join(" ");
+  const mappings = [
+    ["XLY", ["consumer discretionary", "travel", "tourism", "cruise", "luxury", "leisure", "hotel", "restaurant", "retail", "autos"]],
+    ["XLP", ["consumer staples", "staples", "grocer", "food", "beverage", "household products", "personal care"]],
+    ["XLE", ["energy", "oil", "crude", "gas", "lng", "fuel", "refinery", "pipeline"]],
+    ["XLF", ["financial", "bank", "banks", "insurance", "broker", "credit", "lender", "lending", "payments"]],
+    ["XLV", ["healthcare", "health care", "pharma", "biotech", "medical", "hospital", "drugmaker"]],
+    ["XLI", ["industrial", "defense", "defence", "aerospace", "transport", "logistics", "shipping", "machinery", "infrastructure", "manufacturing"]],
+    ["XLB", ["materials", "mining", "metals", "chemicals", "steel", "copper", "lithium"]],
+    ["XLRE", ["real estate", "reit", "property", "housing", "refinancing"]],
+    ["XLK", ["technology", "software", "semiconductor", "semiconductors", "chips", "cloud", "data center", "data centers", "cybersecurity"]],
+    ["XLC", ["communication services", "telecom", "media", "advertising", "streaming", "social media"]],
+    ["XLU", ["utilities", "utility", "electricity", "power grid", "grid", "renewables", "water utility"]],
+  ];
+  return mappings
+    .filter(([, terms]) => terms.some((term) => text.includes(term)))
+    .map(([ticker]) => ticker);
 }
 
 function relatedNodeId(row, allowOwnId = false) {
@@ -1346,16 +1379,15 @@ function renderDetail(node) {
     : "<p>No concrete affected assets yet.</p>";
   const exposuresHTML = exposuresToWatch.length
     ? `<ul class="asset-list">${exposuresToWatch.map(exposure => {
-      const proxyTickers = exposure.sectorProxyTickers || exposure.possibleTickers || [];
+      const sectorEtfs = getExposureSectorEtfs(exposure);
       return `
       <li class="asset-card">
         <div class="asset-top">
           <h3>${escapeHtml(exposure.theme || "Exposure to watch")}</h3>
           ${exposure.directionHint ? `<span class="direction-${exposure.directionHint}">${escapeHtml(formatLabel(exposure.directionHint))}</span>` : ""}
         </div>
-        ${exposure.sectorOrThemeType ? `<p><strong>Type:</strong> ${escapeHtml(formatLabel(exposure.sectorOrThemeType))}</p>` : ""}
+        ${sectorEtfs.length ? `<div class="exposure-etfs">${sectorEtfs.map(escapeHtml).join(" ")}</div>` : ""}
         ${exposure.whyRelevant ? `<p>${escapeHtml(exposure.whyRelevant)}</p>` : ""}
-        ${proxyTickers.length ? `<p><strong>Sector proxies:</strong></p><div class="ticker-row">${proxyTickers.map(ticker => `<span class="ticker-chip neutral">${escapeHtml(ticker)}</span>`).join("")}</div>` : ""}
       </li>`;
     }).join("")}</ul>`
     : "";
