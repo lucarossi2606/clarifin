@@ -191,9 +191,12 @@ const nodeSchema = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["title", "event", "mechanism", "sector_impact", "asset_impact", "watch"],
+        required: ["title", "explanation", "direction", "time_horizon", "event", "mechanism", "sector_impact", "asset_impact", "watch"],
         properties: {
           title: { type: "string" },
+          explanation: { type: "string" },
+          direction: { type: "string", enum: ["positive", "negative", "mixed", "neutral"] },
+          time_horizon: { type: "string" },
           event: { type: "string" },
           mechanism: { type: "string" },
           sector_impact: { type: "string" },
@@ -1307,10 +1310,20 @@ function improveInvestorExplanation(node: Record<string, unknown>, researchPlan:
 
 function improveCausalChains(node: Record<string, unknown>, researchPlan: Record<string, unknown>) {
   const channels = getTransmissionChannels(researchPlan);
+  const classification = researchPlan.event_classification as Record<string, unknown> | undefined;
+  const eventType = String(classification?.event_type || "").toLowerCase();
+  const eventSign = eventType.includes("de-escalation") || eventType.includes("deescalation")
+    ? "easing"
+    : eventType.includes("escalation")
+      ? "tightening"
+      : "unclear";
   const existingChains = Array.isArray(node.causal_chain) ? node.causal_chain as Record<string, unknown>[] : [];
   const sourceChains = existingChains.length ? existingChains : channels.map((channel) => ({
     title: String(channel.channel || "Transmission channel").replace(/_/g, " "),
     event: "Event described in the input",
+    explanation: "",
+    direction: "neutral",
+    time_horizon: String(channel.time_horizon || ""),
     mechanism: channel.mechanism,
     sector_impact: "",
     asset_impact: "",
@@ -1328,6 +1341,35 @@ function improveCausalChains(node: Record<string, unknown>, researchPlan: Record
         seen.add(key);
         return true;
       });
+  };
+
+  const cleanSentence = (value: unknown) => String(value || "")
+    .replace(/\bEvent:\s*/gi, "")
+    .replace(/\bImpact:\s*/gi, "")
+    .replace(/\bMechanism:\s*/gi, "")
+    .replace(/\bWatch:\s*/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const sentence = (value: unknown) => {
+    const text = cleanSentence(value);
+    if (!text) return "";
+    return /[.!?]$/.test(text) ? text : `${text}.`;
+  };
+
+  const chainDirection = (chain: Record<string, unknown>, fallback: string) => {
+    const text = [chain.title, chain.explanation, chain.mechanism, chain.asset_impact, chain.sector_impact]
+      .map((value) => String(value || "").toLowerCase())
+      .join(" ");
+    if (eventSign === "tightening") {
+      if (textIncludesAny(text, ["defense", "safe-haven", "safe haven", "gold", "oil", "energy supply", "risk premium"])) return "positive";
+      if (textIncludesAny(text, ["travel", "airline", "airlines", "cruise", "consumer spending", "risk appetite"])) return "negative";
+    }
+    if (eventSign === "easing") {
+      if (textIncludesAny(text, ["defense", "safe-haven", "safe haven", "gold", "oil", "energy supply", "risk premium"])) return "negative";
+      if (textIncludesAny(text, ["travel", "airline", "airlines", "cruise", "consumer spending", "risk appetite", "bond", "duration"])) return "positive";
+    }
+    return fallback === "mixed" ? "neutral" : safeDirection(fallback);
   };
 
   node.causal_chain = sourceChains.slice(0, 5).map((chain, index) => {
@@ -1349,9 +1391,24 @@ function improveCausalChains(node: Record<string, unknown>, researchPlan: Record
     if (/^watch for movements/i.test(cleanImpact) || isThinText(cleanImpact)) {
       cleanImpact = baseMechanism;
     }
+    const existingExplanation = cleanSentence(chain.explanation);
+    let explanation = existingExplanation && !isThinText(existingExplanation)
+      ? sentence(existingExplanation)
+      : [
+        sentence(baseMechanism),
+        cleanImpact && cleanImpact.toLowerCase() !== baseMechanism.toLowerCase() ? sentence(cleanImpact) : "",
+      ].filter(Boolean).join(" ");
+    explanation = explanation
+      .replace(/increased risk appetite may lead to shifts in investment towards safe-haven assets/gi, "Reduced risk appetite can push investors toward safe-haven assets")
+      .replace(/increased risk appetite may lead to shifts in investment toward safe-haven assets/gi, "Reduced risk appetite can push investors toward safe-haven assets");
+    const direction = chainDirection({ ...chain, explanation }, safeDirection(chain.direction || channel.direction || "neutral"));
+    const timeHorizon = String(chain.time_horizon || channel.time_horizon || "").trim();
 
     return {
       title: String(chain.title || channel.channel || "Transmission channel").trim(),
+      explanation: explanation || "This channel matters because the event can change expectations for the affected exposure or asset group.",
+      direction,
+      time_horizon: timeHorizon,
       event,
       mechanism: baseMechanism || "The event changes expectations through the identified channel.",
       sector_impact: affectedGroups || "Relevant exposures still need verification.",
@@ -1648,7 +1705,10 @@ async function createValidatedDraft(input: {
           "- why_matters must explain broader investor relevance, not just summarize the article.",
           "- causal_chain is the main value of the node. Use the research_plan transmission_channels to explain event -> economic channel -> market effect -> sector/asset impact across governance, capital allocation, infrastructure, supply chains, demand, commodities, rates, FX, private/public-market links, or other relevant channels.",
           "- Causal chains must be concise and non-duplicative. Do not repeat the same sector names twice. Use short event -> channel -> market effect phrasing.",
-          "- For each causal chain, fit the clean mechanism into: event, mechanism, sector_impact, asset_impact, and watch. Avoid long numbered paragraphs.",
+          "- Each causal chain must include title, explanation, direction, and time_horizon. The explanation should be a natural-language analyst paragraph of 1-3 concise sentences.",
+          "- Do not write labels such as Event:, Impact:, Mechanism:, or Watch: inside causal-chain text.",
+          "- For each causal chain, explain the real transmission mechanism: event -> economic channel -> affected exposure or asset. Avoid long numbered paragraphs.",
+          "- If older compatibility fields are present, keep them concise, but put the user-facing writing in explanation.",
           "- assets_to_research is the Exposures layer. Each item must be a sector, theme, economic area, equity sector, or industry group with theme, sector_or_theme_type, why_relevant, sector_proxy_tickers, direction_hint, data_needed, time_horizon, and confidence. Do not use it as a list of concrete affected assets. Equity sector ETFs such as XLE/XLF/XLV/XLP/XLY/XLI/XLK/XLU/XLRE/XLB belong here as sector_proxy_tickers, never in affected_assets.",
           "- For broad macro or geopolitical events, include 4-7 exposure items when economically relevant, including direct, indirect, and delayed channels. Do not stop at the first obvious sector.",
           "- Direction matters: distinguish escalation from de-escalation, tighter from easier financial conditions, demand acceleration from demand weakness, and margin expansion from margin pressure. Set direction_hint from the event sign, not from a generic playbook.",

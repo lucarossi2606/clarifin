@@ -504,14 +504,38 @@ function getNodeTimeLabel(node) {
 
 function normalizeChain(item) {
   if (typeof item === "string") {
-    return { title: item, event: item, mechanism: "", sectorImpact: "", assetImpact: "", watch: "" };
+    return { title: item, explanation: item, event: item, mechanism: "", sectorImpact: "", assetImpact: "", watch: "" };
   }
+  const cleanChainText = (value) => String(value || "")
+    .replace(/\bEvent:\s*/gi, "")
+    .replace(/\bImpact:\s*/gi, "")
+    .replace(/\bMechanism:\s*/gi, "")
+    .replace(/\bWatch:\s*/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const sentence = (value) => {
+    const text = cleanChainText(value);
+    if (!text) return "";
+    return /[.!?]$/.test(text) ? text : `${text}.`;
+  };
+  const event = firstValue(item, ["event", "trigger", "what_happened"], "");
+  const mechanism = firstValue(item, ["mechanism", "why", "transmission"], "");
+  const assetImpact = firstValue(item, ["assetImpact", "asset_impact", "assets"], "");
+  const sectorImpact = firstValue(item, ["sectorImpact", "sector_impact", "impact"], "");
+  const directExplanation = firstValue(item, ["explanation", "summary", "description", "paragraph"], "");
+  const fallbackParts = [mechanism, assetImpact || sectorImpact].filter((part, index, arr) => {
+    const text = cleanChainText(part).toLowerCase();
+    return text && arr.findIndex((candidate) => cleanChainText(candidate).toLowerCase() === text) === index;
+  });
   return {
     title: firstValue(item, ["title", "name", "chain_title"], "Causal chain"),
-    event: firstValue(item, ["event", "trigger", "what_happened"], ""),
-    mechanism: firstValue(item, ["mechanism", "why", "transmission"], ""),
-    sectorImpact: firstValue(item, ["sectorImpact", "sector_impact", "impact"], ""),
-    assetImpact: firstValue(item, ["assetImpact", "asset_impact", "assets"], ""),
+    explanation: directExplanation ? sentence(directExplanation) : (fallbackParts.map(sentence).join(" ") || sentence(event)),
+    direction: normalizeDirection(firstValue(item, ["direction", "direction_hint"], "neutral")),
+    timeHorizon: firstValue(item, ["time_horizon", "timeHorizon"], ""),
+    event,
+    mechanism,
+    sectorImpact,
+    assetImpact,
     watch: firstValue(item, ["watch", "watchlist", "watch_for"], "")
   };
 }
@@ -1315,7 +1339,7 @@ function renderDetail(node) {
   const counterarguments = Array.isArray(node.counterarguments) ? node.counterarguments : [];
 
   const chainsHTML = chains.length
-    ? `<ul class="chain-list">${chains.map(c => `<li class="chain-step"><strong>${escapeHtml(c.title)}</strong><p>Event: ${escapeHtml(c.event)}</p><p>Impact: ${escapeHtml(c.assetImpact || c.sectorImpact || c.mechanism)}</p></li>`).join("")}</ul>`
+    ? `<ul class="chain-list">${chains.map(c => `<li class="chain-step"><strong>${escapeHtml(c.title)}</strong><p>${escapeHtml(c.explanation || c.assetImpact || c.sectorImpact || c.mechanism)}</p></li>`).join("")}</ul>`
     : "<p>No causal chains available yet.</p>";
   const assetsHTML = affectedAssets.length
     ? `<ul class="asset-list">${affectedAssets.map(a => `<li class="asset-card"><div class="asset-top"><h3>${escapeHtml(a.name || a.ticker)}</h3><span class="direction-${a.direction}">${escapeHtml(formatLabel(a.direction))}</span></div>${a.assetClass ? `<p><strong>${escapeHtml(formatLabel(a.assetClass))}</strong></p>` : ""}<p>${escapeHtml(a.reason)}</p></li>`).join("")}</ul>`
