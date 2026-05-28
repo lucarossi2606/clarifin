@@ -147,7 +147,7 @@ button { border: 0; font: inherit; background: none; padding: 0; cursor: pointer
 details.detail-card summary { padding: var(--sp-5); font-size: 16px; font-weight: 700; color: var(--text-main); list-style: none; display: flex; justify-content: space-between; align-items: center; }
 details.detail-card summary::-webkit-details-marker { display: none; }
 details.detail-card summary::after { content: "+"; font-size: 18px; font-weight: 700; color: var(--text-muted); }
-details.detail-card[open] summary::after { content: "âˆ’"; }
+details.detail-card[open] summary::after { content: "-"; }
 
 .detail-body { padding: 0 var(--sp-5) var(--sp-5) var(--sp-5); font-size: 14px; line-height: 1.5; color: var(--text-muted); font-weight: 400; }
 .detail-body p, .detail-body li { font-family: inherit; font-size: 14px; line-height: 1.5; color: var(--text-muted); font-weight: 400; }
@@ -221,7 +221,7 @@ details.detail-card[open] summary::after { content: "âˆ’"; }
 
         <section class="screen detail-screen" id="detail-screen" hidden>
           <div class="detail-controls">
-            <button class="action-btn liquid-glass" id="back-button" type="button">â† Back</button>
+            <button class="action-btn liquid-glass" id="back-button" type="button">Back</button>
             <button class="action-btn liquid-glass" id="save-node" type="button">Save</button>
           </div>
 
@@ -454,7 +454,7 @@ function getImpactLabel(score) {
   if (impact >= 90) return "Very high";
   if (impact >= 75) return "High";
   if (impact >= 55) return "Medium";
-  return "Low / Watch";
+  return "Low";
 }
 
 function slugify(value) {
@@ -963,11 +963,16 @@ function getNode(id) {
 }
 
 function getTickers(node) {
+  const preferredOrder = ["USO", "GLD", "TLT", "SPY", "QQQ", "BND", "BRENT CRUDE", "WTI CRUDE", "DXY"];
+  const priority = (ticker) => {
+    const index = preferredOrder.indexOf(String(ticker || "").trim().toUpperCase());
+    return index === -1 ? 99 : index;
+  };
   return (Array.isArray(node.affectedAssets) ? node.affectedAssets : [])
     .filter(isValidatedAsset)
     .slice()
-    .sort((a, b) => directionOrder[a.direction] - directionOrder[b.direction])
-    .slice(0, 4)
+    .sort((a, b) => priority(a.ticker) - priority(b.ticker) || directionOrder[a.direction] - directionOrder[b.direction])
+    .slice(0, 3)
     .map((asset) => ({ ticker: asset.ticker, direction: asset.direction }));
 }
 
@@ -1291,12 +1296,12 @@ function renderDetail(node) {
   
   document.querySelector("#impact-label").textContent = `Impact ${node.impact} / ${node.impactLabel}`;
   document.querySelector("#confidence-label").textContent = `Confidence ${node.confidence} / ${node.confidenceLabel}`;
-  document.querySelector("#event-type-label").textContent = node.eventType ? formatLabel(node.eventType) : "";
-  document.querySelector("#event-status-label").textContent = node.eventStatus ? formatLabel(node.eventStatus) : "";
   document.querySelector("#impact-label").hidden = false;
   document.querySelector("#confidence-label").hidden = false;
-  document.querySelector("#event-type-label").hidden = !node.eventType;
-  document.querySelector("#event-status-label").hidden = !node.eventStatus;
+  document.querySelector("#event-type-label").hidden = true;
+  document.querySelector("#event-status-label").hidden = true;
+  document.querySelector("#event-type-label").textContent = "";
+  document.querySelector("#event-status-label").textContent = "";
 
   const isSaved = savedNodeIds.includes(node.id);
   saveButton.hidden = false;
@@ -1308,13 +1313,12 @@ function renderDetail(node) {
   const exposuresToWatch = Array.isArray(node.exposuresToWatch) ? node.exposuresToWatch : (Array.isArray(node.researchExposures) ? node.researchExposures : []);
   const scenarios = Array.isArray(node.scenarios) ? node.scenarios : [];
   const counterarguments = Array.isArray(node.counterarguments) ? node.counterarguments : [];
-  const sources = Array.isArray(node.sources) ? node.sources : [];
 
   const chainsHTML = chains.length
-    ? `<ul class="chain-list">${chains.map(c => `<li class="chain-step"><strong>${escapeHtml(c.title)}</strong><p>Event: ${escapeHtml(c.event)}</p><p>Impact: ${escapeHtml(c.sectorImpact)}</p></li>`).join("")}</ul>`
+    ? `<ul class="chain-list">${chains.map(c => `<li class="chain-step"><strong>${escapeHtml(c.title)}</strong><p>Event: ${escapeHtml(c.event)}</p><p>Impact: ${escapeHtml(c.assetImpact || c.sectorImpact || c.mechanism)}</p></li>`).join("")}</ul>`
     : "<p>No causal chains available yet.</p>";
   const assetsHTML = affectedAssets.length
-    ? `<ul class="asset-list">${affectedAssets.map(a => `<li class="asset-card"><div class="asset-top"><h3>${escapeHtml(a.ticker)}</h3><span class="direction-${a.direction}">${escapeHtml(a.direction)}</span></div>${a.assetClass ? `<p><strong>Asset class:</strong> ${escapeHtml(formatLabel(a.assetClass))}</p>` : ""}${a.strength ? `<p><strong>Strength:</strong> ${escapeHtml(formatLabel(a.strength))}</p>` : ""}<p>${escapeHtml(a.reason)}</p>${a.uncertainty ? `<p><strong>Uncertainty:</strong> ${escapeHtml(a.uncertainty)}</p>` : ""}</li>`).join("")}</ul>`
+    ? `<ul class="asset-list">${affectedAssets.map(a => `<li class="asset-card"><div class="asset-top"><h3>${escapeHtml(a.name || a.ticker)}</h3><span class="direction-${a.direction}">${escapeHtml(formatLabel(a.direction))}</span></div>${a.assetClass ? `<p><strong>${escapeHtml(formatLabel(a.assetClass))}</strong></p>` : ""}<p>${escapeHtml(a.reason)}</p></li>`).join("")}</ul>`
     : "<p>No concrete affected assets yet.</p>";
   const exposuresHTML = exposuresToWatch.length
     ? `<ul class="asset-list">${exposuresToWatch.map(exposure => {
@@ -1323,13 +1327,11 @@ function renderDetail(node) {
       <li class="asset-card">
         <div class="asset-top">
           <h3>${escapeHtml(exposure.theme || "Exposure to watch")}</h3>
-          ${exposure.directionHint ? `<span class="direction-${exposure.directionHint}">${escapeHtml(exposure.directionHint)}</span>` : ""}
+          ${exposure.directionHint ? `<span class="direction-${exposure.directionHint}">${escapeHtml(formatLabel(exposure.directionHint))}</span>` : ""}
         </div>
         ${exposure.sectorOrThemeType ? `<p><strong>Type:</strong> ${escapeHtml(formatLabel(exposure.sectorOrThemeType))}</p>` : ""}
         ${exposure.whyRelevant ? `<p>${escapeHtml(exposure.whyRelevant)}</p>` : ""}
         ${proxyTickers.length ? `<p><strong>Sector proxies:</strong></p><div class="ticker-row">${proxyTickers.map(ticker => `<span class="ticker-chip neutral">${escapeHtml(ticker)}</span>`).join("")}</div>` : ""}
-        ${exposure.timeHorizon ? `<p><strong>Time horizon:</strong> ${escapeHtml(formatLabel(exposure.timeHorizon))}</p>` : ""}
-        ${exposure.dataNeeded ? `<p><strong>Data needed:</strong> ${escapeHtml(exposure.dataNeeded)}</p>` : ""}
       </li>`;
     }).join("")}</ul>`
     : "";
@@ -1339,9 +1341,6 @@ function renderDetail(node) {
   const countersHTML = counterarguments.length
     ? `<ul class="counter-list">${counterarguments.map(c => `<li><p>${escapeHtml(c)}</p></li>`).join("")}</ul>`
     : "<p>No counterarguments available yet.</p>";
-  const sourcesHTML = sources.length
-    ? `<p>${sources.map(escapeHtml).join(", ")}</p>`
-    : "<p>No sources available yet.</p>";
 
   detailSections.innerHTML = [
     section("Why it matters", `<p>${escapeHtml(node.whyMatters)}</p>`, true),
@@ -1349,8 +1348,7 @@ function renderDetail(node) {
     section("Affected Assets", assetsHTML),
     ...(exposuresHTML ? [section("Exposures to watch", exposuresHTML)] : []),
     section("Scenarios", scenariosHTML),
-    section("Counterarguments", countersHTML),
-    section("Sources", sourcesHTML)
+    section("Counterarguments", countersHTML)
   ].join("");
 
   if (node.isSupabaseNode && !exposuresToWatch.length && !node.exposuresLoaded) {

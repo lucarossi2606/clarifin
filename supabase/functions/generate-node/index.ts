@@ -848,7 +848,7 @@ const broadSectorLabelSet = new Set([
 const broadConcreteAffectedAssetSet = new Set([
   "SPY", "QQQ", "DIA", "IWM", "DAX", "SX5E", "EXS1",
   "TLT", "BND", "IEF", "US10Y", "BUND YIELD",
-  "BRENT", "WTI", "OIL", "GOLD", "USO", "GLD",
+  "BRENT", "WTI", "BRENT CRUDE", "WTI CRUDE", "USO", "GLD",
   "DXY", "EUR/USD", "USD/JPY", "GBP/USD",
 ]);
 
@@ -881,7 +881,7 @@ function isAllowedConcreteAffectedAsset(asset: Record<string, unknown>, accepted
   const name = String(asset.name || "").trim().toUpperCase();
   const assetClass = String(asset.asset_class || "other").trim().toLowerCase();
   const looksLikeTicker = /^[A-Z][A-Z0-9.]{0,12}$/.test(ticker);
-  const looksLikeCrossAsset = /^[A-Z]{2,5}\/[A-Z]{2,5}$/.test(ticker) || ["US10Y", "BUND YIELD", "BRENT", "WTI", "OIL", "GOLD"].includes(ticker);
+  const looksLikeCrossAsset = /^[A-Z]{2,5}\/[A-Z]{2,5}$/.test(ticker) || ["US10Y", "BUND YIELD", "BRENT", "WTI", "BRENT CRUDE", "WTI CRUDE"].includes(ticker);
   const accepted = acceptedTickerEvidence.includes(ticker);
 
   if (isInvalidAssetLabel(ticker) || isSectorEtfProxy(ticker)) return false;
@@ -912,8 +912,13 @@ function getResearchText(rawEventText: string, plan: Record<string, unknown>) {
 
 function detectEventSign(rawEventText: string, plan: Record<string, unknown>) {
   const text = getResearchText(rawEventText, plan);
+  const classification = plan.event_classification as Record<string, unknown> | undefined;
+  const eventType = String(classification?.event_type || "").toLowerCase();
+  if (eventType.includes("de-escalation") || eventType.includes("deescalation")) return "easing";
+  if (eventType.includes("escalation") && !eventType.includes("de-escalation") && !eventType.includes("deescalation")) return "tightening";
+  const signText = text.replace(/de[-\s]?escalation/g, "deescalation");
   const easingTerms = [
-    "de-escalation",
+    "deescalation",
     "deescalation",
     "ceasefire",
     "truce",
@@ -948,8 +953,8 @@ function detectEventSign(rawEventText: string, plan: Record<string, unknown>) {
     "risk premium up",
     "risk premium higher",
   ];
-  const easingScore = easingTerms.filter((term) => text.includes(term)).length;
-  const tighteningScore = tighteningTerms.filter((term) => text.includes(term)).length;
+  const easingScore = easingTerms.filter((term) => signText.includes(term)).length;
+  const tighteningScore = tighteningTerms.filter((term) => signText.includes(term)).length;
   if (easingScore > tighteningScore) return "easing";
   if (tighteningScore > easingScore) return "tightening";
   return "unclear";
@@ -961,15 +966,96 @@ function hasUncertaintyLanguage(rawEventText: string) {
 }
 
 function signDirection(sign: string, tighteningDirection: string, easingDirection: string, uncertain = false) {
-  if (uncertain) return "mixed";
   if (sign === "tightening") return tighteningDirection;
   if (sign === "easing") return easingDirection;
-  return "mixed";
+  return uncertain ? "neutral" : "neutral";
+}
+
+function directionalHintForExposure(item: Record<string, unknown>, sign: string) {
+  const text = [
+    item.theme,
+    item.sector_or_theme_type,
+    item.why_relevant,
+  ].map((value) => String(value || "").toLowerCase()).join(" ");
+  const current = safeDirection(item.direction_hint);
+
+  if (sign === "easing" || sign === "tightening") {
+    const negativeWhenEasing = ["energy", "oil", "gas", "lng", "safe haven", "safe-haven", "gold", "defense"];
+    const positiveWhenEasing = ["consumer", "airline", "transport", "shipping", "rate-sensitive", "bond", "duration", "growth", "equity", "risk appetite", "real estate"];
+    if (textIncludesAny(text, negativeWhenEasing)) return sign === "easing" ? "negative" : "positive";
+    if (textIncludesAny(text, positiveWhenEasing)) return sign === "easing" ? "positive" : "negative";
+  }
+
+  return current === "mixed" ? "neutral" : current;
+}
+
+function splitOpposingExposure(item: Record<string, unknown>, sign: string) {
+  const text = [item.theme, item.why_relevant, item.sector_or_theme_type]
+    .map((value) => String(value || "").toLowerCase())
+    .join(" ");
+  if (sign !== "easing" && sign !== "tightening") return [item];
+
+  const splitItems: Record<string, unknown>[] = [];
+  const hasDefense = textIncludesAny(text, ["defense", "aerospace"]);
+  const hasTransport = textIncludesAny(text, ["airline", "airlines", "transport", "shipping"]);
+  const hasEnergy = textIncludesAny(text, ["lng", "energy", "oil", "gas"]);
+  const proxyValues = Array.isArray(item.sector_proxy_tickers)
+    ? item.sector_proxy_tickers
+    : Array.isArray(item.possible_tickers_to_check)
+      ? item.possible_tickers_to_check
+      : [];
+
+  if (hasDefense && hasTransport) {
+    splitItems.push({
+      ...item,
+      theme: "Defense",
+      sector_or_theme_type: "theme",
+      why_relevant: "Lower geopolitical risk can reduce the immediate risk-premium narrative for defense demand.",
+      sector_proxy_tickers: [],
+      possible_tickers_to_check: [],
+      direction_hint: sign === "easing" ? "negative" : "positive",
+    });
+    splitItems.push({
+      ...item,
+      theme: "Airlines / Transport",
+      sector_or_theme_type: "industry_group",
+      why_relevant: "Lower fuel and disruption risk can support transport margins if the de-escalation is confirmed.",
+      sector_proxy_tickers: [],
+      possible_tickers_to_check: [],
+      direction_hint: sign === "easing" ? "positive" : "negative",
+    });
+    return splitItems;
+  }
+
+  if (hasEnergy && hasTransport) {
+    splitItems.push({
+      ...item,
+      theme: hasEnergy ? "Energy" : String(item.theme || "Energy"),
+      sector_or_theme_type: "theme",
+      why_relevant: "Lower disruption risk can reduce the energy risk premium if confirmed.",
+      sector_proxy_tickers: cleanSectorProxyTickers(proxyValues),
+      possible_tickers_to_check: cleanSectorProxyTickers(proxyValues),
+      direction_hint: sign === "easing" ? "negative" : "positive",
+    });
+    splitItems.push({
+      ...item,
+      theme: "Shipping / Transport",
+      sector_or_theme_type: "industry_group",
+      why_relevant: "Lower route disruption and insurance risk can support transport economics if confirmed.",
+      sector_proxy_tickers: [],
+      possible_tickers_to_check: [],
+      direction_hint: sign === "easing" ? "positive" : "negative",
+    });
+    return splitItems;
+  }
+
+  return [item];
 }
 
 function addInferredAsset(
   assets: Record<string, unknown>[],
   ticker: string,
+  name: string,
   assetClass: string,
   direction: string,
   strength: string,
@@ -981,7 +1067,7 @@ function addInferredAsset(
   assets.push({
     ticker: normalized,
     ticker_or_asset: normalized,
-    name: normalized,
+    name,
     asset_class: assetClass,
     direction,
     strength,
@@ -1008,19 +1094,21 @@ function inferConcreteMacroAffectedAssets(rawEventText: string, plan: Record<str
     const direction = signDirection(sign, "positive", "negative", uncertain);
     addInferredAsset(
       assets,
-      "OIL",
+      "BRENT CRUDE",
+      "Brent Crude",
       "commodity",
       direction,
-      uncertain ? "watch" : "medium",
-      `Oil is a concrete commodity exposure because ${signText} can change supply-risk premia, transport costs, and inflation expectations.`,
+      "medium",
+      `If confirmed, ${signText} can change the crude oil risk premium, transport costs, and inflation expectations.`,
       uncertainty,
     );
     addInferredAsset(
       assets,
       "USO",
+      "USO",
       "commodity",
       direction,
-      "watch",
+      "medium",
       "USO is a commodity proxy to monitor the oil-price channel, not an equity-sector exposure.",
       uncertainty,
     );
@@ -1030,19 +1118,11 @@ function inferConcreteMacroAffectedAssets(rawEventText: string, plan: Record<str
     const direction = signDirection(sign, "positive", "negative", uncertain);
     addInferredAsset(
       assets,
-      "GOLD",
-      "commodity",
-      direction,
-      uncertain ? "watch" : "medium",
-      `Gold is a concrete safe-haven commodity exposure because ${signText} can change demand for geopolitical hedges.`,
-      uncertainty,
-    );
-    addInferredAsset(
-      assets,
+      "GLD",
       "GLD",
       "commodity",
       direction,
-      "watch",
+      "medium",
       "GLD is a gold-price proxy to monitor the safe-haven channel, not an equity-sector exposure.",
       uncertainty,
     );
@@ -1053,19 +1133,11 @@ function inferConcreteMacroAffectedAssets(rawEventText: string, plan: Record<str
     addInferredAsset(
       assets,
       "TLT",
+      "TLT",
       "bond",
       direction,
-      uncertain ? "watch" : "medium",
+      "medium",
       `TLT is a duration proxy because ${signText} can affect inflation expectations, yields, and long-duration bond prices.`,
-      uncertainty,
-    );
-    addInferredAsset(
-      assets,
-      "BND",
-      "bond",
-      "mixed",
-      "watch",
-      "BND is a broad bond-market proxy; the net effect depends on whether inflation pressure, growth fears, or safe-haven demand dominates.",
       uncertainty,
     );
   }
@@ -1074,9 +1146,10 @@ function inferConcreteMacroAffectedAssets(rawEventText: string, plan: Record<str
     addInferredAsset(
       assets,
       "DXY",
+      "DXY",
       "currency",
-      "mixed",
-      "watch",
+      "neutral",
+      "medium",
       "DXY is a concrete currency proxy; the dollar response depends on relative risk appetite, oil prices, and rate expectations.",
       uncertainty,
     );
@@ -1087,21 +1160,25 @@ function inferConcreteMacroAffectedAssets(rawEventText: string, plan: Record<str
     addInferredAsset(
       assets,
       "SPY",
+      "SPY",
       "index",
       direction,
-      "watch",
+      "medium",
       `SPY is a broad equity-index proxy because ${signText} can move risk appetite and discount-rate expectations.`,
       uncertainty,
     );
-    addInferredAsset(
-      assets,
-      "QQQ",
-      "index",
-      direction,
-      "watch",
-      "QQQ is a growth-equity index proxy; the channel matters only if rates, inflation expectations, or risk appetite move materially.",
-      uncertainty,
-    );
+    if (textIncludesAny(text, ["growth stocks", "growth equities", "technology", "long-duration equities"])) {
+      addInferredAsset(
+        assets,
+        "QQQ",
+        "QQQ",
+        "index",
+        direction,
+        "medium",
+        "QQQ is a growth-equity index proxy; the channel matters only if rates, inflation expectations, or risk appetite move materially.",
+        uncertainty,
+      );
+    }
   }
 
   return assets;
@@ -1130,7 +1207,7 @@ function getSectorEtfExposuresFromAffectedAssets(validatedDraft: Record<string, 
     .filter(Boolean) as Record<string, unknown>[];
 }
 
-function getAssetsToResearch(validatedDraft: Record<string, unknown>, researchPlan: Record<string, unknown>) {
+function getAssetsToResearch(validatedDraft: Record<string, unknown>, researchPlan: Record<string, unknown>, rawEventText = "") {
   const generated = Array.isArray(validatedDraft.assets_to_research)
     ? validatedDraft.assets_to_research as Record<string, unknown>[]
     : [];
@@ -1138,6 +1215,7 @@ function getAssetsToResearch(validatedDraft: Record<string, unknown>, researchPl
     ? researchPlan.potentially_affected_assets_to_research as Record<string, unknown>[]
     : [];
   const sectorEtfExposures = getSectorEtfExposuresFromAffectedAssets(validatedDraft);
+  const eventSign = detectEventSign(rawEventText, researchPlan);
   const channelAssets = getTransmissionChannels(researchPlan).map((channel) => {
     const proxyTickers = Array.isArray(channel.possible_public_assets_to_check)
       ? cleanSectorProxyTickers(channel.possible_public_assets_to_check)
@@ -1171,7 +1249,7 @@ function getAssetsToResearch(validatedDraft: Record<string, unknown>, researchPl
       confidence: asset.needs_verification ? 25 : 35,
     })) : []),
     ...(fallbackNeeded ? channelAssets : []),
-  ].map((item) => {
+  ].flatMap((item) => splitOpposingExposure(item, eventSign)).map((item) => {
     const sectorProxyTickers = Array.isArray(item.sector_proxy_tickers)
       ? item.sector_proxy_tickers
       : Array.isArray(item.possible_tickers_to_check)
@@ -1184,7 +1262,7 @@ function getAssetsToResearch(validatedDraft: Record<string, unknown>, researchPl
       why_relevant: String(item.why_relevant || "").trim(),
       sector_proxy_tickers: cleanProxyTickers,
       possible_tickers_to_check: cleanProxyTickers,
-      direction_hint: String(item.direction_hint || "mixed").trim().toLowerCase(),
+      direction_hint: directionalHintForExposure(item, eventSign),
       data_needed: String(item.data_needed || "").trim(),
       time_horizon: String(item.time_horizon || "").trim(),
       confidence: normalizeScore(item.confidence, 35),
@@ -1239,45 +1317,46 @@ function improveCausalChains(node: Record<string, unknown>, researchPlan: Record
     watch: "",
   }));
 
+  const cleanList = (values: unknown[]) => {
+    const seen = new Set<string>();
+    return values
+      .map((value) => String(value || "").trim())
+      .filter(Boolean)
+      .filter((value) => {
+        const key = value.toLowerCase().replace(/\s+/g, " ");
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  };
+
   node.causal_chain = sourceChains.slice(0, 5).map((chain, index) => {
     const channel = channels[index] || {};
-    const affectedGroups = uniqueStrings([
+    const affectedGroups = cleanList([
       ...(Array.isArray(channel.directly_affected_entities) ? channel.directly_affected_entities : []),
       ...(Array.isArray(channel.indirectly_affected_entities_to_research) ? channel.indirectly_affected_entities_to_research : []),
-      String(chain.sector_impact || ""),
-    ]).join(", ");
-    const possibleAssets = Array.isArray(channel.possible_public_assets_to_check)
-      ? uniqueStrings(channel.possible_public_assets_to_check)
-        .map((item) => String(item || "").trim().toUpperCase())
-        .filter(isConcreteAffectedAssetLabel)
-        .join(", ")
-      : "";
-    const hasSectorProxy = Array.isArray(channel.possible_public_assets_to_check)
-      ? channel.possible_public_assets_to_check.some((item) => isSectorEtfProxy(item))
-      : false;
+    ]).slice(0, 5).join(", ");
     const missingData = Array.isArray(channel.missing_data)
       ? uniqueStrings(channel.missing_data).join("; ")
       : String(chain.watch || "");
-    const timeHorizon = String(channel.time_horizon || "").trim() || "unknown";
     const baseMechanism = String(channel.mechanism || chain.mechanism || "").trim();
     const event = String(chain.event || "Event described in the input").trim();
+    let cleanImpact = String(chain.asset_impact || chain.sector_impact || "")
+      .replace(/\bpossible tickers? to check[^.]*\./gi, "")
+      .replace(/\bnot validated affected assets[^.]*\./gi, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (/^watch for movements/i.test(cleanImpact) || isThinText(cleanImpact)) {
+      cleanImpact = baseMechanism;
+    }
 
     return {
       title: String(chain.title || channel.channel || "Transmission channel").trim(),
       event,
-      mechanism: [
-        `1) Trigger: ${event}`,
-        `2) Transmission: ${baseMechanism || "The event changes expectations through the identified channel."}`,
-        `3) Affected groups: ${affectedGroups || "asset groups still need to be identified and verified."}`,
-        `4) Verification: ${missingData || "confirm the size, duration, and market relevance of the channel."}`,
-      ].join(" -> "),
-      sector_impact: `Sectors or asset groups affected: ${affectedGroups || "to research"}.`,
-      asset_impact: [
-        `Possible direction: ${String(chain.asset_impact || "depends on exposure, pricing power, hedging, and duration").trim()}.`,
-        possibleAssets ? `Possible tickers to check, not validated affected assets: ${possibleAssets}.` : "",
-        hasSectorProxy ? "Equity-sector ETF proxies are handled separately in Exposures to watch, not as affected assets." : "",
-      ].filter(Boolean).join(" "),
-      watch: `Time horizon: ${timeHorizon}. Needs verification: ${missingData || "event duration, exposure, and market pricing."}`,
+      mechanism: baseMechanism || "The event changes expectations through the identified channel.",
+      sector_impact: affectedGroups || "Relevant exposures still need verification.",
+      asset_impact: cleanImpact || baseMechanism || "The market effect depends on the size, duration, and confirmation of the event.",
+      watch: missingData || "Confirm the size, duration, and market relevance of the channel.",
     };
   });
 }
@@ -1341,7 +1420,7 @@ function applyConservativeGuardrails(args: {
         reason: [
           `${ticker} appears in the input or was provided by the user, so it can be tracked as a directly mentioned public-market symbol.`,
           marketReaction ? `Evidence: ${marketReaction.evidence}` : "Evidence: the ticker was directly mentioned by the user/input.",
-          "Uncertainty: the instrument, exposure, and causal link still require verification before treating it as a strong affected asset.",
+          "The instrument, exposure, and causal link still require verification before treating it as a strong affected asset.",
         ].join(" "),
       });
     }
@@ -1371,7 +1450,7 @@ function applyConservativeGuardrails(args: {
       asset.reason = [
         `${ticker} is a user-mentioned public-market symbol, but the draft mapped it to another named entity without verified exposure. The instrument must not be treated as the underlying company itself without holdings/exposure verification.`,
         reason ? `Original model reason: ${reason}` : "",
-        "Uncertainty: verify what the instrument holds, whether exposure is direct or indirect, and whether it is investable for the user.",
+        "Verify what the instrument holds, whether exposure is direct or indirect, and whether it is investable for the user.",
       ].filter(Boolean).join(" ");
     }
 
@@ -1552,7 +1631,8 @@ async function createValidatedDraft(input: {
           "- A ticker is evidence-supported when it is directly mentioned with a cashtag, explicitly provided by the user, or tied to a stated market reaction.",
           "- Directly mentioned assets may be included, but direction still needs evidence.",
           "- If a market reaction is mentioned, direction must incorporate it.",
-          "- If evidence is weak, use mixed or neutral.",
+          "- Direction labels should usually be positive, negative, or neutral. Use mixed only when the directional case is genuinely unclear or two opposing forces are equally important.",
+          "- If the likely market direction is clear but the event is unconfirmed, still choose the likely direction and reflect uncertainty in reason/uncertainty instead of defaulting to mixed.",
           "- Do not mark an asset positive just because a strategy sounds exciting.",
           "- Separate immediate market reaction from long-term strategy.",
           "- Private companies must be private_not_directly_tradable.",
@@ -1567,12 +1647,16 @@ async function createValidatedDraft(input: {
           "- Be specific and conservative.",
           "- why_matters must explain broader investor relevance, not just summarize the article.",
           "- causal_chain is the main value of the node. Use the research_plan transmission_channels to explain event -> economic channel -> market effect -> sector/asset impact across governance, capital allocation, infrastructure, supply chains, demand, commodities, rates, FX, private/public-market links, or other relevant channels.",
-          "- For each causal chain, include the event/trigger, a 2-4 step mechanism, sectors or asset groups affected, possible direction, time horizon, and what needs verification. Fit those details into the existing fields: event, mechanism, sector_impact, asset_impact, and watch.",
+          "- Causal chains must be concise and non-duplicative. Do not repeat the same sector names twice. Use short event -> channel -> market effect phrasing.",
+          "- For each causal chain, fit the clean mechanism into: event, mechanism, sector_impact, asset_impact, and watch. Avoid long numbered paragraphs.",
           "- assets_to_research is the Exposures layer. Each item must be a sector, theme, economic area, equity sector, or industry group with theme, sector_or_theme_type, why_relevant, sector_proxy_tickers, direction_hint, data_needed, time_horizon, and confidence. Do not use it as a list of concrete affected assets. Equity sector ETFs such as XLE/XLF/XLV/XLP/XLY/XLI/XLK/XLU/XLRE/XLB belong here as sector_proxy_tickers, never in affected_assets.",
           "- For broad macro or geopolitical events, include 4-7 exposure items when economically relevant, including direct, indirect, and delayed channels. Do not stop at the first obvious sector.",
           "- Direction matters: distinguish escalation from de-escalation, tighter from easier financial conditions, demand acceleration from demand weakness, and margin expansion from margin pressure. Set direction_hint from the event sign, not from a generic playbook.",
-          "- Use positive or negative direction_hint when the event sign clearly eases or pressures an exposure if confirmed. Use mixed only when opposing forces are central or the input is too vague.",
+          "- Use positive or negative direction_hint when the event sign clearly eases or pressures an exposure if confirmed. Unconfirmed does not automatically mean mixed. Use mixed only when opposing forces are central or the input is too vague.",
+          "- Do not combine exposure themes with opposite likely directions into one item. Split them into separate exposure cards, for example defense versus airlines, or energy versus transport.",
           "- sector_proxy_tickers should contain equity sector proxies such as XLE, XLF, XLV, XLP, XLY, XLI, XLK, XLU, XLRE, and XLB. Do not place commodity proxies, bond proxies, currencies, broad index ETFs, or individual stocks in sector_proxy_tickers.",
+          "- For affected_assets, avoid vague labels such as OIL or GOLD. Prefer concrete instruments or products such as Brent Crude, WTI Crude, USO, GLD, TLT, BND, SPY, QQQ, DXY, EUR/USD, or directly justified individual stocks.",
+          "- Do not duplicate the same economic channel with too many near-identical affected assets. Prefer the cleanest useful product list.",
           "- Explain direct, indirect, and delayed impacts, but keep unverified indirect assets out of affected_assets.",
           "- Impact and confidence are 0-100 scores, not 1-5 ratings.",
           "- Avoid generic phrases unless supported by a specific mechanism.",
@@ -1641,12 +1725,7 @@ function normalizeGeneratedNode(generated: Record<string, unknown>, sourceUrls: 
         direction: safeDirection(asset.direction),
         strength: ["high", "medium", "watch"].includes(strength) ? strength : "watch",
         uncertainty,
-        reason: [
-          reason,
-          `Asset class: ${assetClass}.`,
-          evidence ? `Evidence: ${evidence}` : "",
-          uncertainty ? `Uncertainty: ${uncertainty}` : "",
-        ].filter(Boolean).join(" "),
+        reason: reason || evidence || "Concrete instrument to monitor through this event channel.",
       };
     })
     .filter((asset: Record<string, string>) => asset.ticker && asset.reason && !isInvalidAssetLabel(asset.ticker) && !isInvalidAssetLabel(asset.name) && !isSectorEtfProxy(asset.ticker) && !isBroadSectorOrThemeLabel(asset.ticker) && !isBroadSectorOrThemeLabel(asset.name));
@@ -1706,7 +1785,7 @@ Deno.serve(async (req) => {
       rawEventText,
       tickers,
     });
-    const assetsToResearch = getAssetsToResearch(validatedDraft, researchPlan);
+    const assetsToResearch = getAssetsToResearch(validatedDraft, researchPlan, rawEventText);
 
     const { data: node, error: nodeError } = await supabase
       .from("nodes")
