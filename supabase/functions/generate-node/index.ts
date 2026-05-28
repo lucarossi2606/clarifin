@@ -1129,6 +1129,15 @@ const broadConcreteAffectedAssetSet = new Set([
   "EEM", "EWZ", "EWW",
 ]);
 
+const oilCommodityAssets = new Set(["BRENT", "BRENT CRUDE", "WTI", "WTI CRUDE", "USO"]);
+const safeHavenAssets = new Set(["GLD", "GOLD"]);
+const currencyAssets = new Set(["DXY", "EUR/USD", "USD/JPY", "GBP/USD"]);
+const broadIndexAssets = new Set(["SPY", "QQQ", "DIA", "IWM", "DAX", "SX5E", "EXS1", "EEM", "EWZ", "EWW"]);
+const bondRateAssets = new Set(["TLT", "BND", "IEF", "SHY", "US10Y", "BUND YIELD"]);
+const defenseAssets = new Set(["LMT", "NOC", "RTX", "GD"]);
+const cruiseAssets = new Set(["CCL", "RCL", "NCLH"]);
+const airlineAssets = new Set(["DAL", "UAL", "AAL", "LUV"]);
+
 function cleanSectorProxyTickers(values: unknown[]) {
   return uniqueStrings(values)
     .map((ticker) => String(ticker || "").trim().toUpperCase())
@@ -1367,7 +1376,7 @@ function inferConcreteMacroAffectedAssets(rawEventText: string, plan: Record<str
     ? "The report or event details are not fully confirmed, so direction should remain mixed unless market data confirms the channel."
     : "The channel still needs verification through prices, positioning, and follow-up data.";
 
-  if (textIncludesAny(text, ["oil", "crude", "brent", "wti", "energy supply", "supply risk", "shipping risk", "risk premium", "lng"])) {
+  if (hasConcreteOilChannel(rawEventText.toLowerCase())) {
     const direction = signDirection(sign, "positive", "negative", uncertain);
     addInferredAsset(
       assets,
@@ -1644,6 +1653,456 @@ function hasEquivalentAsset(assets: Record<string, unknown>[], ticker: string) {
   return assets.some((asset) => equivalentAssetKeys(asset.ticker).some((key) => keys.includes(key)));
 }
 
+function getFactPackHeadlineText(factPack?: Record<string, unknown>) {
+  if (!factPack) return "";
+  const headlines = Array.isArray(factPack.related_news_headlines)
+    ? factPack.related_news_headlines as Record<string, unknown>[]
+    : Array.isArray(factPack.related_news)
+      ? factPack.related_news as Record<string, unknown>[]
+      : [];
+  return headlines
+    .map((item) => [item.title, item.domain].filter(Boolean).join(" "))
+    .join(" ")
+    .toLowerCase();
+}
+
+function hasConcreteOilChannel(text: string) {
+  const hasOilTerm = textIncludesAny(text, [
+    "oil",
+    "crude",
+    "brent",
+    "wti",
+    "uso",
+    "fuel",
+    "energy supply",
+    "petroleum",
+    "lng",
+    "gas supply",
+  ]);
+  const hasConcreteChannel = textIncludesAny(text, [
+    "oil supply",
+    "crude supply",
+    "energy supply",
+    "commodity supply",
+    "supply disruption",
+    "supply shock",
+    "production",
+    "exports",
+    "imports",
+    "sanctions",
+    "embargo",
+    "blockade",
+    "tanker",
+    "shipping route",
+    "trade route",
+    "chokepoint",
+    "strait",
+    "canal",
+    "pipeline",
+    "refinery",
+    "opec",
+    "fuel cost",
+    "fuel costs",
+    "fuel prices",
+    "energy security",
+    "commodity channel",
+  ]);
+  return hasOilTerm && hasConcreteChannel;
+}
+
+function strictChannelGate(args: {
+  asset: Record<string, unknown>;
+  rawEventText: string;
+  researchPlan: Record<string, unknown>;
+  researchFactPack?: Record<string, unknown>;
+  acceptedTickerEvidence: string[];
+}) {
+  const ticker = String(args.asset.ticker || args.asset.ticker_or_asset || "").trim().toUpperCase();
+  const name = String(args.asset.name || "").trim().toUpperCase();
+  const rawAndFactText = `${args.rawEventText} ${getFactPackHeadlineText(args.researchFactPack)}`.toLowerCase();
+  const directEvidence = args.acceptedTickerEvidence.includes(ticker)
+    || textIncludesAny(rawAndFactText, equivalentAssetKeys(ticker).map((key) => key.toLowerCase()))
+    || (name && textIncludesAny(rawAndFactText, [name.toLowerCase()]));
+
+  const hasDefenseChannel = textIncludesAny(rawAndFactText, [
+    "defense",
+    "military",
+    "security escalation",
+    "security risk",
+    "deployment",
+    "deployments",
+    "aerospace",
+    "missile",
+    "naval",
+    "surveillance",
+    "contractors",
+  ]);
+  const hasTravelChannel = textIncludesAny(rawAndFactText, [
+    "cruise",
+    "caribbean travel",
+    "tourism",
+    "travel demand",
+    "booking",
+    "bookings",
+    "route disruption",
+    "route uncertainty",
+    "airline",
+    "airlines",
+    "aviation",
+    "transport",
+    "operating cost",
+    "operating costs",
+    "fuel cost",
+    "fuel costs",
+  ]);
+  const hasSafeHavenChannel = textIncludesAny(rawAndFactText, [
+    "safe haven",
+    "safe-haven",
+    "risk-off",
+    "risk off",
+    "flight to safety",
+    "geopolitical fear",
+    "geopolitical risk",
+    "gold",
+  ]);
+  const hasBroadRiskChannel = textIncludesAny(rawAndFactText, [
+    "risk appetite",
+    "risk-off",
+    "risk off",
+    "broader market",
+    "broad market",
+    "equities",
+    "equity market",
+    "stock market",
+    "discount-rate",
+    "discount rate",
+    "financial conditions",
+  ]);
+  const hasRateChannel = textIncludesAny(rawAndFactText, [
+    "bond",
+    "bonds",
+    "treasury",
+    "yield",
+    "yields",
+    "duration",
+    "rates",
+    "interest rate",
+    "inflation",
+    "central bank",
+    "fed",
+    "ecb",
+  ]);
+  const hasFxChannel = textIncludesAny(rawAndFactText, [
+    "dollar",
+    "currency",
+    "currencies",
+    "fx",
+    "dxy",
+    "eur/usd",
+    "usd/jpy",
+  ]) || hasSafeHavenChannel;
+
+  if (oilCommodityAssets.has(ticker)) {
+    if (directEvidence || hasConcreteOilChannel(rawAndFactText)) return { allowed: true, reason: "" };
+    return {
+      allowed: false,
+      reason: "Energy assets require verification of sanctions, shipping-route disruption, oil supply, fuel-cost, or commodity-supply impact.",
+    };
+  }
+
+  if (defenseAssets.has(ticker)) {
+    if (directEvidence || hasDefenseChannel) return { allowed: true, reason: "" };
+    return { allowed: false, reason: "Defense stocks require a defense, military spending, deployment, or security escalation channel." };
+  }
+
+  if (cruiseAssets.has(ticker)) {
+    if (directEvidence || hasTravelChannel) return { allowed: true, reason: "" };
+    return { allowed: false, reason: "Cruise stocks require a travel, tourism, booking sentiment, or route-disruption channel." };
+  }
+
+  if (airlineAssets.has(ticker)) {
+    if (directEvidence || hasTravelChannel) return { allowed: true, reason: "" };
+    return { allowed: false, reason: "Airline stocks require a travel, route disruption, operating cost, or fuel-cost channel." };
+  }
+
+  if (safeHavenAssets.has(ticker)) {
+    if (directEvidence || hasSafeHavenChannel) return { allowed: true, reason: "" };
+    return { allowed: false, reason: "Safe-haven assets require a risk-off, geopolitical fear, or safe-haven channel." };
+  }
+
+  if (currencyAssets.has(ticker)) {
+    if (directEvidence || hasFxChannel) return { allowed: true, reason: "" };
+    return { allowed: false, reason: "Currency assets require an FX, dollar, risk-off, or safe-haven channel." };
+  }
+
+  if (broadIndexAssets.has(ticker)) {
+    if (directEvidence || hasBroadRiskChannel) return { allowed: true, reason: "" };
+    return { allowed: false, reason: "Broad index assets require a broad risk-sentiment, risk-off, rates, or equity-market channel." };
+  }
+
+  if (bondRateAssets.has(ticker)) {
+    if (directEvidence || hasRateChannel || hasConcreteOilChannel(rawAndFactText)) return { allowed: true, reason: "" };
+    return { allowed: false, reason: "Bond/rate assets require a rates, yields, inflation, duration, or central-bank channel." };
+  }
+
+  return { allowed: true, reason: "" };
+}
+
+function addCandidateRejectionReason(rejections: Map<string, string>, ticker: string, reason: string) {
+  for (const key of equivalentAssetKeys(ticker)) {
+    rejections.set(key, reason);
+  }
+}
+
+function assetChannelKey(asset: Record<string, unknown>) {
+  const ticker = String(asset.ticker || asset.ticker_or_asset || "").trim().toUpperCase();
+  if (oilCommodityAssets.has(ticker)) return "oil_energy_prices";
+  if (safeHavenAssets.has(ticker)) return "safe_havens_gold";
+  if (currencyAssets.has(ticker)) return "currency_safe_haven";
+  if (broadIndexAssets.has(ticker)) return "broad_risk";
+  if (bondRateAssets.has(ticker)) return "bonds_duration_rates";
+  if (defenseAssets.has(ticker)) return "defense_aerospace";
+  if (cruiseAssets.has(ticker)) return "cruise_caribbean_travel";
+  if (airlineAssets.has(ticker)) return "airlines_transport";
+  return "other";
+}
+
+function assetGateLabel(channelKey: string) {
+  const labels: Record<string, string> = {
+    oil_energy_prices: "Oil / energy commodity channel",
+    safe_havens_gold: "Safe-haven / gold channel",
+    currency_safe_haven: "USD / FX safe-haven channel",
+    broad_risk: "Broad risk-off / equity sentiment channel",
+    bonds_duration_rates: "Bonds / rates / duration channel",
+    defense_aerospace: "Defense / military security channel",
+    cruise_caribbean_travel: "Travel / tourism / cruise channel",
+    airlines_transport: "Airlines / transport channel",
+    other: "Directly identified asset channel",
+  };
+  return labels[channelKey] || labels.other;
+}
+
+function hasWeakOrConditionalReason(reason: string) {
+  const clean = reason.toLowerCase();
+  const wordCount = clean.split(/\s+/).filter(Boolean).length;
+  if (wordCount < 8) return true;
+  if (textIncludesAny(clean, ["could be affected", "may be affected", "might be affected", "watch", "monitor only", "if shipping risks increase"])) return true;
+  return false;
+}
+
+function directionIsUsable(value: unknown) {
+  const direction = String(value || "").trim().toLowerCase();
+  return ["positive", "negative", "neutral", "mixed", "strongly positive", "strongly negative"].includes(direction);
+}
+
+function assetPriority(asset: Record<string, unknown>) {
+  const ticker = String(asset.ticker || asset.ticker_or_asset || "").trim().toUpperCase();
+  const priority: Record<string, number> = {
+    GLD: 95,
+    DXY: 88,
+    SPY: 90,
+    QQQ: 84,
+    TLT: 86,
+    BND: 78,
+    US10Y: 82,
+    "BRENT CRUDE": 92,
+    BRENT: 90,
+    WTI: 88,
+    "WTI CRUDE": 88,
+    USO: 82,
+    LMT: 90,
+    NOC: 84,
+    RTX: 82,
+    GD: 80,
+    CCL: 88,
+    RCL: 84,
+    NCLH: 80,
+    DAL: 86,
+    UAL: 84,
+    AAL: 80,
+    LUV: 76,
+  };
+  const reason = String(asset.reason || "").trim();
+  return (priority[ticker] || 50) + Math.min(20, reason.length / 20);
+}
+
+function runAffectedAssetQualityGate(args: {
+  assets: Record<string, unknown>[];
+  rawEventText: string;
+  researchPlan: Record<string, unknown>;
+  researchFactPack?: Record<string, unknown>;
+  acceptedTickerEvidence: string[];
+}) {
+  const accepted: Record<string, unknown>[] = [];
+  const rejected: Record<string, unknown>[] = [];
+  const deduplicated: Record<string, unknown>[] = [];
+  const byChannel = new Map<string, Record<string, unknown>[]>();
+
+  for (const asset of args.assets) {
+    const ticker = String(asset.ticker || asset.ticker_or_asset || "").trim().toUpperCase();
+    const reason = String(asset.reason || "").trim();
+    const channelKey = assetChannelKey(asset);
+    const channelGate = strictChannelGate({
+      asset,
+      rawEventText: args.rawEventText,
+      researchPlan: args.researchPlan,
+      researchFactPack: args.researchFactPack,
+      acceptedTickerEvidence: args.acceptedTickerEvidence,
+    });
+
+    if (!channelGate.allowed) {
+      rejected.push({
+        ticker,
+        name: asset.name || ticker,
+        channel: assetGateLabel(channelKey),
+        quality_gate_reason: channelGate.reason,
+      });
+      continue;
+    }
+
+    if (hasWeakOrConditionalReason(reason)) {
+      rejected.push({
+        ticker,
+        name: asset.name || ticker,
+        channel: assetGateLabel(channelKey),
+        quality_gate_reason: "Reasoning is too generic, weak, or conditional for affected_assets; keep this as an exposure or missing-data item instead.",
+      });
+      continue;
+    }
+
+    if (!directionIsUsable(asset.direction)) {
+      rejected.push({
+        ticker,
+        name: asset.name || ticker,
+        channel: assetGateLabel(channelKey),
+        quality_gate_reason: "Direction is missing or not one of the allowed Clarifin direction labels.",
+      });
+      continue;
+    }
+
+    if (String(asset.strength || "").trim().toLowerCase() === "watch") {
+      rejected.push({
+        ticker,
+        name: asset.name || ticker,
+        channel: assetGateLabel(channelKey),
+        quality_gate_reason: "Asset is only a watch/monitor candidate, not a concrete affected asset.",
+      });
+      continue;
+    }
+
+    const list = byChannel.get(channelKey) || [];
+    list.push(asset);
+    byChannel.set(channelKey, list);
+  }
+
+  const channelLimits: Record<string, number> = {
+    oil_energy_prices: 1,
+    safe_havens_gold: 1,
+    currency_safe_haven: 1,
+    broad_risk: 1,
+    bonds_duration_rates: 1,
+    defense_aerospace: 1,
+    cruise_caribbean_travel: 1,
+    airlines_transport: 1,
+    other: 3,
+  };
+
+  for (const [channelKey, assets] of byChannel) {
+    const sorted = assets.slice().sort((a, b) => assetPriority(b) - assetPriority(a));
+    const limit = channelLimits[channelKey] || 1;
+    for (const asset of sorted.slice(0, limit)) {
+      accepted.push({
+        ticker: asset.ticker,
+        name: asset.name || asset.ticker,
+        channel: assetGateLabel(channelKey),
+        quality_gate_reason: "Accepted: clear causal channel, concrete asset, non-watch reasoning, and best representative for this channel.",
+      });
+    }
+    for (const asset of sorted.slice(limit)) {
+      deduplicated.push({
+        ticker: asset.ticker,
+        name: asset.name || asset.ticker,
+        channel: assetGateLabel(channelKey),
+        quality_gate_reason: "Removed as redundant: another asset is a cleaner representative for the same economic channel.",
+      });
+    }
+  }
+
+  const acceptedTickers = new Set(accepted.map((asset) => String(asset.ticker || "").trim().toUpperCase()));
+  const finalAssets = args.assets.filter((asset) => acceptedTickers.has(String(asset.ticker || "").trim().toUpperCase()));
+
+  return {
+    final_assets: finalAssets,
+    accepted,
+    rejected,
+    deduplicated,
+  };
+}
+
+function buildCandidateRejectionReport(args: {
+  candidates: Record<string, unknown>[];
+  evaluation: Record<string, unknown>;
+  insertedAssets: Record<string, unknown>[];
+  serverRejectedAssets: Record<string, unknown>[];
+  qualityGateRejectedAssets: Record<string, unknown>[];
+  qualityGateDeduplicatedAssets: Record<string, unknown>[];
+  rawEventText: string;
+  researchPlan: Record<string, unknown>;
+  researchFactPack?: Record<string, unknown>;
+  acceptedTickerEvidence: string[];
+}) {
+  const inserted = args.insertedAssets.map((asset) => ({
+    ticker: asset.ticker,
+  }));
+  const serverRejections = new Map<string, string>();
+  for (const item of args.serverRejectedAssets) {
+    addCandidateRejectionReason(serverRejections, String(item.ticker || ""), String(item.candidate_rejection_reason || "Server-side channel gate rejected this asset."));
+  }
+  const qualityGateRejections = new Map<string, string>();
+  for (const item of [...args.qualityGateRejectedAssets, ...args.qualityGateDeduplicatedAssets]) {
+    addCandidateRejectionReason(qualityGateRejections, String(item.ticker || ""), String(item.quality_gate_reason || "Affected Asset Quality Gate rejected this asset."));
+  }
+  const aiRejected = new Map<string, string>();
+  const rejectedAssets = Array.isArray(args.evaluation.rejected_assets)
+    ? args.evaluation.rejected_assets as Record<string, unknown>[]
+    : [];
+  for (const item of rejectedAssets) {
+    aiRejected.set(String(item.candidate_asset || "").trim().toUpperCase(), String(item.reason || "Candidate was rejected by model evaluation."));
+  }
+
+  return args.candidates
+    .filter((candidate) => !hasEquivalentAsset(inserted, String(candidate.candidate_asset || "")))
+    .map((candidate) => {
+      const ticker = String(candidate.candidate_asset || "").trim().toUpperCase();
+      const equivalentServerReason = equivalentAssetKeys(ticker)
+        .map((key) => serverRejections.get(key))
+        .find(Boolean);
+      const candidateGate = strictChannelGate({
+        asset: {
+          ticker,
+          ticker_or_asset: ticker,
+          name: candidate.candidate_name || ticker,
+          asset_class: candidate.asset_class || "other",
+        },
+        rawEventText: args.rawEventText,
+        researchPlan: args.researchPlan,
+        researchFactPack: args.researchFactPack,
+        acceptedTickerEvidence: args.acceptedTickerEvidence,
+      });
+      return {
+        candidate_asset: ticker,
+        candidate_name: candidate.candidate_name || ticker,
+        exposure_key: candidate.exposure_key || "",
+        asset_class: candidate.asset_class || "other",
+        candidate_rejection_reason: equivalentServerReason
+          || equivalentAssetKeys(ticker).map((key) => qualityGateRejections.get(key)).find(Boolean)
+          || (!candidateGate.allowed ? candidateGate.reason : "")
+          || aiRejected.get(ticker)
+          || "Candidate was considered but not selected because the causal channel was not strong enough or another representative asset already covered the channel.",
+      };
+    });
+}
+
 async function evaluateMappedCandidateAssets(args: {
   apiKey: string;
   model: string;
@@ -1676,6 +2135,7 @@ async function evaluateMappedCandidateAssets(args: {
           "If the raw text explicitly names an exposure group such as defense contractors, cruise operators, airlines, safe-haven assets, or oil prices, and matching controlled candidates exist, accept 1-2 representative candidates unless the mechanism clearly does not fit.",
           "If the raw text explicitly names multiple separate exposure groups, evaluate each group separately. A cruise candidate does not cover an airline channel; a defense candidate does not cover a safe-haven channel.",
           "For an explicitly named group with a fitting mechanism, include at least one representative candidate unless the candidate is too indirect or the mechanism contradicts the event.",
+          "Oil assets such as Brent, WTI, or USO require a concrete energy, oil-supply, sanctions, shipping-route, tanker, fuel-cost, or commodity-supply channel. A generic geopolitical escalation or a vague mention that oil prices could be affected is not enough.",
           "If the event direction is clear but unconfirmed, choose the likely direction and explain uncertainty in the reason instead of defaulting to mixed.",
           "Use mixed only when the direction is genuinely unclear or opposing forces are central.",
           "Keep reasons short and specific. No investment advice, no buy/sell/hold language, no performance promises.",
@@ -2406,9 +2866,60 @@ Deno.serve(async (req) => {
     const acceptedMappedTickers = Array.isArray(mappedCandidateEvaluation.accepted_assets)
       ? (mappedCandidateEvaluation.accepted_assets as Record<string, unknown>[]).map((asset) => String(asset.candidate_asset || "").trim().toUpperCase()).filter(Boolean)
       : [];
-    const allowedAffectedEvidence = uniqueStrings([...tickers, ...extractCashtags(rawEventText), ...getPlanPublicTickers(researchPlan), ...acceptedMappedTickers]).map((ticker) => ticker.toUpperCase());
-    const affectedAssets = generatedNode.affected_assets
+    const directAffectedEvidence = uniqueStrings([...tickers, ...extractCashtags(rawEventText), ...getPlanPublicTickers(researchPlan)]).map((ticker) => ticker.toUpperCase());
+    const allowedAffectedEvidence = uniqueStrings([...directAffectedEvidence, ...acceptedMappedTickers]).map((ticker) => ticker.toUpperCase());
+    const serverRejectedAffectedAssets: Record<string, unknown>[] = [];
+    const eligibleAffectedAssets = generatedNode.affected_assets
       .filter((asset: Record<string, unknown>) => isAllowedConcreteAffectedAsset(asset, allowedAffectedEvidence))
+      .filter((asset: Record<string, unknown>) => {
+        const gate = strictChannelGate({
+          asset,
+          rawEventText,
+          researchPlan,
+          researchFactPack,
+          acceptedTickerEvidence: directAffectedEvidence,
+        });
+        if (gate.allowed) return true;
+        serverRejectedAffectedAssets.push({
+          ...asset,
+          candidate_rejection_reason: gate.reason,
+        });
+        return false;
+      });
+
+    if (serverRejectedAffectedAssets.length) {
+      const strictGateWarnings = uniqueStrings(serverRejectedAffectedAssets.map((asset) => String(asset.candidate_rejection_reason || "").trim()).filter(Boolean));
+      researchFactPack.research_warnings = uniqueStrings([
+        ...(Array.isArray(researchFactPack.research_warnings) ? researchFactPack.research_warnings : []),
+        ...strictGateWarnings,
+      ]);
+      appendMissingData(validatedDraft, strictGateWarnings);
+      warnings.push(...strictGateWarnings);
+    }
+
+    const affectedAssetQualityGate = runAffectedAssetQualityGate({
+      assets: eligibleAffectedAssets,
+      rawEventText,
+      researchPlan,
+      researchFactPack,
+      acceptedTickerEvidence: directAffectedEvidence,
+    });
+
+    const qualityGateWarnings = uniqueStrings([
+      ...affectedAssetQualityGate.rejected,
+      ...affectedAssetQualityGate.deduplicated,
+    ].map((asset: Record<string, unknown>) => String(asset.quality_gate_reason || "").trim()).filter(Boolean));
+
+    if (qualityGateWarnings.length) {
+      researchFactPack.research_warnings = uniqueStrings([
+        ...(Array.isArray(researchFactPack.research_warnings) ? researchFactPack.research_warnings : []),
+        ...qualityGateWarnings,
+      ]);
+      appendMissingData(validatedDraft, qualityGateWarnings);
+      warnings.push(...qualityGateWarnings);
+    }
+
+    const affectedAssets = affectedAssetQualityGate.final_assets
       .map((asset: Record<string, unknown>) => ({
         node_id: nodeId,
         ticker: asset.ticker,
@@ -2419,6 +2930,18 @@ Deno.serve(async (req) => {
         asset_class: asset.asset_class,
         uncertainty: asset.uncertainty,
       }));
+    const candidateAssetsRejected = buildCandidateRejectionReport({
+      candidates: candidateAssetsConsidered,
+      evaluation: mappedCandidateEvaluation,
+      insertedAssets: affectedAssets,
+      serverRejectedAssets: serverRejectedAffectedAssets,
+      qualityGateRejectedAssets: affectedAssetQualityGate.rejected,
+      qualityGateDeduplicatedAssets: affectedAssetQualityGate.deduplicated,
+      rawEventText,
+      researchPlan,
+      researchFactPack,
+      acceptedTickerEvidence: directAffectedEvidence,
+    });
 
     if (affectedAssets.length) {
       const { error: assetsError } = await supabase.from("affected_assets").insert(affectedAssets);
@@ -2509,6 +3032,12 @@ Deno.serve(async (req) => {
       assets_to_research: assetsToResearch,
       candidate_assets_considered: candidateAssetsConsidered,
       candidate_asset_evaluation: mappedCandidateEvaluation,
+      candidate_assets_rejected: candidateAssetsRejected,
+      affected_asset_quality_gate: {
+        accepted: affectedAssetQualityGate.accepted,
+        rejected: affectedAssetQualityGate.rejected,
+        deduplicated: affectedAssetQualityGate.deduplicated,
+      },
       missing_data: validatedDraft.missing_data,
       quality_gate_summary: summarizeQualityGate(validatedDraft.quality_gate),
       affected_assets_count: affectedAssets.length,
