@@ -13,12 +13,9 @@ create table if not exists public.research_fact_packs (
   missing_data jsonb,
   created_at timestamptz default now()
 );
-
 alter table public.research_fact_packs enable row level security;
-
 drop policy if exists "Public can read research fact packs"
 on public.research_fact_packs;
-
 create policy "Public can read research fact packs"
 on public.research_fact_packs
 for select

@@ -14,19 +14,15 @@ create table if not exists public.exposure_asset_map (
   is_active boolean default true,
   created_at timestamptz default now()
 );
-
 create unique index if not exists exposure_asset_map_unique_active_candidate
 on public.exposure_asset_map (exposure_key, candidate_asset);
-
 alter table public.exposure_asset_map enable row level security;
-
 drop policy if exists "Public can read exposure asset map" on public.exposure_asset_map;
 create policy "Public can read exposure asset map"
 on public.exposure_asset_map
 for select
 to anon
 using (is_active = true);
-
 insert into public.exposure_asset_map (
   exposure_key,
   exposure_label,

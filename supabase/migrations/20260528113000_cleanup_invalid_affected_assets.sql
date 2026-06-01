@@ -42,7 +42,6 @@ where upper(coalesce(a.ticker, '')) in ('XLE', 'XLF', 'XLV', 'XLP', 'XLY', 'XLI'
     where e.node_id = a.node_id::text
       and e.sector_proxy_tickers @> array[upper(a.ticker)]::text[]
   );
-
 delete from public.affected_assets
 where upper(coalesce(ticker, '')) in (
     'XLE', 'XLF', 'XLV', 'XLP', 'XLY', 'XLI', 'XLK', 'XLU', 'XLRE', 'XLB',

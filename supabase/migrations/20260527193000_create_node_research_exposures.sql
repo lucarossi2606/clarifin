@@ -8,15 +8,11 @@ create table if not exists public.node_research_exposures (
   time_horizon text,
   created_at timestamptz not null default now()
 );
-
 create index if not exists node_research_exposures_node_id_idx
   on public.node_research_exposures (node_id);
-
 create index if not exists node_research_exposures_created_at_idx
   on public.node_research_exposures (created_at desc);
-
 alter table public.node_research_exposures enable row level security;
-
 drop policy if exists "Public can read exposures for published nodes" on public.node_research_exposures;
 create policy "Public can read exposures for published nodes"
   on public.node_research_exposures
@@ -29,5 +25,4 @@ create policy "Public can read exposures for published nodes"
         and nodes.status = 'published'
     )
   );
-
 grant select on public.node_research_exposures to anon, authenticated;

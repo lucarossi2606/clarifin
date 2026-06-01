@@ -9,22 +9,16 @@ create table if not exists public.node_research_exposures (
   confidence int,
   created_at timestamptz default now()
 );
-
 alter table public.node_research_exposures
   add column if not exists confidence int;
-
 update public.node_research_exposures
 set theme = 'Exposure to research'
 where theme is null or btrim(theme) = '';
-
 alter table public.node_research_exposures
   alter column theme set not null;
-
 alter table public.node_research_exposures
   alter column possible_tickers set default '{}'::text[];
-
 alter table public.node_research_exposures enable row level security;
-
 drop policy if exists "Public can read exposures for published nodes" on public.node_research_exposures;
 drop policy if exists "Public can read exposures for published or draft nodes" on public.node_research_exposures;
 drop policy if exists "Public can read node research exposures" on public.node_research_exposures;
@@ -33,5 +27,4 @@ create policy "Public can read node research exposures"
   for select
   to anon
   using (true);
-
 grant select on public.node_research_exposures to anon, authenticated;
