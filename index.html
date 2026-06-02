@@ -166,6 +166,7 @@ details.detail-card[open] summary::after { content: "-"; }
 .direction-negative { color: var(--red-text); }
 .direction-mixed, .direction-neutral { color: var(--gray-text); }
 .asset-card p { margin: 4px 0 0 0; font-size: 13px; }
+.asset-card .evidence-note { color: var(--text-light); font-size: 12px; line-height: 1.4; margin-top: 6px; }
 
 .bottom-nav {
   position: fixed !important;
@@ -646,6 +647,22 @@ function normalizeResearchExposure(exposure) {
   };
 }
 
+function normalizeIndirectImpact(item) {
+  const symbol = firstValue(item, ["symbol", "ticker", "canonical_asset"], "");
+  const companyName = firstValue(item, ["company_name", "company", "name"], "");
+  return {
+    symbol,
+    companyName,
+    title: firstValue(item, ["title"], companyName || symbol || "Indirect impact"),
+    direction: normalizeDirection(firstValue(item, ["direction", "impact_direction", "sentiment"], "mixed")),
+    strength: String(firstValue(item, ["strength"], "weak") || "weak").trim().toLowerCase(),
+    reason: firstValue(item, ["reason", "watchlist_reason", "description"], ""),
+    evidenceRequiredToUpgrade: firstValue(item, ["evidence_required_to_upgrade", "evidenceRequiredToUpgrade", "data_needed"], ""),
+    sourceChannel: firstValue(item, ["source_channel", "category", "channel"], ""),
+    sortOrder: toNumber(firstValue(item, ["sort_order", "sortOrder"], 0), 0)
+  };
+}
+
 function getExposureSectorEtfs(exposure) {
   const explicitTickers = toArray(exposure?.sectorProxyTickers || exposure?.possibleTickers || [])
     .map((ticker) => String(ticker || "").trim().toUpperCase())
@@ -739,7 +756,15 @@ async function loadResearchExposuresForNode(nodeId) {
     .filter((exposure) => exposure.theme || exposure.whyRelevant || exposure.sectorProxyTickers.length || exposure.dataNeeded || exposure.timeHorizon);
 }
 
-function convertSupabaseNode(row, assetRows, detailRows, exposureRows = []) {
+async function loadIndirectImpactsForNode(nodeId) {
+  const impactRows = await fetchRelatedRows("node_indirect_impacts", [nodeId]);
+  return impactRows
+    .map(normalizeIndirectImpact)
+    .filter((item) => item.title && item.reason)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+function convertSupabaseNode(row, assetRows, detailRows, exposureRows = [], indirectImpactRows = []) {
   const detail = detailRows[0] || {};
   const title = firstValue(row, ["title", "headline", "name"], "Untitled node");
   const id = String(firstValue(row, ["id", "slug"], slugify(title)));
@@ -767,10 +792,12 @@ function convertSupabaseNode(row, assetRows, detailRows, exposureRows = []) {
     whyMatters: firstValue(detail, ["whyMatters", "why_matters", "why_it_matters"], firstValue(row, ["whyMatters", "why_matters", "why_it_matters"], "No deeper explanation available yet.")),
     chains,
     affectedAssets: assetRows.map(normalizeAsset).filter(isValidatedAsset),
+    indirectImpacts: indirectImpactRows.map(normalizeIndirectImpact).filter((item) => item.title && item.reason).sort((a, b) => a.sortOrder - b.sortOrder),
     researchExposures: exposureRows.map(normalizeResearchExposure).filter((exposure) => exposure.theme || exposure.whyRelevant || exposure.sectorProxyTickers.length || exposure.dataNeeded || exposure.timeHorizon),
     exposuresToWatch: exposureRows.map(normalizeResearchExposure).filter((exposure) => exposure.theme || exposure.whyRelevant || exposure.sectorProxyTickers.length || exposure.dataNeeded || exposure.timeHorizon),
     isSupabaseNode: true,
     exposuresLoaded: exposureRows.length > 0,
+    indirectImpactsLoaded: indirectImpactRows.length > 0,
     scenarios: scenarios.filter((scenario) => scenario.title || scenario.body),
     counterarguments: counterarguments.filter(Boolean),
     sources: sources.filter(Boolean)
@@ -841,14 +868,16 @@ async function loadPublishedNodes() {
       .map((row) => firstValue(row, ["id", "slug"], ""))
       .filter(Boolean)
       .map(String);
-    const [assetRows, detailRows, exposureRows] = await Promise.all([
+    const [assetRows, detailRows, exposureRows, indirectImpactRows] = await Promise.all([
       fetchRelatedRows("affected_assets", nodeIds),
       fetchRelatedRows("node_details", nodeIds),
-      fetchRelatedRows("node_research_exposures", nodeIds)
+      fetchRelatedRows("node_research_exposures", nodeIds),
+      fetchRelatedRows("node_indirect_impacts", nodeIds)
     ]);
     const assetsByNode = groupByNodeId(assetRows);
     const detailsByNode = groupByNodeId(detailRows, true);
     const exposuresByNode = groupByNodeId(exposureRows);
+    const indirectImpactsByNode = groupByNodeId(indirectImpactRows);
     console.log("Clarifin exposures loaded", exposureRows);
     if (!exposureRows.length) {
       console.warn("Clarifin Supabase: no node_research_exposures rows returned for published nodes.", { nodeIds });
@@ -857,7 +886,7 @@ async function loadPublishedNodes() {
       const nodeId = String(firstValue(row, ["id", "slug"], ""));
       const nodeKey = nodeLookupKey(nodeId);
       console.log("Clarifin exposures for node", nodeId, exposuresByNode[nodeKey] || []);
-      return convertSupabaseNode(row, assetsByNode[nodeKey] || [], detailsByNode[nodeKey] || [], exposuresByNode[nodeKey] || []);
+      return convertSupabaseNode(row, assetsByNode[nodeKey] || [], detailsByNode[nodeKey] || [], exposuresByNode[nodeKey] || [], indirectImpactsByNode[nodeKey] || []);
     }));
 
     if (selectedNodeId) {
@@ -1368,6 +1397,7 @@ function renderDetail(node) {
 
   const chains = Array.isArray(node.chains) ? node.chains : [];
   const affectedAssets = Array.isArray(node.affectedAssets) ? node.affectedAssets.filter(isValidatedAsset) : [];
+  const indirectImpacts = Array.isArray(node.indirectImpacts) ? node.indirectImpacts : [];
   const exposuresToWatch = Array.isArray(node.exposuresToWatch) ? node.exposuresToWatch : (Array.isArray(node.researchExposures) ? node.researchExposures : []);
   const scenarios = Array.isArray(node.scenarios) ? node.scenarios : [];
   const counterarguments = Array.isArray(node.counterarguments) ? node.counterarguments : [];
@@ -1378,6 +1408,18 @@ function renderDetail(node) {
   const assetsHTML = affectedAssets.length
     ? `<ul class="asset-list">${affectedAssets.map(a => `<li class="asset-card"><div class="asset-top"><h3>${escapeHtml(a.name || a.ticker)}</h3><span class="direction-${a.direction}">${escapeHtml(formatLabel(a.direction))}</span></div>${a.assetClass ? `<p class="asset-subline"><strong>${escapeHtml(formatLabel(a.assetClass))}</strong></p>` : ""}<p>${escapeHtml(a.reason)}</p></li>`).join("")}</ul>`
     : "<p>No concrete affected assets yet.</p>";
+  const indirectHTML = indirectImpacts.length
+    ? `<ul class="asset-list">${indirectImpacts.map(item => `
+      <li class="asset-card">
+        <div class="asset-top">
+          <h3>${escapeHtml(item.title || item.companyName || item.symbol)}</h3>
+          ${item.direction ? `<span class="direction-${item.direction}">${escapeHtml(formatLabel(item.direction))}</span>` : ""}
+        </div>
+        ${item.strength ? `<p class="asset-subline"><strong>${escapeHtml(formatLabel(item.strength))}</strong></p>` : ""}
+        ${item.reason ? `<p>${escapeHtml(item.reason)}</p>` : ""}
+        ${item.evidenceRequiredToUpgrade ? `<p class="evidence-note">Evidence required: ${escapeHtml(item.evidenceRequiredToUpgrade)}</p>` : ""}
+      </li>`).join("")}</ul>`
+    : "";
   const exposuresHTML = exposuresToWatch.length
     ? `<ul class="asset-list">${exposuresToWatch.map(exposure => {
       const sectorEtfs = getExposureSectorEtfs(exposure);
@@ -1402,7 +1444,8 @@ function renderDetail(node) {
   detailSections.innerHTML = [
     section("Why it matters", `<p>${escapeHtml(node.whyMatters)}</p>`, true),
     section("Causal Chains", chainsHTML),
-    section("Affected Assets", assetsHTML),
+    section("Direct Impact", assetsHTML),
+    ...(indirectHTML ? [section("Indirect Impact", indirectHTML)] : []),
     ...(exposuresHTML ? [section("Exposures to watch", exposuresHTML)] : []),
     section("Scenarios", scenariosHTML),
     section("Counterarguments", countersHTML)
@@ -1417,6 +1460,17 @@ function renderDetail(node) {
       if (selectedNodeId === node.id) renderDetail(node);
     }).catch((error) => {
       console.warn("Clarifin Supabase: could not load node_research_exposures for selected node.", { nodeId: node.id, error });
+    });
+  }
+
+  if (node.isSupabaseNode && !indirectImpacts.length && !node.indirectImpactsLoaded) {
+    node.indirectImpactsLoaded = true;
+    loadIndirectImpactsForNode(node.id).then((items) => {
+      if (!items.length) return;
+      node.indirectImpacts = items;
+      if (selectedNodeId === node.id) renderDetail(node);
+    }).catch((error) => {
+      console.warn("Clarifin Supabase: could not load node_indirect_impacts for selected node.", { nodeId: node.id, error });
     });
   }
 }

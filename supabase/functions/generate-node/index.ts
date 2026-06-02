@@ -183,6 +183,140 @@ const fredSeriesCatalog: Record<string, {
 };
 const fredRequestCache = new Map<string, { expiresAt: number; result: Record<string, unknown> }>();
 const fredCacheTtlMs = 10 * 60 * 1000;
+const fredRequestTimeoutMs = 6500;
+const fredRetryBackoffMs = 900;
+const fredInterSeriesDelayMs = 900;
+
+const eiaSeriesIdEndpoint = "https://api.eia.gov/v2/seriesid";
+const eiaEndpointSummary = {
+  api_family: "EIA API v2",
+  seriesid_endpoint: eiaSeriesIdEndpoint,
+  method: "GET",
+  required_parameters: ["api_key"],
+  fixed_parameters: {
+    out: "json",
+    sort: "period desc",
+    length: 12,
+  },
+  api_key_notice: "EIA API v2 requires an API key. Clarifin reads EIA_API_KEY from the Edge Function environment.",
+};
+const eiaSeriesCatalog: Record<string, {
+  seriesId: string;
+  title: string;
+  category: string;
+  defaultFrequency: string;
+  enabled: boolean;
+  triggerTerms: string[];
+}> = {
+  BRENT_SPOT: {
+    seriesId: "PET.RBRTE.D",
+    title: "Europe Brent Spot Price FOB",
+    category: "oil_price",
+    defaultFrequency: "daily",
+    enabled: true,
+    triggerTerms: ["brent", "oil", "crude", "hormuz", "middle east", "supply disruption"],
+  },
+  WTI_SPOT: {
+    seriesId: "PET.RWTC.D",
+    title: "Cushing, OK WTI Spot Price FOB",
+    category: "oil_price",
+    defaultFrequency: "daily",
+    enabled: true,
+    triggerTerms: ["wti", "oil", "crude", "gasoline", "diesel", "fuel"],
+  },
+  HENRY_HUB: {
+    seriesId: "NG.RNGWHHD.D",
+    title: "Henry Hub Natural Gas Spot Price",
+    category: "natural_gas_price",
+    defaultFrequency: "daily",
+    enabled: true,
+    triggerTerms: ["natural gas", "gas", "lng", "henry hub"],
+  },
+  US_CRUDE_PRODUCTION: {
+    seriesId: "PET.WCRFPUS2.W",
+    title: "U.S. Field Production of Crude Oil",
+    category: "crude_production",
+    defaultFrequency: "weekly",
+    enabled: true,
+    triggerTerms: ["production", "supply", "crude", "oil shock"],
+  },
+  US_CRUDE_STOCKS_EX_SPR: {
+    seriesId: "PET.WCESTUS1.W",
+    title: "U.S. Ending Stocks of Crude Oil, Excluding SPR",
+    category: "crude_inventories",
+    defaultFrequency: "weekly",
+    enabled: true,
+    triggerTerms: ["inventory", "inventories", "stocks", "crude stocks", "storage"],
+  },
+  US_GASOLINE_STOCKS: {
+    seriesId: "PET.WGTSTUS1.W",
+    title: "U.S. Total Gasoline Stocks",
+    category: "gasoline_inventories",
+    defaultFrequency: "weekly",
+    enabled: true,
+    triggerTerms: ["gasoline", "fuel", "inventories", "stocks"],
+  },
+  US_DISTILLATE_STOCKS: {
+    seriesId: "PET.WDISTUS1.W",
+    title: "U.S. Distillate Fuel Oil Stocks",
+    category: "distillate_inventories",
+    defaultFrequency: "weekly",
+    enabled: true,
+    triggerTerms: ["diesel", "distillate", "jet fuel", "fuel", "inventories", "stocks"],
+  },
+};
+const eiaRequestTimeoutMs = 6500;
+const eiaInterSeriesDelayMs = 700;
+
+const ecbDataApiEndpoint = "https://data-api.ecb.europa.eu/service/data";
+const ecbEndpointSummary = {
+  api_family: "ECB Data Portal API / SDMX REST",
+  data_endpoint: ecbDataApiEndpoint,
+  method: "GET",
+  api_key_notice: "No ECB API key required for the public ECB Data Portal API. No Supabase secret needed.",
+  supported_parameters: ["lastNObservations", "detail", "format"],
+};
+const ecbSeriesCatalog: Record<string, {
+  flowRef: string;
+  key: string;
+  title: string;
+  category: string;
+  enabled: boolean;
+  triggerTerms: string[];
+}> = {
+  EUR_USD: {
+    flowRef: "EXR",
+    key: "D.USD.EUR.SP00.A",
+    title: "ECB Euro foreign exchange reference rate: USD/EUR",
+    category: "fx",
+    enabled: true,
+    triggerTerms: ["euro", "eur", "eur/usd", "euro weakness", "fx", "dollar"],
+  },
+};
+const ecbRequestTimeoutMs = 6500;
+
+const fmpBaseEndpoint = "https://financialmodelingprep.com/stable";
+const fmpEndpointSummary = {
+  api_family: "Financial Modeling Prep stable API",
+  base_endpoint: fmpBaseEndpoint,
+  method: "GET",
+  api_key_notice: "Clarifin uses the existing FMP_API_KEY Edge Function secret. The key is never logged or returned.",
+  note: "FMP is attempted only for company, earnings, guidance, revenue, EPS, or ticker-specific research.",
+};
+const fmpEndpointCatalog: Record<string, {
+  endpoint: string;
+  sourceType: string;
+  enabled: boolean;
+  params: Record<string, string>;
+}> = {
+  company_profile: { endpoint: "profile", sourceType: "company_profile", enabled: true, params: {} },
+  earnings_calendar: { endpoint: "earnings-calendar", sourceType: "earnings", enabled: true, params: {} },
+  earnings_estimates: { endpoint: "analyst-estimates", sourceType: "earnings", enabled: false, params: {} },
+  financial_metrics: { endpoint: "key-metrics-ttm", sourceType: "fundamentals", enabled: false, params: {} },
+  stock_news: { endpoint: "news/stock", sourceType: "news", enabled: false, params: {} },
+  press_releases: { endpoint: "press-releases", sourceType: "news", enabled: false, params: {} },
+};
+const fmpRequestTimeoutMs = 6500;
 
 const nodeSchema = {
   type: "object",
@@ -1461,10 +1595,30 @@ function selectFredSeriesForTopic(researchPlan: Record<string, unknown>, rawEven
 function fredWarningForStatus(status: string, seriesId?: string, httpStatus?: number | null) {
   const prefix = seriesId ? `FRED ${seriesId}` : "FRED";
   if (status === "skipped") return "FRED macro research skipped. No macro/rates/inflation/labor/Fed trigger or no FRED_API_KEY was available.";
+  if (status === "rate_limited") return `${prefix} was rate-limited by FRED${httpStatus ? ` with HTTP ${httpStatus}` : ""}. Continuing without this macro series.`;
   if (status === "timeout") return `${prefix} request timed out. Continuing without this macro series.`;
   if (status === "no_results") return `${prefix} returned no usable observations. Continuing without this macro series.`;
   if (httpStatus) return `${prefix} request failed with HTTP ${httpStatus}. Continuing without this macro series.`;
   return `${prefix} request failed. Continuing without this macro series.`;
+}
+
+function classifyFredFailureReason(args: {
+  status: string;
+  httpStatus?: number | null;
+  errorMessage?: string;
+}) {
+  const status = String(args.status || "").trim();
+  const message = String(args.errorMessage || "").toLowerCase();
+  if (status === "success") return "";
+  if (status === "skipped") return "skipped";
+  if (status === "timeout") return "timeout";
+  if (status === "rate_limited" || args.httpStatus === 429 || message.includes("rate limit") || message.includes("too many requests")) return "rate_limit";
+  if (status === "no_results") return "empty_observations";
+  if (args.httpStatus === 400 || message.includes("bad request") || message.includes("invalid")) return "invalid_parameter_or_date";
+  if (args.httpStatus === 401 || args.httpStatus === 403 || message.includes("api key")) return "missing_or_invalid_api_key";
+  if (args.httpStatus && args.httpStatus >= 500) return "temporary_fred_server_error";
+  if (args.httpStatus) return `http_${args.httpStatus}`;
+  return "network_or_unknown";
 }
 
 function sanitizeExternalErrorMessage(message: string) {
@@ -1594,6 +1748,11 @@ function buildFredSeriesExternalResearchItem(args: {
     };
   const baseWarning = args.status === "success" ? "" : fredWarningForStatus(args.status, args.seriesId, args.httpStatus ?? null);
   const warning = args.warning || (args.errorMessage ? `${baseWarning} FRED said: ${args.errorMessage}` : baseWarning);
+  const failureReason = classifyFredFailureReason({
+    status: args.status,
+    httpStatus: args.httpStatus ?? null,
+    errorMessage: args.errorMessage || "",
+  });
   const parametersSentExcludingApiKey = buildFredObservationParams({
     seriesId: args.seriesId,
     observationStart: args.observationStart,
@@ -1624,6 +1783,7 @@ function buildFredSeriesExternalResearchItem(args: {
       latest_value: facts.latest_value,
       previous_value: facts.previous_value,
       change_from_previous: facts.change_from_previous,
+      failure_reason: failureReason,
       warning,
       attempts: args.attempts || 0,
     },
@@ -1689,13 +1849,12 @@ async function fetchFredSeriesObservations(args: {
     observationStart,
     limit: seriesInfo.limit,
   });
-  const timeoutMs = 4500;
   const maxAttempts = 2;
   let lastHttpStatus: number | null = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const timeoutId = setTimeout(() => controller.abort(), fredRequestTimeoutMs);
     try {
       const response = await fetch(requestUrl, { signal: controller.signal });
       lastHttpStatus = response.status;
@@ -1703,8 +1862,24 @@ async function fetchFredSeriesObservations(args: {
 
       if (!response.ok) {
         const fredError = await readFredErrorResponse(response);
+        if (response.status === 429) {
+          if (attempt < maxAttempts) {
+            await delay(fredRetryBackoffMs * attempt);
+            continue;
+          }
+          return buildFredSeriesExternalResearchItem({
+            seriesId: args.seriesId,
+            status: "rate_limited",
+            observationStart,
+            httpStatus: response.status,
+            errorCode: fredError.error_code || "429",
+            errorMessage: fredError.error_message || "Too Many Requests",
+            attempts: attempt,
+            apiKeyDetected: true,
+          });
+        }
         if (response.status >= 500 && attempt < maxAttempts) {
-          await delay(350);
+          await delay(fredRetryBackoffMs * attempt);
           continue;
         }
         return buildFredSeriesExternalResearchItem({
@@ -1749,7 +1924,7 @@ async function fetchFredSeriesObservations(args: {
         });
       }
       if (attempt < maxAttempts) {
-        await delay(350);
+        await delay(fredRetryBackoffMs * attempt);
         continue;
       }
       return buildFredSeriesExternalResearchItem({
@@ -1757,6 +1932,7 @@ async function fetchFredSeriesObservations(args: {
         status: "failed",
         observationStart,
         httpStatus: lastHttpStatus,
+        errorMessage: sanitizeExternalErrorMessage(error instanceof Error ? error.message : String(error || "")),
         attempts: attempt,
         apiKeyDetected: true,
       });
@@ -1775,6 +1951,32 @@ async function fetchFredSeriesObservations(args: {
 
 function summarizeFredDiagnostics(items: Record<string, unknown>[], triggered: boolean, apiKeyDetected: boolean) {
   const fredItems = items.filter((item) => String(item.source_name || "") === "FRED");
+  const seriesResults = fredItems
+    .map((item) => {
+      const facts = item.extracted_facts as Record<string, unknown> | undefined;
+      const requestSummary = item.request_summary as Record<string, unknown> | undefined;
+      const responseSummary = item.response_summary as Record<string, unknown> | undefined;
+      const seriesId = String(facts?.series_id || "").trim();
+      const status = String(item.status || "").trim() || "failed";
+      if (!seriesId) return null;
+      return {
+        series_id: seriesId,
+        success: status === "success",
+        status,
+        http_status: responseSummary?.http_status ?? null,
+        fred_error_code: responseSummary?.error_code || "",
+        fred_error_message: responseSummary?.error_message || "",
+        latest_observation_date: facts?.latest_date || "",
+        latest_observation_value: facts?.latest_value ?? null,
+        failure_reason: responseSummary?.failure_reason || classifyFredFailureReason({
+          status,
+          httpStatus: Number(responseSummary?.http_status) || null,
+          errorMessage: String(responseSummary?.error_message || ""),
+        }),
+        parameters_sent_excluding_api_key: requestSummary?.parameters_sent_excluding_api_key || {},
+      };
+    })
+    .filter(Boolean) as Record<string, unknown>[];
   const seriesAttempted = uniqueStrings(fredItems.flatMap((item) => {
     const facts = item.extracted_facts as Record<string, unknown> | undefined;
     const selected = Array.isArray(facts?.selected_series) ? facts?.selected_series as string[] : [];
@@ -1786,22 +1988,36 @@ function summarizeFredDiagnostics(items: Record<string, unknown>[], triggered: b
     .map((item) => String((item.extracted_facts as Record<string, unknown> | undefined)?.series_id || "").trim())
     .filter(Boolean);
   const seriesFailed = fredItems
-    .filter((item) => ["failed", "timeout", "no_results"].includes(String(item.status || "")))
+    .filter((item) => ["failed", "timeout", "no_results", "rate_limited"].includes(String(item.status || "")))
     .map((item) => String((item.extracted_facts as Record<string, unknown> | undefined)?.series_id || "").trim())
     .filter(Boolean);
+  const failureReasons = seriesResults
+    .filter((result) => result.success !== true)
+    .map((result) => ({
+      series_id: result.series_id,
+      status: result.status,
+      http_status: result.http_status,
+      reason: result.failure_reason,
+      fred_error_code: result.fred_error_code,
+      fred_error_message: result.fred_error_message,
+    }));
   const warnings = fredItems.map((item) => String(item.warning || "").trim()).filter(Boolean);
   const anyTimeout = fredItems.some((item) => String(item.status || "") === "timeout");
   const anyFailed = fredItems.some((item) => String(item.status || "") === "failed");
   const anyNoResults = fredItems.some((item) => String(item.status || "") === "no_results");
+  const anyRateLimited = fredItems.some((item) => String(item.status || "") === "rate_limited");
   const anySuccess = seriesSuccessful.length > 0;
+  const anyNonSuccess = seriesFailed.length || anyTimeout || anyFailed || anyNoResults || anyRateLimited;
   const status = !triggered
     ? "skipped"
     : !apiKeyDetected
       ? "skipped"
-      : anySuccess && (seriesFailed.length || anyTimeout || anyFailed || anyNoResults)
+      : anySuccess && anyNonSuccess
         ? "partial_success"
         : anySuccess
           ? "success"
+          : anyRateLimited
+            ? "rate_limited"
           : anyTimeout
             ? "timeout"
             : (anyFailed || anyNoResults)
@@ -1817,6 +2033,8 @@ function summarizeFredDiagnostics(items: Record<string, unknown>[], triggered: b
     series_attempted: seriesAttempted,
     series_successful: seriesSuccessful,
     series_failed: seriesFailed,
+    series_results: seriesResults,
+    failure_reasons: failureReasons,
     warnings: uniqueStrings(warnings),
   };
 }
@@ -1852,11 +2070,16 @@ async function collectFredMacroResearch(args: {
     };
   }
 
-  for (const seriesId of seriesIds) {
-    items.push(await fetchFredSeriesObservations({
+  for (let index = 0; index < seriesIds.length; index += 1) {
+    const seriesId = seriesIds[index];
+    const item = await fetchFredSeriesObservations({
       seriesId,
       apiKey: args.apiKey || "",
-    }));
+    });
+    items.push(item);
+    if (index < seriesIds.length - 1) {
+      await delay(String(item.status || "") === "rate_limited" ? fredInterSeriesDelayMs * 2 : fredInterSeriesDelayMs);
+    }
   }
 
   return {
@@ -1868,10 +2091,909 @@ async function collectFredMacroResearch(args: {
   };
 }
 
+function dateDaysFromNow(days: number) {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function getExternalRouterText(researchPlan: Record<string, unknown>, rawEventText: string, tickers: string[] = []) {
+  const classification = researchPlan.event_classification as Record<string, unknown> | undefined;
+  const entities = getResearchEntities(researchPlan);
+  const channels = getTransmissionChannels(researchPlan)
+    .map((channel) => [
+      channel.channel,
+      channel.mechanism,
+      channel.time_horizon,
+      ...(Array.isArray(channel.missing_data) ? channel.missing_data : []),
+    ].filter(Boolean).join(" "));
+  return [
+    rawEventText,
+    classification?.category,
+    classification?.event_type,
+    classification?.primary_theme,
+    ...(Array.isArray(classification?.secondary_themes) ? classification.secondary_themes : []),
+    ...entities.directly_mentioned_companies,
+    ...entities.public_tickers_mentioned,
+    ...entities.geographies,
+    ...tickers,
+    ...channels,
+  ].map((value) => String(value || "").toLowerCase()).join(" ");
+}
+
+function shouldRunEiaEnergyResearch(researchPlan: Record<string, unknown>, rawEventText: string) {
+  const text = getExternalRouterText(researchPlan, rawEventText);
+  return textIncludesAny(text, [
+    "eia",
+    "energy",
+    "oil",
+    "crude",
+    "brent",
+    "wti",
+    "lng",
+    "natural gas",
+    "gasoline",
+    "diesel",
+    "jet fuel",
+    "refinery",
+    "inventories",
+    "inventory",
+    "production",
+    "imports",
+    "exports",
+    "hormuz",
+    "strait",
+    "shipping disruption",
+    "energy shock",
+  ]);
+}
+
+function shouldRunEcbMacroResearch(researchPlan: Record<string, unknown>, rawEventText: string) {
+  const text = getExternalRouterText(researchPlan, rawEventText);
+  return textIncludesAny(text, [
+    "ecb",
+    "europe",
+    "european",
+    "eurozone",
+    "euro area",
+    "euro",
+    "eur/usd",
+    "dax",
+    "euro stoxx",
+    "eurostoxx",
+    "bund",
+    "lagarde",
+    "european central bank",
+  ]);
+}
+
+function isFmpCompanyTicker(value: unknown) {
+  const ticker = canonicalTicker(value);
+  if (!ticker || isInvalidAssetLabel(ticker) || isSectorEtfProxy(ticker) || isBroadSectorOrThemeLabel(ticker)) return false;
+  if (ticker.includes("/") || ticker.includes("CRUDE") || ticker.includes("YIELD")) return false;
+  if (["SPY", "QQQ", "TLT", "BND", "GLD", "USO", "DXY", "US10Y", "WTI", "BRENT"].includes(ticker)) return false;
+  const alias = canonicalAssetAliases[normalizeComparable(ticker)];
+  if (alias?.asset_class && alias.asset_class !== "stock") return false;
+  return /^[A-Z][A-Z0-9.]{0,12}$/.test(ticker);
+}
+
+function selectFmpTickersForResearch(researchPlan: Record<string, unknown>, rawEventText: string, tickers: string[] = []) {
+  const entities = getResearchEntities(researchPlan);
+  return uniqueStrings([
+    ...tickers,
+    ...extractCashtags(rawEventText),
+    ...entities.public_tickers_mentioned,
+    ...entities.directly_mentioned_companies.map((company) => canonicalTicker(company)),
+  ])
+    .map((ticker) => canonicalTicker(ticker))
+    .filter(isFmpCompanyTicker)
+    .slice(0, 3);
+}
+
+function shouldRunFmpResearch(researchPlan: Record<string, unknown>, rawEventText: string, tickers: string[] = []) {
+  const text = getExternalRouterText(researchPlan, rawEventText, tickers);
+  const fmpTickers = selectFmpTickersForResearch(researchPlan, rawEventText, tickers);
+  if (!fmpTickers.length) return false;
+  return textIncludesAny(text, [
+    "earnings",
+    "eps",
+    "revenue",
+    "guidance",
+    "margin",
+    "margins",
+    "company",
+    "shares",
+    "stock",
+    "ticker",
+    "analyst",
+    "financial metrics",
+    "press release",
+  ]);
+}
+
+function shouldRunGdeltResearch(researchPlan: Record<string, unknown>, rawEventText: string, tickers: string[] = []) {
+  const text = getExternalRouterText(researchPlan, rawEventText, tickers);
+  return textIncludesAny(text, [
+    "geopolitical",
+    "geopolitics",
+    "conflict",
+    "war",
+    "military",
+    "sanctions",
+    "breaking",
+    "reports indicate",
+    "reported",
+    "officials",
+    "regulation",
+    "policy",
+    "broad event",
+    "shipping disruption",
+    "hormuz",
+  ]);
+}
+
+function buildExternalSourcesRouter(args: {
+  researchPlan: Record<string, unknown>;
+  rawEventText: string;
+  tickers: string[];
+}) {
+  const decisions = {
+    GDELT: shouldRunGdeltResearch(args.researchPlan, args.rawEventText, args.tickers),
+    FRED: shouldRunFredMacroResearch(args.researchPlan, args.rawEventText),
+    EIA: shouldRunEiaEnergyResearch(args.researchPlan, args.rawEventText),
+    ECB: shouldRunEcbMacroResearch(args.researchPlan, args.rawEventText),
+    FMP: shouldRunFmpResearch(args.researchPlan, args.rawEventText, args.tickers),
+  };
+  const skipReasons: Record<string, string> = {};
+  if (!decisions.GDELT) skipReasons.GDELT = "No geopolitical, breaking-news, policy, or broad-event context trigger.";
+  if (!decisions.FRED) skipReasons.FRED = "No U.S. macro/rates/inflation/labor/recession/yields trigger.";
+  if (!decisions.EIA) skipReasons.EIA = "No oil, gas, LNG, fuel, inventories, production, Hormuz, or energy-shock trigger.";
+  if (!decisions.ECB) skipReasons.ECB = "No Europe/ECB/eurozone/euro/DAX/Euro Stoxx trigger.";
+  if (!decisions.FMP) skipReasons.FMP = "No earnings/company-specific/ticker-specific trigger with a concrete listed company ticker.";
+  const sourcesSelected = Object.entries(decisions).filter(([_source, selected]) => selected).map(([source]) => source);
+  const sourcesSkipped = Object.entries(decisions).filter(([_source, selected]) => !selected).map(([source]) => source);
+  return {
+    sources_selected: sourcesSelected,
+    sources_skipped: sourcesSkipped,
+    source_skip_reasons: skipReasons,
+    decisions,
+  };
+}
+
+function sourceSelected(router: Record<string, unknown>, sourceName: string) {
+  return Array.isArray(router.sources_selected) && router.sources_selected.includes(sourceName);
+}
+
+function buildGenericSourceDiagnostics(args: {
+  sourceName: string;
+  selected: boolean;
+  apiKeyDetected?: boolean;
+  items: Record<string, unknown>[];
+  endpointSummary: Record<string, unknown>;
+  skipReason?: string;
+}) {
+  const items = args.items.filter((item) => String(item.source_name || "") === args.sourceName);
+  const successful = items.filter((item) => String(item.status || "") === "success");
+  const failed = items.filter((item) => ["failed", "timeout", "rate_limited", "no_results", "skipped"].includes(String(item.status || "")));
+  const warnings = items.map((item) => String(item.warning || "").trim()).filter(Boolean);
+  return {
+    attempted: args.selected && items.some((item) => String(item.status || "") !== "skipped"),
+    selected_by_router: args.selected,
+    status: !args.selected
+      ? "skipped"
+      : successful.length && failed.length
+        ? "partial_success"
+        : successful.length
+          ? "success"
+          : failed.some((item) => String(item.status || "") === "rate_limited")
+            ? "rate_limited"
+            : failed.some((item) => String(item.status || "") === "timeout")
+              ? "timeout"
+              : failed.length
+                ? String(failed[0].status || "failed")
+                : "skipped",
+    api_key_detected: args.apiKeyDetected ?? null,
+    endpoint_summary: args.endpointSummary,
+    items_attempted: items.map((item) => item.query_or_endpoint || "").filter(Boolean),
+    items_successful: successful.map((item) => item.query_or_endpoint || "").filter(Boolean),
+    items_failed_or_skipped: failed.map((item) => item.query_or_endpoint || "").filter(Boolean),
+    warnings: uniqueStrings(warnings),
+    skip_reason: args.selected ? "" : args.skipReason || "",
+  };
+}
+
+function selectEiaSeriesForTopic(researchPlan: Record<string, unknown>, rawEventText: string) {
+  const text = getExternalRouterText(researchPlan, rawEventText);
+  const selected = Object.values(eiaSeriesCatalog)
+    .filter((series) => series.enabled && textIncludesAny(text, series.triggerTerms))
+    .map((series) => series.seriesId);
+  if (!selected.length && shouldRunEiaEnergyResearch(researchPlan, rawEventText)) {
+    selected.push(eiaSeriesCatalog.BRENT_SPOT.seriesId, eiaSeriesCatalog.WTI_SPOT.seriesId);
+  }
+  return uniqueStrings(selected).slice(0, 4);
+}
+
+function findEiaSeriesInfo(seriesId: string) {
+  return Object.values(eiaSeriesCatalog).find((series) => series.seriesId === seriesId);
+}
+
+function buildEiaUrl(seriesId: string, apiKey: string) {
+  const url = new URL(`${eiaSeriesIdEndpoint}/${encodeURIComponent(seriesId)}`);
+  url.search = new URLSearchParams({
+    api_key: apiKey,
+    out: "json",
+    "sort[0][column]": "period",
+    "sort[0][direction]": "desc",
+    length: "12",
+  }).toString();
+  return url.toString();
+}
+
+function buildEiaParamsExcludingApiKey(seriesId: string) {
+  return {
+    series_id: seriesId,
+    out: "json",
+    "sort[0][column]": "period",
+    "sort[0][direction]": "desc",
+    length: "12",
+  };
+}
+
+function normalizeEiaObservation(payload: unknown) {
+  const record = payload as Record<string, unknown> | null;
+  const response = record?.response as Record<string, unknown> | undefined;
+  const rawRows = Array.isArray(response?.data)
+    ? response?.data as Record<string, unknown>[]
+    : Array.isArray(record?.data)
+      ? record?.data as Record<string, unknown>[]
+      : [];
+  return rawRows
+    .map((row) => {
+      const rawValue = row.value ?? row.Value ?? row.price ?? row.quantity;
+      const value = Number(rawValue);
+      return {
+        period: String(row.period || row.date || row.datetime || "").trim(),
+        value: Number.isFinite(value) ? value : null,
+        units: String(row.units || row.unit || row["value-units"] || "").trim(),
+        series_id: String(row.series || row.series_id || row.seriesId || "").trim(),
+      };
+    })
+    .filter((row) => row.period && row.value !== null) as Array<{ period: string; value: number; units: string; series_id: string }>;
+}
+
+function buildEiaExternalResearchItem(args: {
+  seriesId: string;
+  status: string;
+  httpStatus?: number | null;
+  errorMessage?: string;
+  observations?: Array<{ period: string; value: number; units: string; series_id: string }>;
+  apiKeyDetected: boolean;
+}) {
+  const seriesInfo = findEiaSeriesInfo(args.seriesId);
+  const observations = args.observations || [];
+  const latest = observations[0];
+  const previous = observations[1];
+  const warning = args.status === "success"
+    ? ""
+    : args.status === "skipped"
+      ? "EIA energy research skipped."
+      : args.status === "rate_limited"
+        ? `EIA ${args.seriesId} was rate-limited. Continuing without this energy series.`
+        : args.status === "no_results"
+          ? `EIA ${args.seriesId} returned no usable observations.`
+          : `EIA ${args.seriesId} unavailable${args.httpStatus ? `: HTTP ${args.httpStatus}` : ""}. Continuing without this energy series.${args.errorMessage ? ` EIA said: ${sanitizeExternalErrorMessage(args.errorMessage)}` : ""}`;
+  return {
+    source_name: "EIA",
+    source_type: "energy",
+    query_or_endpoint: `eia/v2/seriesid:${args.seriesId}`,
+    request_summary: {
+      endpoint_summary: eiaEndpointSummary,
+      series_id: args.seriesId,
+      title: seriesInfo?.title || args.seriesId,
+      category: seriesInfo?.category || "energy",
+      api_key_detected: args.apiKeyDetected,
+      parameters_sent_excluding_api_key: buildEiaParamsExcludingApiKey(args.seriesId),
+    },
+    response_summary: {
+      status: args.status,
+      http_status: args.httpStatus ?? null,
+      observation_count: observations.length,
+      latest_period: latest?.period || "",
+      latest_value: latest?.value ?? null,
+      previous_value: previous?.value ?? null,
+      warning,
+    },
+    raw_payload: {
+      observations: observations.slice(0, 12),
+      note: "Limited recent EIA observations only; API key and full URL are not stored.",
+    },
+    extracted_facts: {
+      series_id: args.seriesId,
+      title: seriesInfo?.title || args.seriesId,
+      category: seriesInfo?.category || "energy",
+      latest_period: latest?.period || "",
+      latest_value: latest?.value ?? null,
+      previous_period: previous?.period || "",
+      previous_value: previous?.value ?? null,
+      units: latest?.units || "",
+      change_from_previous: latest && previous ? Number((latest.value - previous.value).toFixed(4)) : null,
+    },
+    status: args.status,
+    warning: warning || null,
+    used_in_final_node: args.status === "success",
+    data_quality: args.status === "success" ? "high" : "unknown",
+  };
+}
+
+async function fetchEiaSeriesOrRoute(seriesId: string, apiKey: string) {
+  const requestUrl = buildEiaUrl(seriesId, apiKey);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), eiaRequestTimeoutMs);
+  try {
+    const response = await fetch(requestUrl, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (response.status === 429) {
+      return buildEiaExternalResearchItem({ seriesId, status: "rate_limited", httpStatus: response.status, apiKeyDetected: true });
+    }
+    if (!response.ok) {
+      const errorMessage = await response.text();
+      return buildEiaExternalResearchItem({
+        seriesId,
+        status: "failed",
+        httpStatus: response.status,
+        errorMessage,
+        apiKeyDetected: true,
+      });
+    }
+    const payload = await response.json();
+    const observations = normalizeEiaObservation(payload);
+    return buildEiaExternalResearchItem({
+      seriesId,
+      status: observations.length ? "success" : "no_results",
+      httpStatus: response.status,
+      observations,
+      apiKeyDetected: true,
+    });
+  } catch (error) {
+    clearTimeout(timeoutId);
+    return buildEiaExternalResearchItem({
+      seriesId,
+      status: error instanceof DOMException && error.name === "AbortError" ? "timeout" : "failed",
+      errorMessage: error instanceof Error ? error.message : String(error || ""),
+      apiKeyDetected: true,
+    });
+  }
+}
+
+async function collectEiaEnergyResearch(args: {
+  researchPlan: Record<string, unknown>;
+  rawEventText: string;
+  apiKey?: string;
+  selected: boolean;
+  skipReason?: string;
+}) {
+  const apiKeyDetected = Boolean(args.apiKey);
+  const items: Record<string, unknown>[] = [];
+  if (!args.selected) {
+    return {
+      items,
+      diagnostics: buildGenericSourceDiagnostics({
+        sourceName: "EIA",
+        selected: false,
+        apiKeyDetected,
+        items,
+        endpointSummary: eiaEndpointSummary,
+        skipReason: args.skipReason,
+      }),
+      facts: [],
+    };
+  }
+  const seriesIds = selectEiaSeriesForTopic(args.researchPlan, args.rawEventText);
+  if (!apiKeyDetected) {
+    items.push({
+      source_name: "EIA",
+      source_type: "energy",
+      query_or_endpoint: "eia/v2/seriesid",
+      request_summary: { endpoint_summary: eiaEndpointSummary, selected_series: seriesIds, api_key_detected: false },
+      response_summary: { status: "skipped", reason: "EIA_API_KEY is not configured." },
+      raw_payload: null,
+      extracted_facts: { selected_series: seriesIds, reason: "EIA_API_KEY is not configured." },
+      status: "skipped",
+      warning: "EIA_API_KEY is not configured. Continuing without EIA energy support.",
+      used_in_final_node: false,
+      data_quality: "unknown",
+    });
+  } else if (!seriesIds.length) {
+    items.push({
+      source_name: "EIA",
+      source_type: "energy",
+      query_or_endpoint: "eia/v2/seriesid",
+      request_summary: { endpoint_summary: eiaEndpointSummary, selected_series: [], api_key_detected: true },
+      response_summary: { status: "skipped", reason: "No confirmed EIA series route selected for this event." },
+      raw_payload: null,
+      extracted_facts: { selected_series: [], reason: "No confirmed EIA series route selected for this event." },
+      status: "skipped",
+      warning: "EIA selected by router, but no confirmed enabled EIA series matched this topic.",
+      used_in_final_node: false,
+      data_quality: "unknown",
+    });
+  } else {
+    for (let index = 0; index < seriesIds.length; index += 1) {
+      items.push(await fetchEiaSeriesOrRoute(seriesIds[index], args.apiKey || ""));
+      if (index < seriesIds.length - 1) await delay(eiaInterSeriesDelayMs);
+    }
+  }
+  return {
+    items,
+    diagnostics: buildGenericSourceDiagnostics({
+      sourceName: "EIA",
+      selected: true,
+      apiKeyDetected,
+      items,
+      endpointSummary: eiaEndpointSummary,
+    }),
+    facts: items.filter((item) => String(item.status || "") === "success").map((item) => item.extracted_facts),
+  };
+}
+
+function selectEcbSeriesForTopic(researchPlan: Record<string, unknown>, rawEventText: string) {
+  const text = getExternalRouterText(researchPlan, rawEventText);
+  return Object.values(ecbSeriesCatalog)
+    .filter((series) => series.enabled && textIncludesAny(text, series.triggerTerms))
+    .map((series) => `${series.flowRef}/${series.key}`)
+    .slice(0, 3);
+}
+
+function buildEcbUrl(flowRef: string, key: string) {
+  const url = new URL(`${ecbDataApiEndpoint}/${encodeURIComponent(flowRef)}/${encodeURIComponent(key)}`);
+  url.search = new URLSearchParams({
+    lastNObservations: "12",
+    detail: "dataonly",
+    format: "jsondata",
+  }).toString();
+  return url.toString();
+}
+
+function findEcbSeriesInfo(flowRef: string, key: string) {
+  return Object.values(ecbSeriesCatalog).find((series) => series.flowRef === flowRef && series.key === key);
+}
+
+function normalizeEcbObservation(payload: unknown) {
+  const record = payload as Record<string, unknown> | null;
+  const structure = record?.structure as Record<string, unknown> | undefined;
+  const dimensions = structure?.dimensions as Record<string, unknown> | undefined;
+  const observationDimensions = Array.isArray(dimensions?.observation) ? dimensions?.observation as Record<string, unknown>[] : [];
+  const periodValues = Array.isArray(observationDimensions[0]?.values) ? observationDimensions[0].values as Record<string, unknown>[] : [];
+  const dataSets = Array.isArray(record?.dataSets) ? record?.dataSets as Record<string, unknown>[] : [];
+  const seriesRecord = dataSets[0]?.series as Record<string, unknown> | undefined;
+  const firstSeries = seriesRecord ? Object.values(seriesRecord)[0] as Record<string, unknown> | undefined : undefined;
+  const observationsRecord = firstSeries?.observations as Record<string, unknown[]> | undefined;
+  if (!observationsRecord) return [];
+  return Object.entries(observationsRecord)
+    .map(([index, values]) => {
+      const value = Number(Array.isArray(values) ? values[0] : null);
+      const period = String(periodValues[Number(index)]?.id || periodValues[Number(index)]?.name || index).trim();
+      return {
+        period,
+        value: Number.isFinite(value) ? value : null,
+      };
+    })
+    .filter((row) => row.period && row.value !== null) as Array<{ period: string; value: number }>;
+}
+
+function buildEcbExternalResearchItem(args: {
+  flowRef: string;
+  key: string;
+  status: string;
+  httpStatus?: number | null;
+  errorMessage?: string;
+  observations?: Array<{ period: string; value: number }>;
+}) {
+  const seriesInfo = findEcbSeriesInfo(args.flowRef, args.key);
+  const observations = args.observations || [];
+  const latest = observations[observations.length - 1] || observations[0];
+  const previous = observations.length > 1 ? observations[observations.length - 2] : undefined;
+  const warning = args.status === "success"
+    ? ""
+    : args.status === "no_results"
+      ? `ECB ${args.flowRef}/${args.key} returned no usable observations.`
+      : `ECB ${args.flowRef}/${args.key} unavailable${args.httpStatus ? `: HTTP ${args.httpStatus}` : ""}. Continuing without this European macro series.${args.errorMessage ? ` ECB said: ${sanitizeExternalErrorMessage(args.errorMessage)}` : ""}`;
+  return {
+    source_name: "ECB",
+    source_type: "macro",
+    query_or_endpoint: `ecb/data:${args.flowRef}/${args.key}`,
+    request_summary: {
+      endpoint_summary: ecbEndpointSummary,
+      flow_ref: args.flowRef,
+      key: args.key,
+      title: seriesInfo?.title || `${args.flowRef}/${args.key}`,
+      parameters_sent: { lastNObservations: "12", detail: "dataonly", format: "jsondata" },
+      api_key_required: false,
+    },
+    response_summary: {
+      status: args.status,
+      http_status: args.httpStatus ?? null,
+      observation_count: observations.length,
+      latest_period: latest?.period || "",
+      latest_value: latest?.value ?? null,
+      warning,
+    },
+    raw_payload: { observations: observations.slice(-12), note: "Limited recent ECB observations only." },
+    extracted_facts: {
+      flow_ref: args.flowRef,
+      key: args.key,
+      title: seriesInfo?.title || `${args.flowRef}/${args.key}`,
+      category: seriesInfo?.category || "macro",
+      latest_period: latest?.period || "",
+      latest_value: latest?.value ?? null,
+      previous_period: previous?.period || "",
+      previous_value: previous?.value ?? null,
+      change_from_previous: latest && previous ? Number((latest.value - previous.value).toFixed(6)) : null,
+    },
+    status: args.status,
+    warning: warning || null,
+    used_in_final_node: args.status === "success",
+    data_quality: args.status === "success" ? "high" : "unknown",
+  };
+}
+
+async function fetchEcbSeries(seriesPath: string) {
+  const [flowRef, key] = seriesPath.split("/");
+  const requestUrl = buildEcbUrl(flowRef, key);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ecbRequestTimeoutMs);
+  try {
+    const response = await fetch(requestUrl, {
+      signal: controller.signal,
+      headers: { accept: "application/json" },
+    });
+    clearTimeout(timeoutId);
+    if (!response.ok) {
+      return buildEcbExternalResearchItem({
+        flowRef,
+        key,
+        status: response.status === 429 ? "rate_limited" : "failed",
+        httpStatus: response.status,
+        errorMessage: await response.text(),
+      });
+    }
+    const payload = await response.json();
+    const observations = normalizeEcbObservation(payload);
+    return buildEcbExternalResearchItem({
+      flowRef,
+      key,
+      status: observations.length ? "success" : "no_results",
+      httpStatus: response.status,
+      observations,
+    });
+  } catch (error) {
+    clearTimeout(timeoutId);
+    const [flowRef, key] = seriesPath.split("/");
+    return buildEcbExternalResearchItem({
+      flowRef,
+      key,
+      status: error instanceof DOMException && error.name === "AbortError" ? "timeout" : "failed",
+      errorMessage: error instanceof Error ? error.message : String(error || ""),
+    });
+  }
+}
+
+async function collectEcbMacroResearch(args: {
+  researchPlan: Record<string, unknown>;
+  rawEventText: string;
+  selected: boolean;
+  skipReason?: string;
+}) {
+  const items: Record<string, unknown>[] = [];
+  if (!args.selected) {
+    return {
+      items,
+      diagnostics: buildGenericSourceDiagnostics({
+        sourceName: "ECB",
+        selected: false,
+        apiKeyDetected: false,
+        items,
+        endpointSummary: ecbEndpointSummary,
+        skipReason: args.skipReason,
+      }),
+      facts: [],
+    };
+  }
+  const seriesPaths = selectEcbSeriesForTopic(args.researchPlan, args.rawEventText);
+  if (!seriesPaths.length) {
+    items.push({
+      source_name: "ECB",
+      source_type: "macro",
+      query_or_endpoint: "ecb/data",
+      request_summary: { endpoint_summary: ecbEndpointSummary, selected_series: [], api_key_required: false },
+      response_summary: { status: "skipped", reason: "No confirmed ECB series key selected for this event." },
+      raw_payload: null,
+      extracted_facts: { selected_series: [], reason: "No confirmed ECB series key selected for this event." },
+      status: "skipped",
+      warning: "ECB selected by router, but no confirmed enabled ECB series matched this topic.",
+      used_in_final_node: false,
+      data_quality: "unknown",
+    });
+  } else {
+    for (const seriesPath of seriesPaths) {
+      items.push(await fetchEcbSeries(seriesPath));
+    }
+  }
+  return {
+    items,
+    diagnostics: buildGenericSourceDiagnostics({
+      sourceName: "ECB",
+      selected: true,
+      apiKeyDetected: false,
+      items,
+      endpointSummary: ecbEndpointSummary,
+    }),
+    facts: items.filter((item) => String(item.status || "") === "success").map((item) => item.extracted_facts),
+  };
+}
+
+function buildFmpUrl(endpointKey: string, ticker: string, apiKey: string) {
+  const config = fmpEndpointCatalog[endpointKey];
+  const url = new URL(`${fmpBaseEndpoint}/${config.endpoint}`);
+  url.searchParams.set("symbol", ticker);
+  for (const [key, value] of Object.entries(config.params || {})) {
+    url.searchParams.set(key, value);
+  }
+  if (endpointKey === "earnings_calendar") {
+    url.searchParams.set("from", dateDaysFromNow(-30));
+    url.searchParams.set("to", dateDaysFromNow(180));
+  }
+  url.searchParams.set("apikey", apiKey);
+  return url.toString();
+}
+
+function buildFmpParamsExcludingApiKey(endpointKey: string, ticker: string) {
+  const params: Record<string, string> = { symbol: ticker, ...(fmpEndpointCatalog[endpointKey]?.params || {}) };
+  if (endpointKey === "earnings_calendar") {
+    params.from = dateDaysFromNow(-30);
+    params.to = dateDaysFromNow(180);
+  }
+  return params;
+}
+
+function summarizeFmpPayload(endpointKey: string, payload: unknown) {
+  const rows = Array.isArray(payload) ? payload as Record<string, unknown>[] : payload && typeof payload === "object" ? [payload as Record<string, unknown>] : [];
+  const first = rows[0] || {};
+  if (endpointKey === "company_profile") {
+    return {
+      company_name: first.companyName || first.company_name || first.name || "",
+      sector: first.sector || "",
+      industry: first.industry || "",
+      exchange: first.exchange || first.exchangeShortName || "",
+      country: first.country || "",
+      market_cap: first.mktCap || first.marketCap || null,
+    };
+  }
+  if (endpointKey === "earnings_calendar") {
+    return {
+      event_count: rows.length,
+      next_event_date: first.date || first.fiscalDateEnding || "",
+      eps_estimate: first.epsEstimated ?? first.epsEstimate ?? null,
+      revenue_estimate: first.revenueEstimated ?? first.revenueEstimate ?? null,
+    };
+  }
+  return {
+    row_count: rows.length,
+    sample_keys: Object.keys(first).slice(0, 8),
+  };
+}
+
+function buildFmpExternalResearchItem(args: {
+  endpointKey: string;
+  ticker: string;
+  status: string;
+  httpStatus?: number | null;
+  payload?: unknown;
+  errorMessage?: string;
+  apiKeyDetected: boolean;
+}) {
+  const config = fmpEndpointCatalog[args.endpointKey];
+  const rows = Array.isArray(args.payload) ? args.payload as unknown[] : args.payload ? [args.payload] : [];
+  const facts = args.status === "success" ? summarizeFmpPayload(args.endpointKey, args.payload) : {};
+  const warning = args.status === "success"
+    ? ""
+    : args.status === "rate_limited"
+      ? `FMP ${args.endpointKey} for ${args.ticker} was rate-limited. Continuing without this company observation.`
+      : args.status === "no_results"
+        ? `FMP ${args.endpointKey} for ${args.ticker} returned no usable rows.`
+        : `FMP ${args.endpointKey} for ${args.ticker} unavailable${args.httpStatus ? `: HTTP ${args.httpStatus}` : ""}. Continuing without this company observation.${args.errorMessage ? ` FMP said: ${sanitizeExternalErrorMessage(args.errorMessage)}` : ""}`;
+  return {
+    source_name: "FMP",
+    source_type: config?.sourceType || "company_profile",
+    query_or_endpoint: `fmp/stable/${config?.endpoint || args.endpointKey}:${args.ticker}`,
+    request_summary: {
+      endpoint_summary: fmpEndpointSummary,
+      endpoint_key: args.endpointKey,
+      endpoint: config?.endpoint || args.endpointKey,
+      ticker: args.ticker,
+      api_key_detected: args.apiKeyDetected,
+      parameters_sent_excluding_api_key: buildFmpParamsExcludingApiKey(args.endpointKey, args.ticker),
+    },
+    response_summary: {
+      status: args.status,
+      http_status: args.httpStatus ?? null,
+      row_count: rows.length,
+      warning,
+    },
+    raw_payload: { rows: rows.slice(0, 5), note: "Limited FMP rows only; API key and full URL are not stored." },
+    extracted_facts: {
+      ticker: args.ticker,
+      endpoint_key: args.endpointKey,
+      ...facts,
+    },
+    status: args.status,
+    warning: warning || null,
+    used_in_final_node: args.status === "success",
+    data_quality: args.status === "success" ? "medium" : "unknown",
+  };
+}
+
+async function fetchFmpResearchEndpoint(endpointKey: string, ticker: string, apiKey: string) {
+  const requestUrl = buildFmpUrl(endpointKey, ticker, apiKey);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), fmpRequestTimeoutMs);
+  try {
+    const response = await fetch(requestUrl, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (response.status === 429) {
+      return buildFmpExternalResearchItem({ endpointKey, ticker, status: "rate_limited", httpStatus: response.status, apiKeyDetected: true });
+    }
+    if (!response.ok) {
+      return buildFmpExternalResearchItem({
+        endpointKey,
+        ticker,
+        status: "failed",
+        httpStatus: response.status,
+        errorMessage: await response.text(),
+        apiKeyDetected: true,
+      });
+    }
+    const payload = await response.json();
+    const rows = Array.isArray(payload) ? payload : payload ? [payload] : [];
+    return buildFmpExternalResearchItem({
+      endpointKey,
+      ticker,
+      status: rows.length ? "success" : "no_results",
+      httpStatus: response.status,
+      payload,
+      apiKeyDetected: true,
+    });
+  } catch (error) {
+    clearTimeout(timeoutId);
+    return buildFmpExternalResearchItem({
+      endpointKey,
+      ticker,
+      status: error instanceof DOMException && error.name === "AbortError" ? "timeout" : "failed",
+      errorMessage: error instanceof Error ? error.message : String(error || ""),
+      apiKeyDetected: true,
+    });
+  }
+}
+
+async function collectFmpCompanyResearch(args: {
+  researchPlan: Record<string, unknown>;
+  rawEventText: string;
+  tickers: string[];
+  apiKey?: string;
+  selected: boolean;
+  skipReason?: string;
+}) {
+  const apiKeyDetected = Boolean(args.apiKey);
+  const items: Record<string, unknown>[] = [];
+  if (!args.selected) {
+    return {
+      items,
+      diagnostics: buildGenericSourceDiagnostics({
+        sourceName: "FMP",
+        selected: false,
+        apiKeyDetected,
+        items,
+        endpointSummary: fmpEndpointSummary,
+        skipReason: args.skipReason,
+      }),
+      facts: [],
+    };
+  }
+  const tickers = selectFmpTickersForResearch(args.researchPlan, args.rawEventText, args.tickers);
+  if (!apiKeyDetected) {
+    items.push({
+      source_name: "FMP",
+      source_type: "company_profile",
+      query_or_endpoint: "fmp/stable",
+      request_summary: { endpoint_summary: fmpEndpointSummary, selected_tickers: tickers, api_key_detected: false },
+      response_summary: { status: "skipped", reason: "FMP_API_KEY is not configured." },
+      raw_payload: null,
+      extracted_facts: { selected_tickers: tickers, reason: "FMP_API_KEY is not configured." },
+      status: "skipped",
+      warning: "FMP_API_KEY is not configured. Continuing without FMP company support.",
+      used_in_final_node: false,
+      data_quality: "unknown",
+    });
+  } else if (!tickers.length) {
+    items.push({
+      source_name: "FMP",
+      source_type: "company_profile",
+      query_or_endpoint: "fmp/stable",
+      request_summary: { endpoint_summary: fmpEndpointSummary, selected_tickers: [], api_key_detected: true },
+      response_summary: { status: "skipped", reason: "No concrete listed company ticker selected for FMP." },
+      raw_payload: null,
+      extracted_facts: { selected_tickers: [], reason: "No concrete listed company ticker selected for FMP." },
+      status: "skipped",
+      warning: "FMP selected by router, but no concrete listed company ticker was available.",
+      used_in_final_node: false,
+      data_quality: "unknown",
+    });
+  } else {
+    const enabledEndpointKeys = Object.entries(fmpEndpointCatalog)
+      .filter(([_key, config]) => config.enabled)
+      .map(([key]) => key);
+    for (const ticker of tickers) {
+      for (const endpointKey of enabledEndpointKeys) {
+        items.push(await fetchFmpResearchEndpoint(endpointKey, ticker, args.apiKey || ""));
+        await delay(350);
+      }
+    }
+  }
+  return {
+    items,
+    diagnostics: buildGenericSourceDiagnostics({
+      sourceName: "FMP",
+      selected: true,
+      apiKeyDetected,
+      items,
+      endpointSummary: fmpEndpointSummary,
+    }),
+    facts: items.filter((item) => String(item.status || "") === "success").map((item) => item.extracted_facts),
+  };
+}
+
 async function runFredConnectivityDebug(args: {
   apiKey?: string;
   seriesId?: string;
+  seriesIds?: unknown;
 }) {
+  const requestedSeriesIds = cleanStringArray(args.seriesIds)
+    .map((seriesId) => seriesId.toUpperCase())
+    .filter((seriesId) => Boolean(fredSeriesCatalog[seriesId]))
+    .slice(0, 6);
+  if (requestedSeriesIds.length > 1) {
+    const results: Record<string, unknown>[] = [];
+    for (let index = 0; index < requestedSeriesIds.length; index += 1) {
+      results.push(await runFredConnectivityDebug({
+        apiKey: args.apiKey,
+        seriesId: requestedSeriesIds[index],
+      }));
+      if (index < requestedSeriesIds.length - 1) {
+        await delay(fredInterSeriesDelayMs);
+      }
+    }
+    return {
+      ok: results.every((result) => result.ok === true),
+      debug_only: true,
+      node_created: false,
+      external_research_items_created: 0,
+      fred_api_key_detected: Boolean(args.apiKey),
+      series_ids: requestedSeriesIds,
+      series_results: results,
+      safe_endpoint_summary: fredEndpointSummary,
+      status: results.every((result) => String(result.status || "") === "success")
+        ? "success"
+        : results.some((result) => String(result.status || "") === "success")
+          ? "partial_success"
+          : results.some((result) => String(result.status || "") === "rate_limited")
+            ? "rate_limited"
+            : results.some((result) => String(result.status || "") === "timeout")
+              ? "timeout"
+              : "failed",
+      warning: uniqueStrings(results.map((result) => String(result.warning || "").trim()).filter(Boolean)).join(" "),
+    };
+  }
+
   const requestedSeriesId = String(args.seriesId || "DGS10").trim().toUpperCase();
   const seriesId = fredSeriesCatalog[requestedSeriesId] ? requestedSeriesId : "DGS10";
   const apiKeyDetected = Boolean(args.apiKey);
@@ -2036,6 +3158,9 @@ function buildResearchFactPack(args: {
   gdeltResult: Record<string, unknown>;
   fredDiagnostics?: Record<string, unknown>;
   fredFacts?: unknown[];
+  externalSourceDiagnostics?: Record<string, unknown>;
+  externalObservationFacts?: unknown[];
+  externalWarnings?: string[];
   candidateAssets: Record<string, unknown>[];
 }) {
   const classification = args.researchPlan.event_classification as Record<string, unknown> | undefined;
@@ -2057,6 +3182,7 @@ function buildResearchFactPack(args: {
   });
   const fredDiagnostics = args.fredDiagnostics || summarizeFredDiagnostics([], false, false);
   const fredWarnings = Array.isArray(fredDiagnostics.warnings) ? fredDiagnostics.warnings as string[] : [];
+  const externalWarnings = cleanStringArray(args.externalWarnings);
   const missingData = uniqueStrings([
     ...(Array.isArray(args.researchPlan.data_needed_before_strong_conclusion) ? args.researchPlan.data_needed_before_strong_conclusion : []),
     ...(Array.isArray(args.researchPlan.not_known_from_input) ? args.researchPlan.not_known_from_input : []),
@@ -2076,11 +3202,13 @@ function buildResearchFactPack(args: {
     gdelt_diagnostics: gdeltDiagnostics,
     fred_diagnostics: fredDiagnostics,
     fred_macro_facts: Array.isArray(args.fredFacts) ? args.fredFacts : [],
+    external_source_diagnostics: args.externalSourceDiagnostics || {},
+    external_observation_facts: Array.isArray(args.externalObservationFacts) ? args.externalObservationFacts : [],
     event_status_hint: eventStatusHint,
     related_news_count: relatedNews.length,
     related_news_headlines: relatedNews,
     source_domains: sourceDomains,
-    research_warnings: uniqueStrings([...gdeltWarnings, ...fredWarnings]),
+    research_warnings: uniqueStrings([...gdeltWarnings, ...fredWarnings, ...externalWarnings]),
     missing_data: missingData,
     candidate_assets_from_exposure_map: args.candidateAssets,
   };
@@ -2093,6 +3221,8 @@ function summarizeResearchFactPack(factPack: Record<string, unknown>) {
     gdelt_diagnostics: factPack.gdelt_diagnostics || {},
     fred_diagnostics: factPack.fred_diagnostics || {},
     fred_macro_facts_count: Array.isArray(factPack.fred_macro_facts) ? factPack.fred_macro_facts.length : 0,
+    external_source_diagnostics: factPack.external_source_diagnostics || {},
+    external_observation_facts_count: Array.isArray(factPack.external_observation_facts) ? factPack.external_observation_facts.length : 0,
     related_news_count: factPack.related_news_count || 0,
     source_domains: Array.isArray(factPack.source_domains) ? factPack.source_domains : [],
     research_warnings: Array.isArray(factPack.research_warnings) ? factPack.research_warnings : [],
@@ -3355,6 +4485,7 @@ function buildSecondOrderWatchlist(args: {
       return {
         symbol,
         company: canonicalAssetInfo(symbol)?.name || entry.company,
+        source_channel: entry.category,
         reason: String(savedWatchlist?.watchlist_reason || savedWatchlist?.quality_gate_reason || entry.reason),
         impact_direction: entry.impact_direction,
         strength: entry.strength,
@@ -3373,6 +4504,80 @@ function buildSecondOrderWatchlist(args: {
       const { score, ...clean } = item;
       return clean;
     });
+}
+
+function normalizeIndirectImpactStrength(value: unknown) {
+  const strength = String(value || "").trim().toLowerCase();
+  return ["weak", "medium", "high"].includes(strength) ? strength : "weak";
+}
+
+function buildIndirectImpactRows(args: {
+  nodeId: string;
+  indirectImpact: Record<string, unknown>[];
+  finalAffectedAssets: Record<string, unknown>[];
+}) {
+  const directTickers = new Set(args.finalAffectedAssets.map((asset) => canonicalTicker(asset.ticker || asset.ticker_or_asset)).filter(Boolean));
+  const rows: Record<string, unknown>[] = [];
+  const skipped: Record<string, unknown>[] = [];
+  const seen = new Set<string>();
+  const maxItems = 6;
+
+  for (const item of args.indirectImpact) {
+    const symbol = canonicalTicker(item.symbol || item.ticker || item.canonical_asset);
+    const companyName = String(item.company || item.company_name || item.name || "").trim();
+    const title = companyName || symbol || String(item.title || "").trim();
+    const reason = String(item.reason || item.watchlist_reason || "").trim();
+    const key = symbol || title.toUpperCase();
+
+    if (!key || !title || !reason) {
+      skipped.push({
+        ...item,
+        indirect_impact_skip_reason: "Indirect Impact item was missing a symbol/title or short reason.",
+      });
+      continue;
+    }
+    if (symbol && directTickers.has(symbol)) {
+      skipped.push({
+        ...item,
+        indirect_impact_skip_reason: "Skipped because the same symbol is already in Direct Impact.",
+      });
+      continue;
+    }
+    if (seen.has(key)) {
+      skipped.push({
+        ...item,
+        indirect_impact_skip_reason: "Skipped duplicate Indirect Impact item.",
+      });
+      continue;
+    }
+    if (rows.length >= maxItems) {
+      skipped.push({
+        ...item,
+        indirect_impact_skip_reason: "Skipped because Indirect Impact is capped at 6 app-facing items.",
+      });
+      continue;
+    }
+
+    seen.add(key);
+    rows.push({
+      node_id: args.nodeId,
+      symbol: symbol || null,
+      company_name: companyName || null,
+      title,
+      direction: safeDirection(item.impact_direction || item.direction),
+      strength: normalizeIndirectImpactStrength(item.strength),
+      reason,
+      evidence_required_to_upgrade: String(item.evidence_required_to_upgrade || "").trim() || null,
+      source_channel: String(item.source_channel || item.category || "").trim() || null,
+      sort_order: rows.length,
+    });
+  }
+
+  return {
+    rows,
+    skipped,
+    display_limit: maxItems,
+  };
 }
 
 function buildAssetDecisionDiagnostics(args: {
@@ -4706,9 +5911,9 @@ async function createValidatedDraft(input: {
         role: "system",
         content: [
           "You are Clarifin's cautious evidence-aware financial research assistant.",
-          "You must not browse the web. You may use the provided Research Fact Pack, which contains lightweight GDELT headline metadata, optional FRED macro observations, and internal exposure-map candidates.",
+          "You must not browse the web. You may use the provided Research Fact Pack, which contains lightweight GDELT headline metadata, optional FRED/EIA/ECB/FMP external observations, and internal exposure-map candidates.",
           "Do not pretend full article research happened. GDELT headlines are supporting context and source-count signals only, not final truth.",
-          "FRED observations are official macro time-series data when present, but they are context only; do not overstate causality from a single latest value.",
+          "FRED, EIA, ECB, and FMP observations are supporting external data when present, but they are context only; do not overstate causality from a single latest value, profile field, calendar row, or headline.",
           "Your job is to generate a draft only after evidence mapping, affected-asset validation, and a quality gate.",
           "Use only the allowed Clarifin taxonomy values for category, event_type, and event_status. Never invent custom category names.",
           "If an event describes a reported possible combination, merger discussion, takeover possibility, or deal exploration without a confirmed transaction, use event_type=Merger Speculation, not Merger / Acquisition. Use event_status=report when attributed to a report/source, speculation when not attributed, and rumor only for unsupported market chatter.",
@@ -4723,7 +5928,7 @@ async function createValidatedDraft(input: {
           "",
           "Evidence mapping rules:",
           "- Classify each important claim as input_fact, source_fact, market_reaction, inference, unverified, or missing.",
-          "- Because this version does not fetch full source URLs or full GDELT articles, source_fact is allowed only for exact user-provided source text, official FRED observations, or lightweight GDELT headline metadata. Never treat a headline as full article confirmation.",
+          "- Because this version does not fetch full source URLs or full GDELT articles, source_fact is allowed only for exact user-provided source text, official FRED/EIA/ECB/FMP observations, or lightweight GDELT headline metadata. Never treat a headline as full article confirmation.",
           "- Distinguish raw input claims from FRED macro observations, GDELT supporting headlines, internal candidate assets, and missing/unverified data.",
           "- If related_news_count is low or source_domains are thin, lower confidence and say the event needs verification.",
           "- If multiple related GDELT headlines from different domains appear, you may say related coverage exists, but do not say the event is confirmed unless the raw input itself confirms it.",
@@ -4875,10 +6080,13 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
     const fredApiKey = (Deno.env.get("FRED_API_KEY") || "").trim();
+    const eiaApiKey = (Deno.env.get("EIA_API_KEY") || "").trim();
+    const fmpApiKey = (Deno.env.get("FMP_API_KEY") || "").trim();
     if (body.debug_fred_connectivity === true) {
       return jsonResponse(await runFredConnectivityDebug({
         apiKey: fredApiKey,
         seriesId: body.series_id,
+        seriesIds: body.series_ids,
       }));
     }
 
@@ -4905,6 +6113,11 @@ Deno.serve(async (req) => {
       model,
     });
     applyTaxonomyGuardrails(researchPlan, rawEventText);
+    const externalSourcesRouter = buildExternalSourcesRouter({
+      researchPlan,
+      rawEventText,
+      tickers,
+    });
 
     const eventSign = detectEventSign(rawEventText, researchPlan);
     const preliminaryAssetsToResearch = getAssetsToResearch({ assets_to_research: [] }, researchPlan, rawEventText);
@@ -4917,19 +6130,90 @@ Deno.serve(async (req) => {
     }
 
     const externalResearchItems: Record<string, unknown>[] = [];
-    const gdeltResearch = await collectGdeltResearch({
-      researchPlan,
-      rawEventText,
-    });
-    externalResearchItems.push(gdeltResearch.externalResearchItem);
+    const gdeltSelected = sourceSelected(externalSourcesRouter, "GDELT");
+    const gdeltResearch = gdeltSelected
+      ? await collectGdeltResearch({
+        researchPlan,
+        rawEventText,
+      })
+      : {
+        gdeltQuery: "",
+        gdeltResult: {
+          related_news: [],
+          source_domains: [],
+          warnings: [],
+          diagnostics: buildGdeltDiagnostics({
+            attempted: false,
+            status: "skipped",
+            query: "",
+            warning: String((externalSourcesRouter.source_skip_reasons as Record<string, string> | undefined)?.GDELT || "GDELT not selected by source router."),
+          }),
+        },
+        externalResearchItem: null,
+      };
+    if (gdeltResearch.externalResearchItem) {
+      externalResearchItems.push(gdeltResearch.externalResearchItem as Record<string, unknown>);
+    }
     const gdeltQuery = gdeltResearch.gdeltQuery;
     const gdeltResult = gdeltResearch.gdeltResult;
-    const fredResearch = await collectFredMacroResearch({
+    const fredSelected = sourceSelected(externalSourcesRouter, "FRED");
+    const fredResearch = fredSelected
+      ? await collectFredMacroResearch({
+        researchPlan,
+        rawEventText,
+        apiKey: fredApiKey,
+      })
+      : {
+        items: [],
+        diagnostics: summarizeFredDiagnostics([], false, Boolean(fredApiKey)),
+        facts: [],
+      };
+    externalResearchItems.push(...fredResearch.items);
+    const eiaResearch = await collectEiaEnergyResearch({
       researchPlan,
       rawEventText,
-      apiKey: fredApiKey,
+      apiKey: eiaApiKey,
+      selected: sourceSelected(externalSourcesRouter, "EIA"),
+      skipReason: String((externalSourcesRouter.source_skip_reasons as Record<string, string> | undefined)?.EIA || ""),
     });
-    externalResearchItems.push(...fredResearch.items);
+    externalResearchItems.push(...eiaResearch.items);
+    const ecbResearch = await collectEcbMacroResearch({
+      researchPlan,
+      rawEventText,
+      selected: sourceSelected(externalSourcesRouter, "ECB"),
+      skipReason: String((externalSourcesRouter.source_skip_reasons as Record<string, string> | undefined)?.ECB || ""),
+    });
+    externalResearchItems.push(...ecbResearch.items);
+    const fmpResearch = await collectFmpCompanyResearch({
+      researchPlan,
+      rawEventText,
+      tickers,
+      apiKey: fmpApiKey,
+      selected: sourceSelected(externalSourcesRouter, "FMP"),
+      skipReason: String((externalSourcesRouter.source_skip_reasons as Record<string, string> | undefined)?.FMP || ""),
+    });
+    externalResearchItems.push(...fmpResearch.items);
+    const externalSourceDiagnostics = {
+      router: externalSourcesRouter,
+      gdelt: gdeltResult.diagnostics || {},
+      fred: fredResearch.diagnostics,
+      eia: eiaResearch.diagnostics,
+      ecb: ecbResearch.diagnostics,
+      fmp: fmpResearch.diagnostics,
+    };
+    const externalObservationFacts = [
+      ...fredResearch.facts,
+      ...eiaResearch.facts,
+      ...ecbResearch.facts,
+      ...fmpResearch.facts,
+    ];
+    const externalWarnings = uniqueStrings([
+      ...cleanStringArray((gdeltResult as Record<string, unknown>).warnings),
+      ...(Array.isArray(fredResearch.diagnostics.warnings) ? fredResearch.diagnostics.warnings as string[] : []),
+      ...(Array.isArray(eiaResearch.diagnostics.warnings) ? eiaResearch.diagnostics.warnings as string[] : []),
+      ...(Array.isArray(ecbResearch.diagnostics.warnings) ? ecbResearch.diagnostics.warnings as string[] : []),
+      ...(Array.isArray(fmpResearch.diagnostics.warnings) ? fmpResearch.diagnostics.warnings as string[] : []),
+    ]);
     const researchFactPack = buildResearchFactPack({
       rawEventText,
       researchPlan,
@@ -4937,6 +6221,9 @@ Deno.serve(async (req) => {
       gdeltResult,
       fredDiagnostics: fredResearch.diagnostics,
       fredFacts: fredResearch.facts,
+      externalSourceDiagnostics,
+      externalObservationFacts,
+      externalWarnings,
       candidateAssets: candidateAssetsConsidered,
     });
     if (Array.isArray(researchFactPack.research_warnings)) {
@@ -5193,6 +6480,29 @@ Deno.serve(async (req) => {
     }
 
     generatedNode.affected_assets = finalGeneratedAffectedAssets;
+    generatedNode.indirect_impact = secondOrderWatchlist;
+
+    const indirectImpactPersistence = buildIndirectImpactRows({
+      nodeId: String(nodeId),
+      indirectImpact: secondOrderWatchlist,
+      finalAffectedAssets: affectedAssets,
+    });
+    let indirectImpactsInsertSucceeded = indirectImpactPersistence.rows.length === 0;
+    let indirectImpactsInsertError = "";
+    let indirectImpactsInserted: Record<string, unknown>[] = [];
+
+    if (indirectImpactPersistence.rows.length) {
+      const { error: indirectImpactError } = await supabase
+        .from("node_indirect_impacts")
+        .insert(indirectImpactPersistence.rows);
+      if (indirectImpactError) {
+        indirectImpactsInsertError = indirectImpactError.message;
+        warnings.push(`node_indirect_impacts was not saved: ${indirectImpactError.message}`);
+      } else {
+        indirectImpactsInsertSucceeded = true;
+        indirectImpactsInserted = indirectImpactPersistence.rows;
+      }
+    }
 
     const researchExposureValidation = buildResearchExposureRows({
       nodeId: String(nodeId),
@@ -5355,6 +6665,11 @@ Deno.serve(async (req) => {
       asset_decision_diagnostics: assetDecisionDiagnostics,
       direct_impact: finalGeneratedAffectedAssets,
       indirect_impact: secondOrderWatchlist,
+      indirect_impacts_inserted_count: indirectImpactsInserted.length,
+      indirect_impacts_inserted: indirectImpactsInserted,
+      indirect_impacts_skipped: indirectImpactPersistence.skipped,
+      indirect_impacts_insert_succeeded: indirectImpactsInsertSucceeded,
+      indirect_impacts_insert_error: indirectImpactsInsertError,
     };
 
     return jsonResponse({
@@ -5365,9 +6680,21 @@ Deno.serve(async (req) => {
       sources_attempted: externalResearchSummary.sources_attempted,
       sources_successful: externalResearchSummary.sources_successful,
       sources_failed_or_skipped: externalResearchSummary.sources_failed_or_skipped,
+      external_sources_router: externalSourcesRouter,
+      sources_selected: externalSourcesRouter.sources_selected,
+      sources_skipped: externalSourcesRouter.sources_skipped,
+      source_skip_reasons: externalSourcesRouter.source_skip_reasons,
+      source_warnings: externalResearchSummary.warnings,
       external_research_summary: externalResearchSummary,
       direct_impact: finalGeneratedAffectedAssets,
       indirect_impact: secondOrderWatchlist,
+      indirect_impacts_inserted_count: indirectImpactsInserted.length,
+      indirect_impacts_inserted: indirectImpactsInserted,
+      indirect_impacts_skipped: indirectImpactPersistence.skipped,
+      indirect_impacts_rejected: indirectImpactPersistence.skipped,
+      indirect_impacts_insert_succeeded: indirectImpactsInsertSucceeded,
+      indirect_impacts_table_insert_succeeded: indirectImpactsInsertSucceeded,
+      indirect_impacts_insert_error: indirectImpactsInsertError,
       app_facing_sections: {
         direct_impact: {
           label: "Direct Impact",
@@ -5385,6 +6712,9 @@ Deno.serve(async (req) => {
           fact_pack_created: true,
           gdelt_status: (researchFactPack.gdelt_diagnostics as Record<string, unknown> | undefined)?.status || "skipped",
           fred_status: (researchFactPack.fred_diagnostics as Record<string, unknown> | undefined)?.status || "skipped",
+          eia_status: (externalSourceDiagnostics.eia as Record<string, unknown> | undefined)?.status || "skipped",
+          ecb_status: (externalSourceDiagnostics.ecb as Record<string, unknown> | undefined)?.status || "skipped",
+          fmp_status: (externalSourceDiagnostics.fmp as Record<string, unknown> | undefined)?.status || "skipped",
           candidate_assets_considered_count: candidateAssetsConsidered.length,
           proposed_assets_before_compression_count: conciseAssetCompression.proposed_assets_before_compression.length,
           proposed_exposures_before_compression_count: exposureRowsBeforeCompression.length,
@@ -5414,6 +6744,21 @@ Deno.serve(async (req) => {
       fred_series_attempted: (researchFactPack.fred_diagnostics as Record<string, unknown> | undefined)?.series_attempted || [],
       fred_series_successful: (researchFactPack.fred_diagnostics as Record<string, unknown> | undefined)?.series_successful || [],
       fred_series_failed: (researchFactPack.fred_diagnostics as Record<string, unknown> | undefined)?.series_failed || [],
+      fred_series_results: (researchFactPack.fred_diagnostics as Record<string, unknown> | undefined)?.series_results || [],
+      fred_failure_reasons: (researchFactPack.fred_diagnostics as Record<string, unknown> | undefined)?.failure_reasons || [],
+      eia_diagnostics: externalSourceDiagnostics.eia,
+      eia_attempted: Boolean((externalSourceDiagnostics.eia as Record<string, unknown> | undefined)?.attempted),
+      eia_status: (externalSourceDiagnostics.eia as Record<string, unknown> | undefined)?.status || "skipped",
+      eia_api_key_detected: Boolean((externalSourceDiagnostics.eia as Record<string, unknown> | undefined)?.api_key_detected),
+      ecb_diagnostics: externalSourceDiagnostics.ecb,
+      ecb_attempted: Boolean((externalSourceDiagnostics.ecb as Record<string, unknown> | undefined)?.attempted),
+      ecb_status: (externalSourceDiagnostics.ecb as Record<string, unknown> | undefined)?.status || "skipped",
+      ecb_api_key_notice: ecbEndpointSummary.api_key_notice,
+      fmp_diagnostics: externalSourceDiagnostics.fmp,
+      fmp_attempted: Boolean((externalSourceDiagnostics.fmp as Record<string, unknown> | undefined)?.attempted),
+      fmp_status: (externalSourceDiagnostics.fmp as Record<string, unknown> | undefined)?.status || "skipped",
+      fmp_api_key_detected: Boolean((externalSourceDiagnostics.fmp as Record<string, unknown> | undefined)?.api_key_detected),
+      external_observation_facts: externalObservationFacts,
       related_news_count: researchFactPack.related_news_count,
       related_news_headlines: researchFactPack.related_news_headlines,
       source_domains: researchFactPack.source_domains,
