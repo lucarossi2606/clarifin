@@ -160,7 +160,8 @@ details.detail-card[open] summary::after { content: "-"; }
 .asset-top { display: flex; justify-content: space-between; margin-bottom: 4px; }
 .asset-top h3 { margin: 0; font-size: 14px; font-weight: 700; color: var(--text-main); }
 .asset-top span { font-size: 12px; font-weight: 700; text-transform: capitalize; }
-.exposure-etfs { margin: 2px 0 0 0; color: var(--text-main); font-size: 13px; font-weight: 700; word-spacing: 6px; }
+.asset-card .asset-subline { margin: 4px 0 0 0; color: var(--text-muted); font-size: 13px; font-weight: 700; line-height: 1.4; }
+.exposure-etfs { word-spacing: 6px; }
 .direction-positive { color: var(--green-text); }
 .direction-negative { color: var(--red-text); }
 .direction-mixed, .direction-neutral { color: var(--gray-text); }
@@ -664,10 +665,10 @@ function getExposureSectorEtfs(exposure) {
     ["XLE", ["energy", "oil", "crude", "gas", "lng", "fuel", "refinery", "pipeline"]],
     ["XLF", ["financial", "bank", "banks", "insurance", "broker", "credit", "lender", "lending", "payments"]],
     ["XLV", ["healthcare", "health care", "pharma", "biotech", "medical", "hospital", "drugmaker"]],
-    ["XLI", ["industrial", "defense", "defence", "aerospace", "transport", "logistics", "shipping", "machinery", "infrastructure", "manufacturing"]],
+    ["XLI", ["industrial", "industrials", "defense", "defence", "aerospace", "machinery", "infrastructure", "manufacturing"]],
     ["XLB", ["materials", "mining", "metals", "chemicals", "steel", "copper", "lithium"]],
     ["XLRE", ["real estate", "reit", "property", "housing", "refinancing"]],
-    ["XLK", ["technology", "software", "semiconductor", "semiconductors", "chips", "cloud", "data center", "data centers", "cybersecurity"]],
+    ["XLK", ["technology", "technology sector", "software", "semiconductor", "semiconductors", "chips", "cloud", "data center", "data centers", "security budget", "security spending", "cybersecurity spending"]],
     ["XLC", ["communication services", "telecom", "media", "advertising", "streaming", "social media"]],
     ["XLU", ["utilities", "utility", "electricity", "power grid", "grid", "renewables", "water utility"]],
   ];
@@ -1375,7 +1376,7 @@ function renderDetail(node) {
     ? `<ul class="chain-list">${chains.map(c => `<li class="chain-step"><strong>${escapeHtml(c.title)}</strong><p>${escapeHtml(c.explanation || c.assetImpact || c.sectorImpact || c.mechanism)}</p></li>`).join("")}</ul>`
     : "<p>No causal chains available yet.</p>";
   const assetsHTML = affectedAssets.length
-    ? `<ul class="asset-list">${affectedAssets.map(a => `<li class="asset-card"><div class="asset-top"><h3>${escapeHtml(a.name || a.ticker)}</h3><span class="direction-${a.direction}">${escapeHtml(formatLabel(a.direction))}</span></div>${a.assetClass ? `<p><strong>${escapeHtml(formatLabel(a.assetClass))}</strong></p>` : ""}<p>${escapeHtml(a.reason)}</p></li>`).join("")}</ul>`
+    ? `<ul class="asset-list">${affectedAssets.map(a => `<li class="asset-card"><div class="asset-top"><h3>${escapeHtml(a.name || a.ticker)}</h3><span class="direction-${a.direction}">${escapeHtml(formatLabel(a.direction))}</span></div>${a.assetClass ? `<p class="asset-subline"><strong>${escapeHtml(formatLabel(a.assetClass))}</strong></p>` : ""}<p>${escapeHtml(a.reason)}</p></li>`).join("")}</ul>`
     : "<p>No concrete affected assets yet.</p>";
   const exposuresHTML = exposuresToWatch.length
     ? `<ul class="asset-list">${exposuresToWatch.map(exposure => {
@@ -1386,7 +1387,7 @@ function renderDetail(node) {
           <h3>${escapeHtml(exposure.theme || "Exposure to watch")}</h3>
           ${exposure.directionHint ? `<span class="direction-${exposure.directionHint}">${escapeHtml(formatLabel(exposure.directionHint))}</span>` : ""}
         </div>
-        ${sectorEtfs.length ? `<div class="exposure-etfs">${sectorEtfs.map(escapeHtml).join(" ")}</div>` : ""}
+        ${sectorEtfs.length ? `<p class="asset-subline exposure-etfs"><strong>${sectorEtfs.map(escapeHtml).join(" ")}</strong></p>` : ""}
         ${exposure.whyRelevant ? `<p>${escapeHtml(exposure.whyRelevant)}</p>` : ""}
       </li>`;
     }).join("")}</ul>`

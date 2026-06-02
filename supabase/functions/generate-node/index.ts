@@ -2638,9 +2638,9 @@ function addInferredAsset(
   reason: string,
   uncertainty: string,
 ) {
-  const normalized = ticker.toUpperCase();
-  if (hasAsset(assets, normalized)) return;
-  assets.push({
+  const normalized = canonicalTicker(ticker);
+  const existingIndex = assets.findIndex((asset) => canonicalTicker(asset.ticker || asset.ticker_or_asset) === normalized);
+  const inferredAsset = canonicalizeAssetRecord({
     ticker: normalized,
     ticker_or_asset: normalized,
     name,
@@ -2650,6 +2650,24 @@ function addInferredAsset(
     reason,
     uncertainty,
   });
+
+  if (existingIndex >= 0) {
+    const existing = canonicalizeAssetRecord(assets[existingIndex]);
+    const existingScore = canonicalProposalScore(existing);
+    const inferredScore = canonicalProposalScore(inferredAsset);
+    const existingStrength = String(existing.strength || "").trim().toLowerCase();
+    if (inferredScore > existingScore || existingStrength === "watch") {
+      assets[existingIndex] = {
+        ...existing,
+        ...inferredAsset,
+        original_proposed_asset: existing.original_proposed_asset || inferredAsset.original_proposed_asset || normalized,
+        replaced_weaker_alias_reason: `Canonical inferred asset upgraded a weaker ${normalized} proposal before server gates.`,
+      };
+    }
+    return;
+  }
+
+  assets.push(inferredAsset);
 }
 
 function inferConcreteMacroAffectedAssets(rawEventText: string, plan: Record<string, unknown>) {
@@ -3633,7 +3651,8 @@ function runAffectedAssetQualityGate(args: {
   for (const [channelKey, assets] of byChannel) {
     const sorted = assets.slice().sort((a, b) => assetPriority(b) - assetPriority(a));
     const limit = channelLimits[channelKey] || 1;
-    for (const asset of sorted.slice(0, limit)) {
+    const selected = sorted.slice(0, limit);
+    for (const asset of selected) {
       accepted.push({
         original_proposed_asset: asset.original_proposed_asset || asset.original_ticker_or_asset || asset.ticker,
         canonical_asset: canonicalTicker(asset.ticker || asset.ticker_or_asset),
@@ -3644,14 +3663,19 @@ function runAffectedAssetQualityGate(args: {
         final_decision: "inserted",
       });
     }
+    const selectedCanonicalAssets = new Set(selected.map((asset) => canonicalTicker(asset.ticker || asset.ticker_or_asset)));
     for (const asset of sorted.slice(limit)) {
+      const ticker = canonicalTicker(asset.ticker || asset.ticker_or_asset);
+      const representativeReason = channelKey === "oil_energy_prices" && ticker === "USO" && selectedCanonicalAssets.has("BRENT CRUDE")
+        ? "Removed as redundant: Brent Crude is the cleaner global seaborne oil benchmark for Hormuz / Middle East supply-risk events, while USO is a lower-priority tradable ETF proxy."
+        : "Removed as redundant: another asset is a cleaner representative for the same economic channel.";
       deduplicated.push({
         original_proposed_asset: asset.original_proposed_asset || asset.original_ticker_or_asset || asset.ticker,
-        canonical_asset: canonicalTicker(asset.ticker || asset.ticker_or_asset),
+        canonical_asset: ticker,
         ticker: asset.ticker,
         name: asset.name || asset.ticker,
         channel: assetGateLabel(channelKey),
-        quality_gate_reason: "Removed as redundant: another asset is a cleaner representative for the same economic channel.",
+        quality_gate_reason: representativeReason,
         final_decision: "deduplicated",
       });
     }
@@ -3746,14 +3770,24 @@ function validateResearchExposureForInsert(args: {
 }
 
 function isGenericExposureLabel(exposure: Record<string, unknown>) {
-  const theme = String(exposure.theme || "").trim().toLowerCase().replace(/\s+/g, " ");
+  return isGenericExposureTheme(exposure.theme);
+}
+
+function normalizedExposureTheme(value: unknown) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function isGenericExposureTheme(value: unknown) {
+  const theme = normalizedExposureTheme(value);
   const badLabels = new Set([
     "demand",
     "governance",
     "consumer",
+    "consumer spending",
     "sector",
     "theme",
     "market",
+    "market impact",
     "markets",
     "sentiment",
     "investor sentiment",
@@ -3761,6 +3795,172 @@ function isGenericExposureLabel(exposure: Record<string, unknown>) {
     "various sectors",
   ]);
   return badLabels.has(theme);
+}
+
+function exposureMechanismText(exposure: Record<string, unknown>) {
+  return [
+    exposure.theme,
+    exposure.sector_or_theme_type,
+    exposure.why_relevant,
+    exposure.data_needed,
+    ...(Array.isArray(exposure.sector_proxy_tickers) ? exposure.sector_proxy_tickers : []),
+    ...(Array.isArray(exposure.possible_tickers) ? exposure.possible_tickers : []),
+  ].map((value) => String(value || "").toLowerCase()).join(" ");
+}
+
+function withExposureSectorProxies(row: Record<string, unknown>, tickers: string[]) {
+  const current = Array.isArray(row.sector_proxy_tickers)
+    ? row.sector_proxy_tickers
+    : Array.isArray(row.possible_tickers)
+      ? row.possible_tickers
+      : [];
+  const merged = cleanSectorProxyTickers([...current, ...tickers]);
+  return {
+    ...row,
+    possible_tickers: merged,
+    sector_proxy_tickers: merged,
+  };
+}
+
+function withoutExposureSectorProxies(row: Record<string, unknown>, tickers: string[]) {
+  const remove = new Set(tickers.map((ticker) => ticker.toUpperCase()));
+  const current = Array.isArray(row.sector_proxy_tickers)
+    ? row.sector_proxy_tickers
+    : Array.isArray(row.possible_tickers)
+      ? row.possible_tickers
+      : [];
+  const cleaned = cleanSectorProxyTickers(current).filter((ticker) => !remove.has(ticker));
+  return {
+    ...row,
+    possible_tickers: cleaned,
+    sector_proxy_tickers: cleaned,
+  };
+}
+
+function normalizeExposureForAppNode(args: {
+  row: Record<string, unknown>;
+  rawEventText: string;
+  researchFactPack?: Record<string, unknown>;
+}) {
+  let row = { ...args.row };
+  const originalTheme = String(row.theme || "").trim();
+  const originalProxies = Array.isArray(row.sector_proxy_tickers) ? cleanSectorProxyTickers(row.sector_proxy_tickers) : [];
+  const rowText = exposureMechanismText(row);
+  const contextText = `${rowText} ${args.rawEventText} ${getFactPackHeadlineText(args.researchFactPack)}`.toLowerCase();
+  const themeText = normalizedExposureTheme(row.theme);
+  const generic = isGenericExposureTheme(row.theme);
+  const themeLooksEnergy = textIncludesAny(themeText, ["oil", "energy", "crude", "fuel"]);
+  const themeLooksShipping = textIncludesAny(themeText, ["tanker", "shipping", "maritime", "freight"]);
+  const hasEnergyChannel = textIncludesAny(rowText, [
+    "brent",
+    "wti",
+    "oil",
+    "crude",
+    "lng",
+    "fuel",
+    "energy price",
+    "energy prices",
+    "energy supply",
+    "supply risk",
+    "xle",
+  ]);
+  const hasShippingChannel = textIncludesAny(rowText, [
+    "tanker",
+    "tankers",
+    "shipping",
+    "freight",
+    "maritime",
+    "strait",
+    "war-risk",
+    "war risk",
+    "insurance",
+    "route disruption",
+  ]);
+  const contextHasTravelDemand = textIncludesAny(contextText, [
+    "airline",
+    "airlines",
+    "travel",
+    "tourism",
+    "cruise",
+    "luxury",
+    "leisure",
+  ]);
+  const hasAirlinesTravelChannel = textIncludesAny(rowText, [
+    "airline",
+    "airlines",
+    "travel",
+    "tourism",
+    "cruise",
+    "cruises",
+    "luxury",
+    "leisure",
+    "jet fuel",
+    "consumer discretionary",
+  ]) || (generic && contextHasTravelDemand);
+  const hasDefenseChannel = textIncludesAny(rowText, [
+    "defense",
+    "defence",
+    "aerospace",
+    "military",
+    "missile",
+    "naval",
+    "procurement",
+  ]) || (rowText.includes("xli") && textIncludesAny(rowText, ["industrials", "industrial sector", "defense", "aerospace"]));
+  const hasInflationChannel = textIncludesAny(rowText, ["inflation", "cpi", "consumer price", "price pressure"]);
+  const hasRatesChannel = textIncludesAny(rowText, ["rate-sensitive", "rates", "yield", "yields", "duration", "bond", "real estate", "xlre"]);
+  const hasCyberChannel = textIncludesAny(rowText, ["cyber", "cybersecurity", "incident response", "security budget"]);
+
+  let cleanupReason = "";
+  if (hasDefenseChannel) {
+    row = withExposureSectorProxies({ ...row, theme: "Defense & Aerospace", sector_or_theme_type: "industry_group" }, ["XLI"]);
+    cleanupReason = "Renamed defense/aerospace exposure and added XLI as the official sector ETF proxy.";
+  } else if (hasAirlinesTravelChannel) {
+    row = withExposureSectorProxies({ ...row, theme: "Airlines, Travel & Luxury Demand", sector_or_theme_type: "industry_group" }, ["XLY"]);
+    cleanupReason = "Replaced generic consumer/travel exposure with a concrete airlines, travel and luxury demand channel.";
+  } else if (hasShippingChannel && (themeLooksShipping || !themeLooksEnergy)) {
+    row = withoutExposureSectorProxies({ ...row, theme: "Tankers & Shipping", sector_or_theme_type: "industry_group" }, ["XLI"]);
+    cleanupReason = "Renamed shipping exposure and removed broad industrial ETF proxy because no official sector ETF cleanly represents tankers.";
+  } else if (hasEnergyChannel) {
+    row = withExposureSectorProxies({ ...row, theme: "Energy & Oil Supply Risk", sector_or_theme_type: "theme" }, ["XLE"]);
+    cleanupReason = "Renamed oil/energy exposure to the market mechanism and added XLE as the official sector ETF proxy.";
+  } else if (hasInflationChannel) {
+    row = { ...row, theme: "Inflation-Sensitive Sectors", sector_or_theme_type: "theme" };
+    cleanupReason = "Renamed inflation exposure to a market-mechanism title.";
+  } else if (hasRatesChannel) {
+    row = { ...row, theme: "Rate-Sensitive Sectors", sector_or_theme_type: "theme" };
+    cleanupReason = "Renamed rates exposure to a market-mechanism title.";
+  } else if (hasCyberChannel) {
+    const broadTechSecurity = textIncludesAny(rowText, ["technology", "software", "xlk", "security budget", "security spending", "cybersecurity spending"]);
+    row = broadTechSecurity
+      ? withExposureSectorProxies({ ...row, theme: "Cybersecurity Watchlist", sector_or_theme_type: "theme" }, ["XLK"])
+      : withoutExposureSectorProxies({ ...row, theme: "Cybersecurity Watchlist", sector_or_theme_type: "theme" }, ["XLK"]);
+    cleanupReason = broadTechSecurity
+      ? "Renamed cybersecurity exposure and kept XLK only because the row is framed as a broad tech/security exposure."
+      : "Renamed cybersecurity exposure without XLK because the row is watchlist-specific rather than a broad sector exposure.";
+  }
+
+  const normalizedProxies = Array.isArray(row.sector_proxy_tickers) ? cleanSectorProxyTickers(row.sector_proxy_tickers) : [];
+  const diagnostic = cleanupReason && (
+    originalTheme !== String(row.theme || "").trim()
+    || originalProxies.join(",") !== normalizedProxies.join(",")
+  )
+    ? {
+      original_theme: originalTheme,
+      final_theme: String(row.theme || "").trim(),
+      original_sector_proxy_tickers: originalProxies,
+      final_sector_proxy_tickers: normalizedProxies,
+      reason: cleanupReason,
+    }
+    : null;
+
+  return {
+    row: {
+      ...row,
+      possible_tickers: normalizedProxies,
+      sector_proxy_tickers: normalizedProxies,
+    },
+    diagnostic,
+  };
 }
 
 function exposureChannelKey(exposure: Record<string, unknown>) {
@@ -3859,6 +4059,7 @@ function buildResearchExposureRows(args: {
 }) {
   const candidates: Record<string, unknown>[] = [];
   const rejected: Record<string, unknown>[] = [];
+  const namingDiagnostics: Record<string, unknown>[] = [];
 
   for (const exposure of args.assetsToResearch) {
     const sectorProxyTickers = Array.isArray(exposure.sector_proxy_tickers)
@@ -3866,7 +4067,7 @@ function buildResearchExposureRows(args: {
       : Array.isArray(exposure.possible_tickers_to_check)
         ? cleanSectorProxyTickers(exposure.possible_tickers_to_check)
         : [];
-    const row = {
+    const baseRow = {
       node_id: String(args.nodeId),
       theme: String(exposure.theme || "").trim(),
       sector_or_theme_type: String(exposure.sector_or_theme_type || "theme").trim(),
@@ -3878,8 +4079,18 @@ function buildResearchExposureRows(args: {
       time_horizon: String(exposure.time_horizon || "").trim(),
       confidence: normalizeScore(exposure.confidence, 35),
     };
+    const normalized = normalizeExposureForAppNode({
+      row: baseRow,
+      rawEventText: args.rawEventText,
+      researchFactPack: args.researchFactPack,
+    });
+    const row = normalized.row;
+    if (normalized.diagnostic) {
+      namingDiagnostics.push(normalized.diagnostic);
+    }
+    const rowSectorProxyTickers = Array.isArray(row.sector_proxy_tickers) ? row.sector_proxy_tickers : [];
 
-    if (!row.theme && !row.why_relevant && !row.sector_proxy_tickers.length && !row.data_needed) {
+    if (!row.theme && !row.why_relevant && !rowSectorProxyTickers.length && !row.data_needed) {
       rejected.push({
         ...row,
         exposure_rejection_reason: "Exposure row was empty after normalization.",
@@ -3913,6 +4124,7 @@ function buildResearchExposureRows(args: {
     before_compression: candidates,
     removed_by_compression: compression.removed,
     display_limit: compression.display_limit,
+    naming_diagnostics: namingDiagnostics,
   };
 }
 
@@ -4022,6 +4234,7 @@ async function evaluateMappedCandidateAssets(args: {
           "If the raw text explicitly names multiple separate exposure groups, evaluate each group separately. A cruise candidate does not cover an airline channel; a defense candidate does not cover a safe-haven channel.",
           "For an explicitly named group with a fitting mechanism, include at least one representative candidate unless the candidate is too indirect or the mechanism contradicts the event.",
           "Oil assets such as Brent, WTI, or USO require a concrete energy, oil-supply, sanctions, shipping-route, tanker, fuel-cost, or commodity-supply channel. A generic geopolitical escalation or a vague mention that oil prices could be affected is not enough.",
+          "For global seaborne oil, Strait of Hormuz, Middle East shipping disruption, tanker-risk, war-risk insurance, LNG/crude transit, or seaborne supply-risk channels, prefer Brent Crude over USO as the main representative. USO is a lower-priority tradable ETF proxy and should not replace Brent when Brent is available.",
           "If the event direction is clear but unconfirmed, choose the likely direction and explain uncertainty in the reason instead of defaulting to mixed.",
           "Use mixed only when the direction is genuinely unclear or opposing forces are central.",
           "Keep reasons short and specific. No investment advice, no buy/sell/hold language, no performance promises.",
@@ -4529,6 +4742,7 @@ async function createValidatedDraft(input: {
           "- Nvidia/ASML/TSMC/Apple require verified semiconductor, foundry, export-control, logistics, or company-specific supply/demand evidence.",
           "- Visa/Mastercard require a concrete payments-volume, sanctions, cross-border transaction, consumer-spending, or company-specific channel.",
           "- Do not duplicate one economic channel under several labels. Choose the clearest representation for the final app node.",
+          "- For Strait of Hormuz, Middle East seaborne oil, tanker-risk, war-risk insurance, LNG/crude transit, or seaborne supply-risk events, Brent Crude is the preferred Direct Impact oil representative. USO is secondary and should not replace Brent unless Brent is unavailable or intentionally not used.",
           "",
           "Affected asset validation rules:",
           "- No affected asset without evidence.",
@@ -4564,7 +4778,7 @@ async function createValidatedDraft(input: {
           "- If older compatibility fields are present, keep them concise, but put the user-facing writing in explanation.",
           "- assets_to_research is the Exposures layer. Each item must be a sector, theme, economic area, equity sector, or industry group with theme, sector_or_theme_type, why_relevant, sector_proxy_tickers, direction_hint, data_needed, time_horizon, and confidence. Do not use it as a list of concrete affected assets. Equity sector ETFs such as XLE/XLF/XLV/XLP/XLY/XLI/XLK/XLU/XLRE/XLB belong here as sector_proxy_tickers, never in affected_assets.",
           "- For broad macro or geopolitical events, include 4-7 exposure items when economically relevant, including direct, indirect, and delayed channels. Do not stop at the first obvious sector.",
-          "- Avoid generic exposure labels such as Demand, Governance, Consumer, Sector, Theme, Investor Sentiment, or Market Dynamics. Use specific exposure titles such as Energy upstream, Tankers and shipping, Airlines and travel, Defense and aerospace, Inflation-sensitive sectors, Rate-sensitive sectors, or Cybersecurity watchlist.",
+          "- Avoid generic exposure labels such as Demand, Governance, Consumer, Consumer Spending, Sector, Theme, Market Impact, Investor Sentiment, or Market Dynamics. Use market-mechanism exposure titles such as Energy & Oil Supply Risk, Tankers & Shipping, Airlines, Travel & Luxury Demand, Defense & Aerospace, Inflation-Sensitive Sectors, Rate-Sensitive Sectors, or Cybersecurity Watchlist.",
           "- Exposures must be non-duplicative. Do not show Oil supply risks, Energy companies, Brent crude risk, and Upstream oil as separate cards if they describe the same channel.",
           "- Direction matters: distinguish escalation from de-escalation, tighter from easier financial conditions, demand acceleration from demand weakness, and margin expansion from margin pressure. Set direction_hint from the event sign, not from a generic playbook.",
           "- Use positive or negative direction_hint when the event sign clearly eases or pressures an exposure if confirmed. Unconfirmed does not automatically mean mixed. Use mixed only when opposing forces are central or the input is too vague.",
@@ -4990,6 +5204,8 @@ Deno.serve(async (req) => {
     const rejectedResearchExposures = researchExposureValidation.rejected;
     const exposureRowsBeforeCompression = researchExposureValidation.before_compression || [];
     const exposuresRemovedByCompression = researchExposureValidation.removed_by_compression || [];
+    const exposureNamingDiagnostics = researchExposureValidation.naming_diagnostics || [];
+    generatedNode.assets_to_research = researchExposures;
 
     if (rejectedResearchExposures.length || exposuresRemovedByCompression.length) {
       const exposureWarnings = uniqueStrings([
@@ -5135,7 +5351,10 @@ Deno.serve(async (req) => {
       exposures_before_compression: exposureRowsBeforeCompression,
       final_exposures_after_compression: researchExposures,
       exposures_removed_as_generic_or_duplicate: exposuresRemovedByCompression,
+      exposure_naming_diagnostics: exposureNamingDiagnostics,
       asset_decision_diagnostics: assetDecisionDiagnostics,
+      direct_impact: finalGeneratedAffectedAssets,
+      indirect_impact: secondOrderWatchlist,
     };
 
     return jsonResponse({
@@ -5147,6 +5366,20 @@ Deno.serve(async (req) => {
       sources_successful: externalResearchSummary.sources_successful,
       sources_failed_or_skipped: externalResearchSummary.sources_failed_or_skipped,
       external_research_summary: externalResearchSummary,
+      direct_impact: finalGeneratedAffectedAssets,
+      indirect_impact: secondOrderWatchlist,
+      app_facing_sections: {
+        direct_impact: {
+          label: "Direct Impact",
+          description: "Final server-validated direct affected assets with strong causal channels.",
+          items: finalGeneratedAffectedAssets,
+        },
+        indirect_impact: {
+          label: "Indirect Impact",
+          description: "Curated second-order companies or assets with plausible but not yet direct high-conviction channels.",
+          items: secondOrderWatchlist,
+        },
+      },
       generation_layers: {
         research_layer: {
           fact_pack_created: true,
@@ -5192,6 +5425,7 @@ Deno.serve(async (req) => {
       exposures_before_compression: exposureRowsBeforeCompression,
       final_exposures_after_compression: researchExposures,
       exposures_removed_as_generic_or_duplicate: exposuresRemovedByCompression,
+      exposure_naming_diagnostics: exposureNamingDiagnostics,
       proposed_exposures_before_compression: exposureRowsBeforeCompression,
       debug_assets_to_research_before_exposure_validation: assetsToResearch,
       candidate_assets_considered: candidateAssetsConsidered,
@@ -5228,6 +5462,7 @@ Deno.serve(async (req) => {
           proposed_exposures_before_compression: exposureRowsBeforeCompression,
           final_exposures_after_compression: researchExposures,
           exposures_removed_as_generic_or_duplicate: exposuresRemovedByCompression,
+          exposure_naming_diagnostics: exposureNamingDiagnostics,
           display_limit: researchExposureValidation.display_limit,
         },
       },
