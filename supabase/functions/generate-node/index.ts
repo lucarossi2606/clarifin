@@ -775,6 +775,116 @@ function normalizeComparable(value: unknown) {
   return String(value || "").trim().toUpperCase();
 }
 
+function canonicalLookupKey(value: unknown) {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/&/g, " AND ")
+    .replace(/[^A-Z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const canonicalAssetAliases: Record<string, { ticker: string; name: string; asset_class?: string }> = {
+  BRENT: { ticker: "BRENT CRUDE", name: "Brent Crude", asset_class: "commodity" },
+  "BRENT CRUDE": { ticker: "BRENT CRUDE", name: "Brent Crude", asset_class: "commodity" },
+  "BRENT OIL": { ticker: "BRENT CRUDE", name: "Brent Crude", asset_class: "commodity" },
+  "ICE BRENT": { ticker: "BRENT CRUDE", name: "Brent Crude", asset_class: "commodity" },
+  WTI: { ticker: "WTI CRUDE", name: "WTI Crude", asset_class: "commodity" },
+  "WTI CRUDE": { ticker: "WTI CRUDE", name: "WTI Crude", asset_class: "commodity" },
+  "WEST TEXAS INTERMEDIATE": { ticker: "WTI CRUDE", name: "WTI Crude", asset_class: "commodity" },
+  GOLD: { ticker: "GLD", name: "Gold / GLD", asset_class: "commodity" },
+  "SPOT GOLD": { ticker: "GLD", name: "Gold / GLD", asset_class: "commodity" },
+  GLD: { ticker: "GLD", name: "Gold / GLD", asset_class: "commodity" },
+  DGS10: { ticker: "US10Y", name: "10-Year Treasury Yield", asset_class: "rate" },
+  US10Y: { ticker: "US10Y", name: "10-Year Treasury Yield", asset_class: "rate" },
+  "10Y TREASURY": { ticker: "US10Y", name: "10-Year Treasury Yield", asset_class: "rate" },
+  "10 YEAR TREASURY": { ticker: "US10Y", name: "10-Year Treasury Yield", asset_class: "rate" },
+  "10 YEAR TREASURY YIELD": { ticker: "US10Y", name: "10-Year Treasury Yield", asset_class: "rate" },
+  "10Y TREASURY YIELD": { ticker: "US10Y", name: "10-Year Treasury Yield", asset_class: "rate" },
+  DXY: { ticker: "DXY", name: "US Dollar Index", asset_class: "currency" },
+  "USD DOLLAR INDEX": { ticker: "DXY", name: "US Dollar Index", asset_class: "currency" },
+  "US DOLLAR INDEX": { ticker: "DXY", name: "US Dollar Index", asset_class: "currency" },
+  "S&P 500": { ticker: "SPY", name: "S&P 500 / SPY", asset_class: "index" },
+  "S P 500": { ticker: "SPY", name: "S&P 500 / SPY", asset_class: "index" },
+  "SP 500": { ticker: "SPY", name: "S&P 500 / SPY", asset_class: "index" },
+  "SPY": { ticker: "SPY", name: "S&P 500 / SPY", asset_class: "index" },
+  "NASDAQ 100": { ticker: "QQQ", name: "Nasdaq 100 / QQQ", asset_class: "index" },
+  NDX: { ticker: "QQQ", name: "Nasdaq 100 / QQQ", asset_class: "index" },
+  QQQ: { ticker: "QQQ", name: "Nasdaq 100 / QQQ", asset_class: "index" },
+  TSMC: { ticker: "TSM", name: "Taiwan Semiconductor Manufacturing", asset_class: "stock" },
+  TSM: { ticker: "TSM", name: "Taiwan Semiconductor Manufacturing", asset_class: "stock" },
+  HERMES: { ticker: "RMS.PA", name: "Hermes", asset_class: "stock" },
+  "HERMES INTERNATIONAL": { ticker: "RMS.PA", name: "Hermes", asset_class: "stock" },
+  "RMS PA": { ticker: "RMS.PA", name: "Hermes", asset_class: "stock" },
+  LVMH: { ticker: "MC.PA", name: "LVMH", asset_class: "stock" },
+  "MC PA": { ticker: "MC.PA", name: "LVMH", asset_class: "stock" },
+  FERRARI: { ticker: "RACE", name: "Ferrari", asset_class: "stock" },
+  RACE: { ticker: "RACE", name: "Ferrari", asset_class: "stock" },
+  CROWDSTRIKE: { ticker: "CRWD", name: "CrowdStrike", asset_class: "stock" },
+  CRWD: { ticker: "CRWD", name: "CrowdStrike", asset_class: "stock" },
+  "PALO ALTO NETWORKS": { ticker: "PANW", name: "Palo Alto Networks", asset_class: "stock" },
+  PANW: { ticker: "PANW", name: "Palo Alto Networks", asset_class: "stock" },
+  NVIDIA: { ticker: "NVDA", name: "Nvidia", asset_class: "stock" },
+  NVDA: { ticker: "NVDA", name: "Nvidia", asset_class: "stock" },
+  ASML: { ticker: "ASML", name: "ASML", asset_class: "stock" },
+  VISA: { ticker: "V", name: "Visa", asset_class: "stock" },
+  "VISA INC": { ticker: "V", name: "Visa", asset_class: "stock" },
+  V: { ticker: "V", name: "Visa", asset_class: "stock" },
+  MASTERCARD: { ticker: "MA", name: "Mastercard", asset_class: "stock" },
+  MA: { ticker: "MA", name: "Mastercard", asset_class: "stock" },
+  APPLE: { ticker: "AAPL", name: "Apple", asset_class: "stock" },
+  AAPL: { ticker: "AAPL", name: "Apple", asset_class: "stock" },
+  TESLA: { ticker: "TSLA", name: "Tesla", asset_class: "stock" },
+  TSLA: { ticker: "TSLA", name: "Tesla", asset_class: "stock" },
+  PORSCHE: { ticker: "P911.DE", name: "Porsche AG", asset_class: "stock" },
+  "P911 DE": { ticker: "P911.DE", name: "Porsche AG", asset_class: "stock" },
+};
+
+function canonicalAssetInfo(value: unknown) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  return canonicalAssetAliases[canonicalLookupKey(raw)] || null;
+}
+
+function canonicalTicker(value: unknown) {
+  const info = canonicalAssetInfo(value);
+  return info?.ticker || String(value || "").trim().toUpperCase();
+}
+
+function canonicalizeAssetRecord(asset: Record<string, unknown>) {
+  const originalTicker = String(asset.ticker || asset.ticker_or_asset || asset.candidate_asset || asset.asset_or_ticker || "").trim();
+  const originalName = String(asset.name || asset.candidate_name || "").trim();
+  const info = canonicalAssetInfo(originalTicker) || canonicalAssetInfo(originalName);
+  if (!info) {
+    return {
+      ...asset,
+      original_proposed_asset: asset.original_proposed_asset || originalTicker || originalName,
+      canonical_asset: String(asset.ticker || asset.ticker_or_asset || asset.candidate_asset || originalTicker || originalName || "").trim().toUpperCase(),
+    };
+  }
+  const originalProposedAsset = String(asset.original_proposed_asset || originalTicker || originalName || info.ticker).trim();
+  const canonicalized = {
+    ...asset,
+    original_proposed_asset: originalProposedAsset,
+    original_ticker_or_asset: asset.original_ticker_or_asset || originalTicker || originalName,
+    canonical_asset: info.ticker,
+    ticker: info.ticker,
+    ticker_or_asset: info.ticker,
+    name: info.name,
+  };
+  if (asset.candidate_asset !== undefined) canonicalized.candidate_asset = info.ticker;
+  if (asset.candidate_name !== undefined) canonicalized.candidate_name = info.name;
+  if ((!asset.asset_class || String(asset.asset_class || "").trim().toLowerCase() === "other") && info.asset_class) {
+    canonicalized.asset_class = info.asset_class;
+  }
+  return canonicalized;
+}
+
+function canonicalizeAssetList(assets: Record<string, unknown>[]) {
+  return assets.map((asset) => canonicalizeAssetRecord(asset));
+}
+
 function appendMissingData(validatedDraft: Record<string, unknown>, items: string[]) {
   const existing = Array.isArray(validatedDraft.missing_data) ? validatedDraft.missing_data : [];
   validatedDraft.missing_data = uniqueStrings([...existing, ...items]);
@@ -1995,8 +2105,8 @@ function summarizeResearchFactPack(factPack: Record<string, unknown>) {
 
 function mergeCandidateLists(first: Record<string, unknown>[], second: Record<string, unknown>[]) {
   const seen = new Set<string>();
-  return [...first, ...second].filter((candidate) => {
-    const key = `${candidate.exposure_key || ""}|${candidate.candidate_asset || ""}`.toUpperCase();
+  return [...first, ...second].map((candidate) => canonicalizeAssetRecord(candidate)).filter((candidate) => {
+    const key = `${candidate.exposure_key || ""}|${canonicalTicker(candidate.candidate_asset || "")}`.toUpperCase();
     if (!key.trim() || seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -2059,7 +2169,8 @@ function detectMarketReaction(rawEventText: string) {
 }
 
 function hasAsset(assets: Record<string, unknown>[], ticker: string) {
-  return assets.some((asset) => String(asset.ticker || "").trim().toUpperCase() === ticker);
+  const target = canonicalTicker(ticker);
+  return assets.some((asset) => canonicalTicker(asset.ticker || asset.ticker_or_asset) === target);
 }
 
 function getEntitiesDetected(plan: Record<string, unknown>) {
@@ -2177,6 +2288,138 @@ const indirectWatchlistAssets = new Set([
   "AAPL",
 ]);
 
+const secondOrderWatchlistCatalog: Record<string, {
+  symbol: string;
+  company: string;
+  category: string;
+  trigger_terms: string[];
+  reason: string;
+  impact_direction: string;
+  strength: string;
+  evidence_required_to_upgrade: string;
+}> = {
+  CRWD: {
+    symbol: "CRWD",
+    company: "CrowdStrike",
+    category: "Cybersecurity",
+    trigger_terms: ["crowdstrike", "crwd", "cybersecurity", "cyber risk", "cyber escalation", "state-linked cyber"],
+    reason: "Cybersecurity vendors can become relevant if geopolitical escalation turns into verified cyber activity or incident-response demand.",
+    impact_direction: "positive",
+    strength: "medium",
+    evidence_required_to_upgrade: "Verified cyber escalation, incident-response demand, customer budget acceleration, security-budget commentary, or company-specific management commentary.",
+  },
+  PANW: {
+    symbol: "PANW",
+    company: "Palo Alto Networks",
+    category: "Cybersecurity",
+    trigger_terms: ["palo alto", "panw", "cybersecurity", "cyber risk", "cyber escalation", "state-linked cyber"],
+    reason: "Network-security demand is a plausible second-order monitor if conflict risk broadens into credible cyber-defense spending.",
+    impact_direction: "positive",
+    strength: "medium",
+    evidence_required_to_upgrade: "Verified cyber incidents, incident-response demand, security-budget acceleration, procurement signals, or company-specific evidence.",
+  },
+  NVDA: {
+    symbol: "NVDA",
+    company: "Nvidia",
+    category: "Semiconductors",
+    trigger_terms: ["nvidia", "nvda", "semiconductor", "semiconductors", "chip", "helium", "specialty gas", "foundry"],
+    reason: "AI hardware can be indirectly exposed if a geopolitical shock creates semiconductor logistics, specialty-gas, or foundry constraints.",
+    impact_direction: "negative",
+    strength: "weak",
+    evidence_required_to_upgrade: "Confirmed helium or specialty-gas shortages, foundry output constraints, customer order delays, export-control escalation, or company-specific supply-chain evidence.",
+  },
+  ASML: {
+    symbol: "ASML",
+    company: "ASML",
+    category: "Semiconductors",
+    trigger_terms: ["asml", "semiconductor", "semiconductors", "euv", "foundry", "helium", "specialty gas"],
+    reason: "ASML is a second-order monitor only if the event threatens semiconductor equipment operations, EUV logistics, or foundry capacity.",
+    impact_direction: "negative",
+    strength: "weak",
+    evidence_required_to_upgrade: "Delayed EUV operations, confirmed foundry constraints, specialty-gas shortages, logistics disruption, or company-specific order/timing evidence.",
+  },
+  TSM: {
+    symbol: "TSM",
+    company: "Taiwan Semiconductor Manufacturing",
+    category: "Semiconductors",
+    trigger_terms: ["tsmc", "tsm", "semiconductor", "semiconductors", "foundry", "helium", "specialty gas"],
+    reason: "Foundry exposure is a useful monitor only if the shock affects semiconductor inputs, logistics, or customer production timing.",
+    impact_direction: "negative",
+    strength: "weak",
+    evidence_required_to_upgrade: "Confirmed foundry output constraints, specialty-gas shortages, customer order delays, logistics disruption, or company-specific production commentary.",
+  },
+  RACE: {
+    symbol: "RACE",
+    company: "Ferrari",
+    category: "Luxury",
+    trigger_terms: ["ferrari", "race", "luxury", "middle east wealth", "wealth effects", "order book", "travel retail"],
+    reason: "Luxury autos can be a second-order monitor through regional wealth effects, luxury sentiment, FX, risk-off pressure, or order-book sensitivity.",
+    impact_direction: "negative",
+    strength: "weak",
+    evidence_required_to_upgrade: "Regional demand weakness, order-book slowdown, margin pressure, logistics disruption, or company-specific exposure data.",
+  },
+  "RMS.PA": {
+    symbol: "RMS.PA",
+    company: "Hermes",
+    category: "Luxury",
+    trigger_terms: ["hermes", "rms", "luxury", "travel retail", "middle east retail", "wealth effects"],
+    reason: "Luxury goods can be monitored for travel-retail pressure, regional wealth effects, and high-end consumer sentiment.",
+    impact_direction: "negative",
+    strength: "weak",
+    evidence_required_to_upgrade: "Regional sales weakness, travel-retail pressure, clear luxury-demand deterioration, margin pressure, or company-specific commentary.",
+  },
+  "MC.PA": {
+    symbol: "MC.PA",
+    company: "LVMH",
+    category: "Luxury",
+    trigger_terms: ["lvmh", "luxury", "travel retail", "middle east retail", "wealth effects"],
+    reason: "Luxury demand is a second-order channel if geopolitical risk weighs on tourism, wealth effects, or regional retail hubs.",
+    impact_direction: "negative",
+    strength: "weak",
+    evidence_required_to_upgrade: "Regional sales weakness, travel-retail pressure, clear luxury-demand deterioration, margin pressure, or company-specific commentary.",
+  },
+  V: {
+    symbol: "V",
+    company: "Visa",
+    category: "Payments",
+    trigger_terms: ["visa", "payment", "payments", "cross-border", "card spending", "travel volumes"],
+    reason: "Payments networks can be monitored if travel, cross-border spending, sanctions, or consumer transaction volumes become affected.",
+    impact_direction: "mixed",
+    strength: "weak",
+    evidence_required_to_upgrade: "Confirmed weakness in cross-border travel volumes, consumer spending, transaction volumes, sanctions/payment restrictions, or company-specific data.",
+  },
+  MA: {
+    symbol: "MA",
+    company: "Mastercard",
+    category: "Payments",
+    trigger_terms: ["mastercard", "payments", "payment", "cross-border", "card spending", "travel volumes"],
+    reason: "Mastercard is a second-order monitor through cross-border spending, travel volumes, and nominal payment activity.",
+    impact_direction: "mixed",
+    strength: "weak",
+    evidence_required_to_upgrade: "Confirmed weakness in cross-border travel volumes, consumer spending, transaction volumes, sanctions/payment restrictions, or company-specific data.",
+  },
+  AAPL: {
+    symbol: "AAPL",
+    company: "Apple",
+    category: "Consumer technology",
+    trigger_terms: ["apple", "aapl", "consumer demand", "semiconductor", "logistics", "higher rates"],
+    reason: "Apple is indirect unless the event affects consumer demand, logistics, semiconductor supply, FX, or rates in a company-specific way.",
+    impact_direction: "negative",
+    strength: "weak",
+    evidence_required_to_upgrade: "Company-specific demand weakness, logistics disruption, semiconductor constraints, FX pressure, or rate-sensitive consumer spending evidence.",
+  },
+  TSLA: {
+    symbol: "TSLA",
+    company: "Tesla",
+    category: "Consumer technology",
+    trigger_terms: ["tesla", "tsla", "consumer demand", "logistics", "semiconductor", "higher rates"],
+    reason: "Tesla is indirect unless the event affects EV demand, financing conditions, logistics, or semiconductor supply in a company-specific way.",
+    impact_direction: "negative",
+    strength: "weak",
+    evidence_required_to_upgrade: "Company-specific demand weakness, financing pressure, logistics disruption, semiconductor constraints, margin pressure, or regional exposure data.",
+  },
+};
+
 function cleanSectorProxyTickers(values: unknown[]) {
   return uniqueStrings(values)
     .map((ticker) => String(ticker || "").trim().toUpperCase())
@@ -2202,12 +2445,13 @@ function isConcreteAffectedAssetLabel(value: unknown) {
 }
 
 function getConcreteAffectedAssetRejectionReason(asset: Record<string, unknown>, acceptedTickerEvidence: string[]) {
-  const ticker = String(asset.ticker || asset.ticker_or_asset || "").trim().toUpperCase();
-  const name = String(asset.name || "").trim().toUpperCase();
-  const assetClass = String(asset.asset_class || "other").trim().toLowerCase();
+  const canonicalAsset = canonicalizeAssetRecord(asset);
+  const ticker = String(canonicalAsset.ticker || canonicalAsset.ticker_or_asset || "").trim().toUpperCase();
+  const name = String(canonicalAsset.name || "").trim().toUpperCase();
+  const assetClass = String(canonicalAsset.asset_class || "other").trim().toLowerCase();
   const looksLikeTicker = /^[A-Z][A-Z0-9.]{0,12}$/.test(ticker);
   const looksLikeCrossAsset = /^[A-Z]{2,5}\/[A-Z]{2,5}$/.test(ticker) || ["US10Y", "BUND YIELD", "BRENT", "WTI", "BRENT CRUDE", "WTI CRUDE"].includes(ticker);
-  const accepted = acceptedTickerEvidence.includes(ticker);
+  const accepted = acceptedTickerEvidence.map((item) => canonicalTicker(item)).includes(ticker);
 
   if (!ticker) return "Asset is missing a concrete ticker or instrument label.";
   if (isInvalidAssetLabel(ticker)) return "Invalid placeholder asset labels are not allowed in affected_assets.";
@@ -2652,7 +2896,12 @@ async function getExposureAssetMapCandidates(supabase: any, assetsToResearch: Re
     const key = String(row.exposure_key || "");
     const match = keysByExposure.find((item) => item.keys.includes(key));
     if (!match) continue;
-    const candidate = String(row.candidate_asset || "").trim().toUpperCase();
+    const canonicalCandidate = canonicalizeAssetRecord({
+      candidate_asset: row.candidate_asset,
+      candidate_name: row.candidate_name,
+      asset_class: row.asset_class || "other",
+    });
+    const candidate = String(canonicalCandidate.candidate_asset || "").trim().toUpperCase();
     if (!candidate || isSectorEtfProxy(candidate) || isInvalidAssetLabel(candidate)) continue;
     if (seen.has(candidate)) continue;
     seen.add(candidate);
@@ -2666,8 +2915,10 @@ async function getExposureAssetMapCandidates(supabase: any, assetsToResearch: Re
       exposure_theme: match.exposure.theme || row.exposure_label,
       exposure_direction_hint: match.exposure.direction_hint || "",
       candidate_asset: candidate,
-      candidate_name: row.candidate_name || candidate,
-      asset_class: row.asset_class || "other",
+      candidate_name: canonicalCandidate.candidate_name || row.candidate_name || candidate,
+      original_proposed_asset: canonicalCandidate.original_proposed_asset || row.candidate_asset || candidate,
+      canonical_asset: canonicalCandidate.canonical_asset || candidate,
+      asset_class: canonicalCandidate.asset_class || row.asset_class || "other",
       default_direction: defaultDirection || "neutral",
       rationale: row.rationale || "",
       region: row.region || "",
@@ -2687,16 +2938,16 @@ function normalizeMappedDirection(value: unknown) {
 }
 
 function equivalentAssetKeys(value: unknown) {
-  const ticker = String(value || "").trim().toUpperCase();
-  if (ticker === "BRENT" || ticker === "BRENT CRUDE") return ["BRENT", "BRENT CRUDE"];
-  if (ticker === "WTI" || ticker === "WTI CRUDE") return ["WTI", "WTI CRUDE"];
-  if (ticker === "GOLD" || ticker === "GLD") return ["GOLD", "GLD"];
-  return [ticker];
+  const ticker = canonicalTicker(value);
+  const aliases = Object.entries(canonicalAssetAliases)
+    .filter(([_alias, info]) => info.ticker === ticker)
+    .map(([alias]) => alias);
+  return uniqueStrings([ticker, ...aliases]);
 }
 
 function hasEquivalentAsset(assets: Record<string, unknown>[], ticker: string) {
-  const keys = equivalentAssetKeys(ticker);
-  return assets.some((asset) => equivalentAssetKeys(asset.ticker).some((key) => keys.includes(key)));
+  const key = canonicalTicker(ticker);
+  return assets.some((asset) => canonicalTicker(asset.ticker || asset.ticker_or_asset || asset.candidate_asset) === key);
 }
 
 function getFactPackHeadlineText(factPack?: Record<string, unknown>) {
@@ -2767,10 +3018,12 @@ function strictChannelGate(args: {
   researchFactPack?: Record<string, unknown>;
   acceptedTickerEvidence: string[];
 }) {
-  const ticker = String(args.asset.ticker || args.asset.ticker_or_asset || "").trim().toUpperCase();
-  const name = String(args.asset.name || "").trim().toUpperCase();
+  const asset = canonicalizeAssetRecord(args.asset);
+  const ticker = String(asset.ticker || asset.ticker_or_asset || "").trim().toUpperCase();
+  const name = String(asset.name || "").trim().toUpperCase();
   const rawAndFactText = `${args.rawEventText} ${getFactPackHeadlineText(args.researchFactPack)}`.toLowerCase();
-  const directEvidence = args.acceptedTickerEvidence.includes(ticker)
+  const acceptedCanonicalEvidence = args.acceptedTickerEvidence.map((item) => canonicalTicker(item));
+  const directEvidence = acceptedCanonicalEvidence.includes(ticker)
     || textIncludesAny(rawAndFactText, equivalentAssetKeys(ticker).map((key) => key.toLowerCase()))
     || (name && textIncludesAny(rawAndFactText, [name.toLowerCase()]));
 
@@ -2905,7 +3158,7 @@ function addCandidateRejectionReason(rejections: Map<string, string>, ticker: st
 }
 
 function assetChannelKey(asset: Record<string, unknown>) {
-  const ticker = String(asset.ticker || asset.ticker_or_asset || "").trim().toUpperCase();
+  const ticker = canonicalTicker(asset.ticker || asset.ticker_or_asset);
   if (oilCommodityAssets.has(ticker)) return "oil_energy_prices";
   if (safeHavenAssets.has(ticker)) return "safe_havens_gold";
   if (currencyAssets.has(ticker)) return "currency_safe_haven";
@@ -2960,7 +3213,7 @@ function getWatchlistOnlyAssetReason(args: {
   researchFactPack?: Record<string, unknown>;
   acceptedTickerEvidence: string[];
 }) {
-  const ticker = String(args.asset.ticker || args.asset.ticker_or_asset || "").trim().toUpperCase();
+  const ticker = canonicalTicker(args.asset.ticker || args.asset.ticker_or_asset);
   if (!indirectWatchlistAssets.has(ticker)) return "";
 
   const text = [
@@ -2971,7 +3224,7 @@ function getWatchlistOnlyAssetReason(args: {
     args.asset.reason,
     args.asset.uncertainty,
   ].map((value) => String(value || "").toLowerCase()).join(" ");
-  const directEvidence = args.acceptedTickerEvidence.includes(ticker) || text.includes(`$${ticker.toLowerCase()}`);
+  const directEvidence = args.acceptedTickerEvidence.map((item) => canonicalTicker(item)).includes(ticker) || text.includes(`$${ticker.toLowerCase()}`);
 
   if (cyberWatchlistAssets.has(ticker)) {
     const hasConcreteCyberChannel = textIncludesAny(text, [
@@ -3044,6 +3297,90 @@ function getWatchlistOnlyAssetReason(args: {
   return `${ticker} is an indirect large-cap watchlist name and needs a concrete company-specific channel before affected_assets insertion.`;
 }
 
+function buildSecondOrderWatchlist(args: {
+  rawEventText: string;
+  researchPlan: Record<string, unknown>;
+  generatedNode: Record<string, unknown>;
+  watchlistCandidates: Record<string, unknown>[];
+  rejectedAssets: Record<string, unknown>[];
+  finalAffectedAssets: Record<string, unknown>[];
+}) {
+  const finalAffected = new Set(args.finalAffectedAssets.map((asset) => canonicalTicker(asset.ticker || asset.ticker_or_asset)));
+  const watchlistByCanonical = new Map<string, Record<string, unknown>>();
+  for (const item of [...args.watchlistCandidates, ...args.rejectedAssets]) {
+    const key = canonicalTicker(item.ticker || item.ticker_or_asset || item.canonical_asset || item.original_proposed_asset);
+    if (key) watchlistByCanonical.set(key, item);
+  }
+
+  const researchText = [
+    args.rawEventText,
+    getTransmissionText(args.researchPlan),
+    JSON.stringify(args.researchPlan.entities || {}),
+    JSON.stringify(args.generatedNode.causal_chain || []),
+    JSON.stringify(args.generatedNode.counterarguments || []),
+  ].map((value) => String(value || "").toLowerCase()).join(" ");
+
+  const directMentionScore = (entry: { symbol: string; company: string; trigger_terms: string[] }) => {
+    const symbol = entry.symbol.toLowerCase();
+    const company = entry.company.toLowerCase();
+    if (researchText.includes(symbol) || researchText.includes(company)) return 3;
+    if (entry.trigger_terms.some((term) => researchText.includes(term.toLowerCase()))) return 2;
+    return 0;
+  };
+
+  return Object.values(secondOrderWatchlistCatalog)
+    .map((entry) => {
+      const symbol = canonicalTicker(entry.symbol);
+      const savedWatchlist = watchlistByCanonical.get(symbol);
+      const score = Math.max(directMentionScore(entry), savedWatchlist ? 3 : 0);
+      if (!score || finalAffected.has(symbol)) return null;
+      return {
+        symbol,
+        company: canonicalAssetInfo(symbol)?.name || entry.company,
+        reason: String(savedWatchlist?.watchlist_reason || savedWatchlist?.quality_gate_reason || entry.reason),
+        impact_direction: entry.impact_direction,
+        strength: entry.strength,
+        evidence_required_to_upgrade: entry.evidence_required_to_upgrade,
+        original_proposed_asset: savedWatchlist?.original_proposed_asset || entry.company,
+        canonical_asset: symbol,
+        final_decision: "watchlist",
+        app_facing: true,
+        score,
+      };
+    })
+    .filter(Boolean)
+    .sort((a: any, b: any) => b.score - a.score || String(a.symbol).localeCompare(String(b.symbol)))
+    .slice(0, 6)
+    .map((item: any) => {
+      const { score, ...clean } = item;
+      return clean;
+    });
+}
+
+function buildAssetDecisionDiagnostics(args: {
+  insertedAssets: Record<string, unknown>[];
+  rejectedAssets: Record<string, unknown>[];
+  watchlistAssets: Record<string, unknown>[];
+  deduplicatedAssets: Record<string, unknown>[];
+}) {
+  const toDecision = (item: Record<string, unknown>, decision: string, reasonField = "quality_gate_reason") => {
+    const canonical = canonicalTicker(item.canonical_asset || item.ticker || item.ticker_or_asset || item.original_proposed_asset);
+    return {
+      original_proposed_asset: item.original_proposed_asset || item.original_ticker_or_asset || item.ticker || item.ticker_or_asset || canonical,
+      canonical_asset: canonical,
+      final_decision: item.final_decision || decision,
+      reason: item[reasonField] || item.quality_gate_reason || item.candidate_rejection_reason || item.final_hard_validation_reason || item.compression_reason || item.reason || "",
+    };
+  };
+
+  return [
+    ...args.insertedAssets.map((asset) => toDecision(asset, "inserted", "reason")),
+    ...args.watchlistAssets.map((asset) => toDecision(asset, "watchlist", "watchlist_reason")),
+    ...args.rejectedAssets.map((asset) => toDecision(asset, "rejected")),
+    ...args.deduplicatedAssets.map((asset) => toDecision(asset, "deduplicated")),
+  ];
+}
+
 function hasWeakOrConditionalReason(reason: string) {
   const clean = reason.toLowerCase();
   const wordCount = clean.split(/\s+/).filter(Boolean).length;
@@ -3058,7 +3395,7 @@ function directionIsUsable(value: unknown) {
 }
 
 function assetPriority(asset: Record<string, unknown>) {
-  const ticker = String(asset.ticker || asset.ticker_or_asset || "").trim().toUpperCase();
+  const ticker = canonicalTicker(asset.ticker || asset.ticker_or_asset);
   const priority: Record<string, number> = {
     GLD: 95,
     DXY: 88,
@@ -3132,6 +3469,47 @@ function assetCompressionPriority(asset: Record<string, unknown>) {
   return (channelPriority[assetChannelKey(asset)] || 50) + strengthScore + Math.min(8, assetPriority(asset) / 20);
 }
 
+function canonicalProposalScore(asset: Record<string, unknown>) {
+  const strength = String(asset.strength || "").trim().toLowerCase();
+  const strengthScore = strength === "high" ? 40 : strength === "medium" ? 25 : strength === "watch" ? 0 : 10;
+  const reasonScore = Math.min(20, String(asset.reason || "").trim().length / 18);
+  return assetPriority(asset) + strengthScore + reasonScore;
+}
+
+function mergeCanonicalAssetProposals(assets: Record<string, unknown>[]) {
+  const byCanonical = new Map<string, Record<string, unknown>>();
+  const aliasMerged: Record<string, unknown>[] = [];
+
+  for (const originalAsset of assets) {
+    const asset = canonicalizeAssetRecord(originalAsset);
+    const key = canonicalTicker(asset.ticker || asset.ticker_or_asset || asset.candidate_asset);
+    if (!key) continue;
+    const existing = byCanonical.get(key);
+    if (!existing) {
+      byCanonical.set(key, asset);
+      continue;
+    }
+
+    const winner = canonicalProposalScore(asset) > canonicalProposalScore(existing) ? asset : existing;
+    const loser = winner === asset ? existing : asset;
+    byCanonical.set(key, winner);
+    aliasMerged.push({
+      original_proposed_asset: loser.original_proposed_asset || loser.original_ticker_or_asset || loser.ticker || loser.ticker_or_asset || "",
+      canonical_asset: key,
+      ticker: key,
+      name: winner.name || loser.name || key,
+      channel: assetGateLabel(assetChannelKey(winner)),
+      quality_gate_reason: `Alias merged before gating: ${String(loser.original_proposed_asset || loser.ticker || loser.ticker_or_asset || "").trim()} and ${key} represent the same canonical asset. The stronger canonical proposal was used for final decisions.`,
+      final_decision: "deduplicated",
+    });
+  }
+
+  return {
+    assets: [...byCanonical.values()],
+    alias_merged: aliasMerged,
+  };
+}
+
 function runAffectedAssetQualityGate(args: {
   assets: Record<string, unknown>[];
   rawEventText: string;
@@ -3141,12 +3519,13 @@ function runAffectedAssetQualityGate(args: {
 }) {
   const accepted: Record<string, unknown>[] = [];
   const rejected: Record<string, unknown>[] = [];
-  const deduplicated: Record<string, unknown>[] = [];
+  const canonicalMerge = mergeCanonicalAssetProposals(args.assets);
+  const deduplicated: Record<string, unknown>[] = [...canonicalMerge.alias_merged];
   const movedToWatchlist: Record<string, unknown>[] = [];
   const byChannel = new Map<string, Record<string, unknown>[]>();
 
-  for (const asset of args.assets) {
-    const ticker = String(asset.ticker || asset.ticker_or_asset || "").trim().toUpperCase();
+  for (const asset of canonicalMerge.assets) {
+    const ticker = canonicalTicker(asset.ticker || asset.ticker_or_asset);
     const reason = String(asset.reason || "").trim();
     const channelKey = assetChannelKey(asset);
     const channelGate = strictChannelGate({
@@ -3159,10 +3538,13 @@ function runAffectedAssetQualityGate(args: {
 
     if (!channelGate.allowed) {
       rejected.push({
+        original_proposed_asset: asset.original_proposed_asset || asset.original_ticker_or_asset || ticker,
+        canonical_asset: ticker,
         ticker,
         name: asset.name || ticker,
         channel: assetGateLabel(channelKey),
         quality_gate_reason: channelGate.reason,
+        final_decision: "rejected",
       });
       continue;
     }
@@ -3176,41 +3558,53 @@ function runAffectedAssetQualityGate(args: {
     });
     if (watchlistReason) {
       movedToWatchlist.push({
+        original_proposed_asset: asset.original_proposed_asset || asset.original_ticker_or_asset || ticker,
+        canonical_asset: ticker,
         ticker,
         name: asset.name || ticker,
         channel: assetGateLabel(channelKey),
         quality_gate_reason: watchlistReason,
         watchlist_reason: watchlistReason,
+        final_decision: "watchlist",
       });
       continue;
     }
 
     if (hasWeakOrConditionalReason(reason)) {
       rejected.push({
+        original_proposed_asset: asset.original_proposed_asset || asset.original_ticker_or_asset || ticker,
+        canonical_asset: ticker,
         ticker,
         name: asset.name || ticker,
         channel: assetGateLabel(channelKey),
         quality_gate_reason: "Reasoning is too generic, weak, or conditional for affected_assets; keep this as an exposure or missing-data item instead.",
+        final_decision: "rejected",
       });
       continue;
     }
 
     if (!directionIsUsable(asset.direction)) {
       rejected.push({
+        original_proposed_asset: asset.original_proposed_asset || asset.original_ticker_or_asset || ticker,
+        canonical_asset: ticker,
         ticker,
         name: asset.name || ticker,
         channel: assetGateLabel(channelKey),
         quality_gate_reason: "Direction is missing or not one of the allowed Clarifin direction labels.",
+        final_decision: "rejected",
       });
       continue;
     }
 
     if (String(asset.strength || "").trim().toLowerCase() === "watch") {
       rejected.push({
+        original_proposed_asset: asset.original_proposed_asset || asset.original_ticker_or_asset || ticker,
+        canonical_asset: ticker,
         ticker,
         name: asset.name || ticker,
         channel: assetGateLabel(channelKey),
         quality_gate_reason: "Asset is only a watch/monitor candidate, not a concrete affected asset.",
+        final_decision: "rejected",
       });
       continue;
     }
@@ -3241,24 +3635,30 @@ function runAffectedAssetQualityGate(args: {
     const limit = channelLimits[channelKey] || 1;
     for (const asset of sorted.slice(0, limit)) {
       accepted.push({
+        original_proposed_asset: asset.original_proposed_asset || asset.original_ticker_or_asset || asset.ticker,
+        canonical_asset: canonicalTicker(asset.ticker || asset.ticker_or_asset),
         ticker: asset.ticker,
         name: asset.name || asset.ticker,
         channel: assetGateLabel(channelKey),
         quality_gate_reason: "Accepted: clear causal channel, concrete asset, non-watch reasoning, and best representative for this channel.",
+        final_decision: "inserted",
       });
     }
     for (const asset of sorted.slice(limit)) {
       deduplicated.push({
+        original_proposed_asset: asset.original_proposed_asset || asset.original_ticker_or_asset || asset.ticker,
+        canonical_asset: canonicalTicker(asset.ticker || asset.ticker_or_asset),
         ticker: asset.ticker,
         name: asset.name || asset.ticker,
         channel: assetGateLabel(channelKey),
         quality_gate_reason: "Removed as redundant: another asset is a cleaner representative for the same economic channel.",
+        final_decision: "deduplicated",
       });
     }
   }
 
-  const acceptedTickers = new Set(accepted.map((asset) => String(asset.ticker || "").trim().toUpperCase()));
-  const finalAssets = args.assets.filter((asset) => acceptedTickers.has(String(asset.ticker || asset.ticker_or_asset || "").trim().toUpperCase()));
+  const acceptedTickers = new Set(accepted.map((asset) => canonicalTicker(asset.ticker || asset.canonical_asset)));
+  const finalAssets = canonicalMerge.assets.filter((asset) => acceptedTickers.has(canonicalTicker(asset.ticker || asset.ticker_or_asset)));
 
   return {
     final_assets: finalAssets,
@@ -3278,12 +3678,14 @@ function runFinalConciseNodeCompression(args: {
   const maxFinalAssets = affectedAssetDisplayLimit(args.rawEventText, args.researchPlan);
   const proposedAssets = args.assets.slice().sort((a, b) => assetCompressionPriority(b) - assetCompressionPriority(a));
   const finalAssets = proposedAssets.slice(0, maxFinalAssets);
-  const finalAssetKeys = new Set(finalAssets.map((asset) => String(asset.ticker || asset.ticker_or_asset || "").trim().toUpperCase()));
-  const finalAccepted = args.acceptedDiagnostics.filter((asset) => finalAssetKeys.has(String(asset.ticker || "").trim().toUpperCase()));
+  const finalAssetKeys = new Set(finalAssets.map((asset) => canonicalTicker(asset.ticker || asset.ticker_or_asset)));
+  const finalAccepted = args.acceptedDiagnostics.filter((asset) => finalAssetKeys.has(canonicalTicker(asset.ticker || asset.canonical_asset)));
   const removed = proposedAssets.slice(maxFinalAssets).map((asset) => {
-    const ticker = String(asset.ticker || asset.ticker_or_asset || "").trim().toUpperCase();
+    const ticker = canonicalTicker(asset.ticker || asset.ticker_or_asset);
     const reason = `Moved to watchlist by final concise-node compression: the mobile node keeps the strongest ${maxFinalAssets} representative affected assets, and this lower-priority direct link would overload the UI.`;
     return {
+      original_proposed_asset: asset.original_proposed_asset || asset.original_ticker_or_asset || ticker,
+      canonical_asset: ticker,
       ticker,
       name: asset.name || ticker,
       channel: assetGateLabel(assetChannelKey(asset)),
@@ -3547,13 +3949,13 @@ function buildCandidateRejectionReport(args: {
     ? args.evaluation.rejected_assets as Record<string, unknown>[]
     : [];
   for (const item of rejectedAssets) {
-    aiRejected.set(String(item.candidate_asset || "").trim().toUpperCase(), String(item.reason || "Candidate was rejected by model evaluation."));
+    aiRejected.set(canonicalTicker(item.candidate_asset), String(item.reason || "Candidate was rejected by model evaluation."));
   }
 
   return args.candidates
     .filter((candidate) => !hasEquivalentAsset(inserted, String(candidate.candidate_asset || "")))
     .map((candidate) => {
-      const ticker = String(candidate.candidate_asset || "").trim().toUpperCase();
+      const ticker = canonicalTicker(candidate.candidate_asset);
       const equivalentServerReason = equivalentAssetKeys(ticker)
         .map((key) => serverRejections.get(key))
         .find(Boolean);
@@ -3570,10 +3972,13 @@ function buildCandidateRejectionReport(args: {
         acceptedTickerEvidence: args.acceptedTickerEvidence,
       });
       return {
+        original_proposed_asset: candidate.original_proposed_asset || candidate.candidate_asset || ticker,
+        canonical_asset: ticker,
         candidate_asset: ticker,
         candidate_name: candidate.candidate_name || ticker,
         exposure_key: candidate.exposure_key || "",
         asset_class: candidate.asset_class || "other",
+        final_decision: "rejected",
         candidate_rejection_reason: equivalentServerReason
           || equivalentAssetKeys(ticker).map((key) => finalHardValidationRejections.get(key)).find(Boolean)
           || equivalentAssetKeys(ticker).map((key) => qualityGateRejections.get(key)).find(Boolean)
@@ -3653,8 +4058,8 @@ async function evaluateMappedCandidateAssets(args: {
 
 function mergeMappedAffectedAssets(generatedNode: Record<string, unknown>, evaluation: Record<string, unknown>, candidates: Record<string, unknown>[]) {
   const accepted = Array.isArray(evaluation.accepted_assets) ? evaluation.accepted_assets as Record<string, unknown>[] : [];
-  const assets = Array.isArray(generatedNode.affected_assets) ? generatedNode.affected_assets as Record<string, unknown>[] : [];
-  const candidateByTicker = new Map(candidates.map((candidate) => [String(candidate.candidate_asset || "").trim().toUpperCase(), candidate]));
+  const assets = canonicalizeAssetList(Array.isArray(generatedNode.affected_assets) ? generatedNode.affected_assets as Record<string, unknown>[] : []);
+  const candidateByTicker = new Map(candidates.map((candidate) => [canonicalTicker(candidate.candidate_asset), candidate]));
   const exposureLimits: Record<string, number> = {
     defense_aerospace: 2,
     cruise_caribbean_travel: 2,
@@ -3678,30 +4083,33 @@ function mergeMappedAffectedAssets(generatedNode: Record<string, unknown>, evalu
   markChannelCovered("broad_us_equities_risk", ["SPY", "QQQ", "IWM"]);
 
   for (const item of accepted) {
-    const ticker = String(item.candidate_asset || "").trim().toUpperCase();
+    const canonicalItem = canonicalizeAssetRecord(item);
+    const ticker = canonicalTicker(canonicalItem.candidate_asset || canonicalItem.ticker || canonicalItem.ticker_or_asset);
     const sourceCandidate = candidateByTicker.get(ticker) || {};
     const exposureKey = String(sourceCandidate.exposure_key || "other");
     const limit = exposureLimits[exposureKey] || 1;
-    const assetClass = String(item.asset_class || "other").trim().toLowerCase();
+    const assetClass = String(canonicalItem.asset_class || "other").trim().toLowerCase();
     if (mappedAdded >= 7) break;
     if ((exposureCounts[exposureKey] || 0) >= limit) continue;
     if (!ticker || hasEquivalentAsset(assets, ticker) || isSectorEtfProxy(ticker) || isInvalidAssetLabel(ticker)) continue;
-    const normalizedDirection = normalizeMappedDirection(item.direction);
+    const normalizedDirection = normalizeMappedDirection(canonicalItem.direction);
     assets.push({
       ticker,
       ticker_or_asset: ticker,
-      name: String(item.candidate_name || ticker).trim(),
+      name: String(canonicalItem.candidate_name || canonicalItem.name || ticker).trim(),
+      original_proposed_asset: canonicalItem.original_proposed_asset || item.candidate_asset || ticker,
+      canonical_asset: ticker,
       asset_class: assetClassEnum.includes(assetClass) ? assetClass : "other",
       direction: normalizedDirection.direction,
       strength: normalizedDirection.strength,
-      reason: String(item.reason || "Mapped from a validated Clarifin exposure channel.").trim(),
+      reason: String(canonicalItem.reason || "Mapped from a validated Clarifin exposure channel.").trim(),
       uncertainty: "",
     });
     exposureCounts[exposureKey] = (exposureCounts[exposureKey] || 0) + 1;
     mappedAdded += 1;
   }
 
-  generatedNode.affected_assets = assets;
+  generatedNode.affected_assets = canonicalizeAssetList(assets);
 }
 function isThinText(value: unknown) {
   return String(value || "").trim().split(/\s+/).filter(Boolean).length < 12;
@@ -3842,13 +4250,13 @@ function improveCausalChains(node: Record<string, unknown>, researchPlan: Record
 }
 
 function getRejectedAssets(validatedDraft: Record<string, unknown>, acceptedAssets: Record<string, unknown>[]) {
-  const accepted = new Set(acceptedAssets.map((asset) => String(asset.ticker || "").trim().toUpperCase()));
+  const accepted = new Set(acceptedAssets.map((asset) => canonicalTicker(asset.ticker || asset.ticker_or_asset)));
   const validations = Array.isArray(validatedDraft.affected_asset_validation)
     ? validatedDraft.affected_asset_validation as Record<string, unknown>[]
     : [];
 
   return validations
-    .filter((asset) => !accepted.has(String(asset.ticker_or_asset || "").trim().toUpperCase()))
+    .filter((asset) => !accepted.has(canonicalTicker(asset.ticker_or_asset || asset.ticker)))
     .map((asset) => ({
       ticker_or_asset: asset.ticker_or_asset || "",
       asset_type: asset.asset_type || "unknown",
@@ -3869,7 +4277,7 @@ function applyConservativeGuardrails(args: {
   const node = args.generatedNode;
   const assets = Array.isArray(node.affected_assets) ? node.affected_assets as Record<string, unknown>[] : [];
   const mentionedTickers = uniqueStrings([...args.tickers, ...extractCashtags(args.rawEventText)]).map((ticker) => ticker.toUpperCase());
-  const acceptedTickerEvidence = uniqueStrings([...mentionedTickers, ...getPlanPublicTickers(args.researchPlan)]).map((ticker) => ticker.toUpperCase());
+  const acceptedTickerEvidence = uniqueStrings([...mentionedTickers, ...getPlanPublicTickers(args.researchPlan)]).map((ticker) => canonicalTicker(ticker));
   const marketReaction = detectMarketReaction(args.rawEventText);
   const privateEntities = getPrivateEntities(args.researchPlan);
   const planDataNeeded = Array.isArray(args.researchPlan.data_needed_before_strong_conclusion)
@@ -3914,7 +4322,7 @@ function applyConservativeGuardrails(args: {
   }
 
   for (const asset of assets) {
-    const ticker = String(asset.ticker || "").trim().toUpperCase();
+    const ticker = canonicalTicker(asset.ticker || asset.ticker_or_asset);
     const name = String(asset.name || "").trim();
     const normalizedName = name.toLowerCase();
     const reason = String(asset.reason || "").trim();
@@ -3948,8 +4356,8 @@ function applyConservativeGuardrails(args: {
     }
   }
 
-  node.affected_assets = assets.filter((asset) => {
-    const ticker = String(asset.ticker || "").trim().toUpperCase();
+  node.affected_assets = canonicalizeAssetList(assets).filter((asset) => {
+    const ticker = canonicalTicker(asset.ticker || asset.ticker_or_asset);
     if (isInvalidAssetLabel(asset.name)) asset.name = ticker;
     return isAllowedConcreteAffectedAsset(asset, acceptedTickerEvidence);
   });
@@ -4239,6 +4647,7 @@ function normalizeGeneratedNode(generated: Record<string, unknown>, sourceUrls: 
         reason: reason || evidence || "Concrete instrument to monitor through this event channel.",
       };
     })
+    .map((asset: Record<string, unknown>) => canonicalizeAssetRecord(asset))
     .filter((asset: Record<string, string>) => asset.ticker && asset.reason && !isInvalidAssetLabel(asset.ticker) && !isInvalidAssetLabel(asset.name) && !isSectorEtfProxy(asset.ticker) && !isBroadSectorOrThemeLabel(asset.ticker) && !isBroadSectorOrThemeLabel(asset.name));
 
   node.sources = sourceUrls.length ? sourceUrls : ["User provided event text"];
@@ -4365,6 +4774,9 @@ Deno.serve(async (req) => {
       warnings.push(`exposure_asset_map candidates were not applied: ${candidateError instanceof Error ? candidateError.message : "unknown error"}`);
     }
 
+    generatedNode.affected_assets = canonicalizeAssetList(
+      Array.isArray(generatedNode.affected_assets) ? generatedNode.affected_assets as Record<string, unknown>[] : [],
+    );
     const debugAiProposedAssetsBeforeValidation = cloneForDebug(
       Array.isArray(generatedNode.affected_assets) ? generatedNode.affected_assets : [],
     );
@@ -4390,25 +4802,30 @@ Deno.serve(async (req) => {
 
     const nodeId = node.id;
     const acceptedMappedTickers = Array.isArray(mappedCandidateEvaluation.accepted_assets)
-      ? (mappedCandidateEvaluation.accepted_assets as Record<string, unknown>[]).map((asset) => String(asset.candidate_asset || "").trim().toUpperCase()).filter(Boolean)
+      ? (mappedCandidateEvaluation.accepted_assets as Record<string, unknown>[]).map((asset) => canonicalTicker(asset.candidate_asset)).filter(Boolean)
       : [];
-    const directAffectedEvidence = uniqueStrings([...tickers, ...extractCashtags(rawEventText), ...getPlanPublicTickers(researchPlan)]).map((ticker) => ticker.toUpperCase());
-    const allowedAffectedEvidence = uniqueStrings([...directAffectedEvidence, ...acceptedMappedTickers]).map((ticker) => ticker.toUpperCase());
+    const directAffectedEvidence = uniqueStrings([...tickers, ...extractCashtags(rawEventText), ...getPlanPublicTickers(researchPlan)]).map((ticker) => canonicalTicker(ticker));
+    const allowedAffectedEvidence = uniqueStrings([...directAffectedEvidence, ...acceptedMappedTickers]).map((ticker) => canonicalTicker(ticker));
     const finalHardValidationRemovedAssets: Record<string, unknown>[] = [];
     const serverRejectedAffectedAssets: Record<string, unknown>[] = [];
     const eligibleAffectedAssets = generatedNode.affected_assets
       .filter((asset: Record<string, unknown>) => {
-        const hardValidationReason = getConcreteAffectedAssetRejectionReason(asset, allowedAffectedEvidence);
+        const canonicalAsset = canonicalizeAssetRecord(asset);
+        const hardValidationReason = getConcreteAffectedAssetRejectionReason(canonicalAsset, allowedAffectedEvidence);
         if (!hardValidationReason) return true;
         finalHardValidationRemovedAssets.push({
-          ...asset,
+          ...canonicalAsset,
+          original_proposed_asset: canonicalAsset.original_proposed_asset || canonicalAsset.original_ticker_or_asset || canonicalAsset.ticker || "",
+          canonical_asset: canonicalAsset.canonical_asset || canonicalAsset.ticker || "",
           final_hard_validation_reason: hardValidationReason,
+          final_decision: "rejected",
         });
         return false;
       })
       .filter((asset: Record<string, unknown>) => {
+        const canonicalAsset = canonicalizeAssetRecord(asset);
         const gate = strictChannelGate({
-          asset,
+          asset: canonicalAsset,
           rawEventText,
           researchPlan,
           researchFactPack,
@@ -4416,8 +4833,11 @@ Deno.serve(async (req) => {
         });
         if (gate.allowed) return true;
         serverRejectedAffectedAssets.push({
-          ...asset,
+          ...canonicalAsset,
+          original_proposed_asset: canonicalAsset.original_proposed_asset || canonicalAsset.original_ticker_or_asset || canonicalAsset.ticker || "",
+          canonical_asset: canonicalAsset.canonical_asset || canonicalAsset.ticker || "",
           candidate_rejection_reason: gate.reason,
+          final_decision: "rejected",
         });
         return false;
       });
@@ -4477,16 +4897,22 @@ Deno.serve(async (req) => {
     }
 
     const finalGeneratedAffectedAssets = conciseAssetCompression.final_assets
-      .map((asset: Record<string, unknown>) => ({
-        ticker: String(asset.ticker || asset.ticker_or_asset || "").trim().toUpperCase(),
-        ticker_or_asset: String(asset.ticker || asset.ticker_or_asset || "").trim().toUpperCase(),
-        name: asset.name || asset.ticker,
+      .map((asset: Record<string, unknown>) => {
+        const ticker = canonicalTicker(asset.ticker || asset.ticker_or_asset);
+        return {
+        ticker,
+        ticker_or_asset: ticker,
+        name: asset.name || ticker,
+        original_proposed_asset: asset.original_proposed_asset || asset.original_ticker_or_asset || asset.ticker || asset.ticker_or_asset || "",
+        canonical_asset: ticker,
+        final_decision: "inserted",
         asset_class: asset.asset_class || "other",
         direction: safeDirection(asset.direction),
         strength: String(asset.strength || "medium").trim().toLowerCase(),
         reason: asset.reason || "",
         uncertainty: asset.uncertainty || "",
-      }));
+      };
+      });
     const affectedAssets = finalGeneratedAffectedAssets.map((asset: Record<string, unknown>) => ({
       node_id: nodeId,
       ticker: asset.ticker,
@@ -4497,6 +4923,38 @@ Deno.serve(async (req) => {
       asset_class: asset.asset_class,
       uncertainty: asset.uncertainty,
     }));
+    const secondOrderWatchlist = buildSecondOrderWatchlist({
+      rawEventText,
+      researchPlan,
+      generatedNode,
+      watchlistCandidates,
+      rejectedAssets: [
+        ...affectedAssetQualityGate.rejected,
+        ...affectedAssetQualityGate.deduplicated,
+      ],
+      finalAffectedAssets: affectedAssets,
+    });
+    if (secondOrderWatchlist.length) {
+      appendMissingData(validatedDraft, secondOrderWatchlist.map((item: Record<string, unknown>) => (
+        `${item.symbol || item.company}: ${item.evidence_required_to_upgrade || "Additional evidence required before upgrading from second-order watchlist to affected asset."}`
+      )));
+    }
+    const assetDecisionDiagnostics = buildAssetDecisionDiagnostics({
+      insertedAssets: finalGeneratedAffectedAssets,
+      rejectedAssets: [
+        ...finalHardValidationRemovedAssets,
+        ...serverRejectedAffectedAssets,
+        ...affectedAssetQualityGate.rejected,
+      ],
+      watchlistAssets: [
+        ...watchlistCandidates,
+        ...secondOrderWatchlist,
+      ],
+      deduplicatedAssets: [
+        ...affectedAssetQualityGate.deduplicated,
+        ...conciseAssetCompression.removed,
+      ],
+    });
     const candidateAssetsRejected = buildCandidateRejectionReport({
       candidates: candidateAssetsConsidered,
       evaluation: mappedCandidateEvaluation,
@@ -4660,6 +5118,9 @@ Deno.serve(async (req) => {
       final_affected_assets_after_compression: affectedAssets,
       assets_moved_to_watchlist: watchlistCandidates,
       watchlist_candidates: watchlistCandidates,
+      second_order_watchlist: secondOrderWatchlist,
+      indirect_companies_to_monitor: secondOrderWatchlist,
+      watchlist_candidates_app_facing: secondOrderWatchlist,
       assets_rejected_as_indirect_or_weak: [
         ...affectedAssetQualityGate.rejected,
         ...conciseAssetCompression.removed,
@@ -4674,6 +5135,7 @@ Deno.serve(async (req) => {
       exposures_before_compression: exposureRowsBeforeCompression,
       final_exposures_after_compression: researchExposures,
       exposures_removed_as_generic_or_duplicate: exposuresRemovedByCompression,
+      asset_decision_diagnostics: assetDecisionDiagnostics,
     };
 
     return jsonResponse({
@@ -4694,6 +5156,7 @@ Deno.serve(async (req) => {
           proposed_assets_before_compression_count: conciseAssetCompression.proposed_assets_before_compression.length,
           proposed_exposures_before_compression_count: exposureRowsBeforeCompression.length,
           watchlist_candidates_count: watchlistCandidates.length,
+          second_order_watchlist_count: secondOrderWatchlist.length,
         },
         app_node_layer: {
           affected_asset_display_limit: conciseAssetCompression.display_limit,
@@ -4735,10 +5198,14 @@ Deno.serve(async (req) => {
       debug_candidate_asset_evaluation_before_server_gates: mappedCandidateEvaluation,
       candidate_assets_rejected: candidateAssetsRejected,
       rejected_assets_with_reasons: rejectedAssetsWithReasons,
+      asset_decision_diagnostics: assetDecisionDiagnostics,
       proposed_assets_before_compression: conciseAssetCompression.proposed_assets_before_compression,
       final_affected_assets_after_compression: affectedAssets,
       assets_moved_to_watchlist: watchlistCandidates,
       watchlist_candidates: watchlistCandidates,
+      second_order_watchlist: secondOrderWatchlist,
+      indirect_companies_to_monitor: secondOrderWatchlist,
+      watchlist_candidates_app_facing: secondOrderWatchlist,
       assets_rejected_as_indirect_or_weak: [
         ...affectedAssetQualityGate.rejected,
         ...conciseAssetCompression.removed,
