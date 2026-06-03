@@ -295,6 +295,34 @@ const ecbSeriesCatalog: Record<string, {
 };
 const ecbRequestTimeoutMs = 6500;
 
+const coinGeckoMarketsEndpoint = "https://api.coingecko.com/api/v3/coins/markets";
+const coinGeckoEndpointSummary = {
+  api_family: "CoinGecko Public API",
+  markets_endpoint: coinGeckoMarketsEndpoint,
+  method: "GET",
+  fixed_parameters: {
+    vs_currency: "usd",
+    order: "market_cap_desc",
+    sparkline: false,
+    price_change_percentage: "24h",
+  },
+  api_key_notice: "CoinGecko keyless public endpoints can be used without an API key for light usage. If COINGECKO_API_KEY is configured, Clarifin sends it as x-cg-demo-api-key and never logs or returns the key.",
+  note: "Crypto data is supporting context only, mainly for risk appetite, liquidity, regulation, stablecoin, cybersecurity, and digital-asset market-structure channels.",
+};
+const coinGeckoAssetCatalog: Record<string, {
+  id: string;
+  symbol: string;
+  name: string;
+  triggerTerms: string[];
+}> = {
+  BTC: { id: "bitcoin", symbol: "BTC", name: "Bitcoin", triggerTerms: ["bitcoin", "btc", "bitcoin etf", "crypto etf"] },
+  ETH: { id: "ethereum", symbol: "ETH", name: "Ethereum", triggerTerms: ["ethereum", "ether", "eth", "defi", "smart contract"] },
+  SOL: { id: "solana", symbol: "SOL", name: "Solana", triggerTerms: ["solana", "sol"] },
+  USDT: { id: "tether", symbol: "USDT", name: "Tether", triggerTerms: ["tether", "usdt", "stablecoin", "stablecoins"] },
+  USDC: { id: "usd-coin", symbol: "USDC", name: "USD Coin", triggerTerms: ["usd coin", "usdc", "stablecoin", "stablecoins"] },
+};
+const coinGeckoRequestTimeoutMs = 6500;
+
 const fmpBaseEndpoint = "https://financialmodelingprep.com/stable";
 const fmpEndpointSummary = {
   api_family: "Financial Modeling Prep stable API",
@@ -974,6 +1002,16 @@ const canonicalAssetAliases: Record<string, { ticker: string; name: string; asse
   TSLA: { ticker: "TSLA", name: "Tesla", asset_class: "stock" },
   PORSCHE: { ticker: "P911.DE", name: "Porsche AG", asset_class: "stock" },
   "P911 DE": { ticker: "P911.DE", name: "Porsche AG", asset_class: "stock" },
+  COINBASE: { ticker: "COIN", name: "Coinbase", asset_class: "stock" },
+  COIN: { ticker: "COIN", name: "Coinbase", asset_class: "stock" },
+  MICROSTRATEGY: { ticker: "MSTR", name: "MicroStrategy", asset_class: "stock" },
+  MSTR: { ticker: "MSTR", name: "MicroStrategy", asset_class: "stock" },
+  "MARA HOLDINGS": { ticker: "MARA", name: "MARA Holdings", asset_class: "stock" },
+  MARA: { ticker: "MARA", name: "MARA Holdings", asset_class: "stock" },
+  "RIOT PLATFORMS": { ticker: "RIOT", name: "Riot Platforms", asset_class: "stock" },
+  RIOT: { ticker: "RIOT", name: "Riot Platforms", asset_class: "stock" },
+  "CLEANSPARK": { ticker: "CLSK", name: "CleanSpark", asset_class: "stock" },
+  CLSK: { ticker: "CLSK", name: "CleanSpark", asset_class: "stock" },
 };
 
 function canonicalAssetInfo(value: unknown) {
@@ -2172,7 +2210,7 @@ function isFmpCompanyTicker(value: unknown) {
   const ticker = canonicalTicker(value);
   if (!ticker || isInvalidAssetLabel(ticker) || isSectorEtfProxy(ticker) || isBroadSectorOrThemeLabel(ticker)) return false;
   if (ticker.includes("/") || ticker.includes("CRUDE") || ticker.includes("YIELD")) return false;
-  if (["SPY", "QQQ", "TLT", "BND", "GLD", "USO", "DXY", "US10Y", "WTI", "BRENT"].includes(ticker)) return false;
+  if (["SPY", "QQQ", "TLT", "BND", "GLD", "USO", "DXY", "US10Y", "WTI", "BRENT", "BTC", "ETH", "SOL", "USDT", "USDC"].includes(ticker)) return false;
   const alias = canonicalAssetAliases[normalizeComparable(ticker)];
   if (alias?.asset_class && alias.asset_class !== "stock") return false;
   return /^[A-Z][A-Z0-9.]{0,12}$/.test(ticker);
@@ -2209,6 +2247,54 @@ function shouldRunFmpResearch(researchPlan: Record<string, unknown>, rawEventTex
     "analyst",
     "financial metrics",
     "press release",
+    "coinbase",
+    "crypto exchange",
+    "exchange volumes",
+    "bitcoin exposure",
+    "bitcoin holdings",
+    "bitcoin treasury",
+    "crypto mining",
+    "mining economics",
+    "crypto regulation",
+  ]);
+}
+
+function shouldRunCryptoResearch(researchPlan: Record<string, unknown>, rawEventText: string, tickers: string[] = []) {
+  const text = getExternalRouterText(researchPlan, rawEventText, tickers);
+  const tickerText = tickers.map((ticker) => String(ticker || "").trim().toUpperCase()).join(" ");
+  return textIncludesAny(`${text} ${tickerText}`, [
+    "bitcoin",
+    "btc",
+    "ethereum",
+    "ether",
+    "eth",
+    "solana",
+    "sol",
+    "crypto",
+    "cryptocurrency",
+    "digital asset",
+    "digital assets",
+    "stablecoin",
+    "stablecoins",
+    "tether",
+    "usdt",
+    "usd coin",
+    "usdc",
+    "coinbase",
+    "binance",
+    "defi",
+    "token",
+    "tokens",
+    "blockchain",
+    "bitcoin etf",
+    "crypto etf",
+    "crypto regulation",
+    "digital-asset regulation",
+    "risk appetite in crypto",
+    "crypto liquidity",
+    "crypto hack",
+    "exchange hack",
+    "blockchain hack",
   ]);
 }
 
@@ -2244,6 +2330,7 @@ function buildExternalSourcesRouter(args: {
     EIA: shouldRunEiaEnergyResearch(args.researchPlan, args.rawEventText),
     ECB: shouldRunEcbMacroResearch(args.researchPlan, args.rawEventText),
     FMP: shouldRunFmpResearch(args.researchPlan, args.rawEventText, args.tickers),
+    CoinGecko: shouldRunCryptoResearch(args.researchPlan, args.rawEventText, args.tickers),
   };
   const skipReasons: Record<string, string> = {};
   if (!decisions.GDELT) skipReasons.GDELT = "No geopolitical, breaking-news, policy, or broad-event context trigger.";
@@ -2251,6 +2338,7 @@ function buildExternalSourcesRouter(args: {
   if (!decisions.EIA) skipReasons.EIA = "No oil, gas, LNG, fuel, inventories, production, Hormuz, or energy-shock trigger.";
   if (!decisions.ECB) skipReasons.ECB = "No Europe/ECB/eurozone/euro/DAX/Euro Stoxx trigger.";
   if (!decisions.FMP) skipReasons.FMP = "No earnings/company-specific/ticker-specific trigger with a concrete listed company ticker.";
+  if (!decisions.CoinGecko) skipReasons.CoinGecko = "No explicit crypto, stablecoin, blockchain, exchange, DeFi, token, crypto regulation, or crypto risk-appetite trigger.";
   const sourcesSelected = Object.entries(decisions).filter(([_source, selected]) => selected).map(([source]) => source);
   const sourcesSkipped = Object.entries(decisions).filter(([_source, selected]) => !selected).map(([source]) => source);
   return {
@@ -2300,6 +2388,224 @@ function buildGenericSourceDiagnostics(args: {
     items_failed_or_skipped: failed.map((item) => item.query_or_endpoint || "").filter(Boolean),
     warnings: uniqueStrings(warnings),
     skip_reason: args.selected ? "" : args.skipReason || "",
+  };
+}
+
+function selectCryptoAssetsForTopic(researchPlan: Record<string, unknown>, rawEventText: string, tickers: string[] = []) {
+  const text = getExternalRouterText(researchPlan, rawEventText, tickers);
+  const tickerText = tickers.map((ticker) => String(ticker || "").trim().toUpperCase()).join(" ");
+  const combinedText = `${text} ${tickerText}`;
+  const selected = Object.values(coinGeckoAssetCatalog)
+    .filter((asset) => textIncludesAny(combinedText, [...asset.triggerTerms, asset.symbol.toLowerCase()]))
+    .map((asset) => asset.id);
+  if (!selected.length && shouldRunCryptoResearch(researchPlan, rawEventText, tickers)) {
+    selected.push(coinGeckoAssetCatalog.BTC.id, coinGeckoAssetCatalog.ETH.id);
+    if (textIncludesAny(combinedText, ["stablecoin", "stablecoins", "tether", "usdt", "usd coin", "usdc"])) {
+      selected.push(coinGeckoAssetCatalog.USDT.id, coinGeckoAssetCatalog.USDC.id);
+    }
+  }
+  return uniqueStrings(selected).slice(0, 5);
+}
+
+function findCoinGeckoAssetInfo(id: string) {
+  return Object.values(coinGeckoAssetCatalog).find((asset) => asset.id === id);
+}
+
+function buildCoinGeckoParams(ids: string[]) {
+  return {
+    vs_currency: "usd",
+    ids: ids.join(","),
+    order: "market_cap_desc",
+    per_page: String(Math.max(ids.length, 1)),
+    page: "1",
+    sparkline: "false",
+    price_change_percentage: "24h",
+  };
+}
+
+function buildCoinGeckoMarketsUrl(ids: string[]) {
+  const url = new URL(coinGeckoMarketsEndpoint);
+  url.search = new URLSearchParams(buildCoinGeckoParams(ids)).toString();
+  return url.toString();
+}
+
+function normalizeCryptoObservation(row: Record<string, unknown>) {
+  const currentPrice = Number(row.current_price);
+  const marketCap = Number(row.market_cap);
+  const priceChange24h = Number(row.price_change_percentage_24h);
+  const volume24h = Number(row.total_volume);
+  return {
+    id: String(row.id || "").trim(),
+    symbol: String(row.symbol || "").trim().toUpperCase(),
+    name: String(row.name || "").trim(),
+    current_price_usd: Number.isFinite(currentPrice) ? currentPrice : null,
+    market_cap_usd: Number.isFinite(marketCap) ? marketCap : null,
+    price_change_percentage_24h: Number.isFinite(priceChange24h) ? Number(priceChange24h.toFixed(4)) : null,
+    volume_24h_usd: Number.isFinite(volume24h) ? volume24h : null,
+    last_updated: String(row.last_updated || "").trim(),
+  };
+}
+
+function buildCoinGeckoExternalResearchItem(args: {
+  assetId: string;
+  status: string;
+  httpStatus?: number | null;
+  observation?: Record<string, unknown>;
+  errorMessage?: string;
+  apiKeyDetected: boolean;
+  attemptedIds: string[];
+}) {
+  const assetInfo = findCoinGeckoAssetInfo(args.assetId);
+  const facts = args.observation || {};
+  const warning = args.status === "success"
+    ? ""
+    : args.status === "skipped"
+      ? "CoinGecko crypto research skipped."
+      : args.status === "rate_limited"
+        ? "CoinGecko rate-limited the crypto market data request. Continuing without crypto market support."
+        : args.status === "no_results"
+          ? `CoinGecko returned no usable market data for ${assetInfo?.symbol || args.assetId}.`
+          : `CoinGecko crypto market data unavailable${args.httpStatus ? `: HTTP ${args.httpStatus}` : ""}. Continuing without crypto market support.${args.errorMessage ? ` CoinGecko said: ${sanitizeExternalErrorMessage(args.errorMessage)}` : ""}`;
+  return {
+    source_name: "CoinGecko",
+    source_type: "crypto",
+    query_or_endpoint: `coingecko/coins/markets:${args.assetId || args.attemptedIds.join(",")}`,
+    request_summary: {
+      endpoint_summary: coinGeckoEndpointSummary,
+      asset_id: args.assetId,
+      asset_symbol: assetInfo?.symbol || "",
+      attempted_ids: args.attemptedIds,
+      api_key_detected: args.apiKeyDetected,
+      parameters_sent_excluding_api_key: buildCoinGeckoParams(args.attemptedIds),
+    },
+    response_summary: {
+      status: args.status,
+      http_status: args.httpStatus ?? null,
+      warning,
+      latest_update_time: facts.last_updated || "",
+    },
+    raw_payload: args.status === "success"
+      ? { observation: facts, note: "Limited CoinGecko market row only; API key and full URL are not stored." }
+      : null,
+    extracted_facts: {
+      coin_id: args.assetId,
+      symbol: facts.symbol || assetInfo?.symbol || "",
+      name: facts.name || assetInfo?.name || "",
+      current_price_usd: facts.current_price_usd ?? null,
+      market_cap_usd: facts.market_cap_usd ?? null,
+      price_change_percentage_24h: facts.price_change_percentage_24h ?? null,
+      volume_24h_usd: facts.volume_24h_usd ?? null,
+      last_updated: facts.last_updated || "",
+    },
+    status: args.status,
+    warning: warning || null,
+    used_in_final_node: args.status === "success",
+    data_quality: args.status === "success" ? "medium" : "unknown",
+  };
+}
+
+async function fetchCoinGeckoMarkets(ids: string[], apiKey?: string) {
+  const requestUrl = buildCoinGeckoMarketsUrl(ids);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), coinGeckoRequestTimeoutMs);
+  try {
+    const headers: Record<string, string> = { accept: "application/json" };
+    if (apiKey) headers["x-cg-demo-api-key"] = apiKey;
+    const response = await fetch(requestUrl, { signal: controller.signal, headers });
+    clearTimeout(timeoutId);
+    if (response.status === 429) {
+      return ids.map((assetId) => buildCoinGeckoExternalResearchItem({
+        assetId,
+        status: "rate_limited",
+        httpStatus: response.status,
+        apiKeyDetected: Boolean(apiKey),
+        attemptedIds: ids,
+      }));
+    }
+    if (!response.ok) {
+      const errorMessage = await response.text();
+      return ids.map((assetId) => buildCoinGeckoExternalResearchItem({
+        assetId,
+        status: response.status === 404 ? "no_results" : "failed",
+        httpStatus: response.status,
+        errorMessage,
+        apiKeyDetected: Boolean(apiKey),
+        attemptedIds: ids,
+      }));
+    }
+    const payload = await response.json();
+    const rows = Array.isArray(payload) ? payload as Record<string, unknown>[] : [];
+    const observationsById = new Map(rows.map((row) => [String(row.id || "").trim(), normalizeCryptoObservation(row)]));
+    return ids.map((assetId) => {
+      const observation = observationsById.get(assetId);
+      return buildCoinGeckoExternalResearchItem({
+        assetId,
+        status: observation ? "success" : "no_results",
+        httpStatus: response.status,
+        observation,
+        apiKeyDetected: Boolean(apiKey),
+        attemptedIds: ids,
+      });
+    });
+  } catch (error) {
+    clearTimeout(timeoutId);
+    const status = error instanceof DOMException && error.name === "AbortError" ? "timeout" : "failed";
+    return ids.map((assetId) => buildCoinGeckoExternalResearchItem({
+      assetId,
+      status,
+      errorMessage: error instanceof Error ? error.message : String(error || ""),
+      apiKeyDetected: Boolean(apiKey),
+      attemptedIds: ids,
+    }));
+  }
+}
+
+async function collectCryptoResearch(args: {
+  researchPlan: Record<string, unknown>;
+  rawEventText: string;
+  tickers: string[];
+  apiKey?: string;
+  selected: boolean;
+  skipReason?: string;
+}) {
+  const apiKeyDetected = Boolean(args.apiKey);
+  const items: Record<string, unknown>[] = [];
+  if (!args.selected) {
+    return {
+      items,
+      diagnostics: buildGenericSourceDiagnostics({
+        sourceName: "CoinGecko",
+        selected: false,
+        apiKeyDetected,
+        items,
+        endpointSummary: coinGeckoEndpointSummary,
+        skipReason: args.skipReason,
+      }),
+      facts: [],
+    };
+  }
+  const assetIds = selectCryptoAssetsForTopic(args.researchPlan, args.rawEventText, args.tickers);
+  if (!assetIds.length) {
+    items.push(buildCoinGeckoExternalResearchItem({
+      assetId: "",
+      status: "skipped",
+      apiKeyDetected,
+      attemptedIds: [],
+      errorMessage: "No supported crypto asset selected for this event.",
+    }));
+  } else {
+    items.push(...await fetchCoinGeckoMarkets(assetIds, args.apiKey));
+  }
+  return {
+    items,
+    diagnostics: buildGenericSourceDiagnostics({
+      sourceName: "CoinGecko",
+      selected: true,
+      apiKeyDetected,
+      items,
+      endpointSummary: coinGeckoEndpointSummary,
+    }),
+    facts: items.filter((item) => String(item.status || "") === "success").map((item) => item.extracted_facts),
   };
 }
 
@@ -3238,6 +3544,54 @@ async function runFmpCapabilitiesDebug(args: {
   };
 }
 
+async function runCoinGeckoConnectivityDebug(args: {
+  apiKey?: string;
+  assetIds?: unknown;
+}) {
+  const requestedIds = cleanStringArray(args.assetIds)
+    .map((id) => String(id || "").trim().toLowerCase())
+    .filter((id) => Object.values(coinGeckoAssetCatalog).some((asset) => asset.id === id || asset.symbol.toLowerCase() === id))
+    .map((id) => {
+      const match = Object.values(coinGeckoAssetCatalog).find((asset) => asset.id === id || asset.symbol.toLowerCase() === id);
+      return match?.id || id;
+    });
+  const assetIds = uniqueStrings(requestedIds.length ? requestedIds : [coinGeckoAssetCatalog.BTC.id, coinGeckoAssetCatalog.ETH.id]).slice(0, 5);
+  const items = await fetchCoinGeckoMarkets(assetIds, args.apiKey);
+  const diagnostics = buildGenericSourceDiagnostics({
+    sourceName: "CoinGecko",
+    selected: true,
+    apiKeyDetected: Boolean(args.apiKey),
+    items,
+    endpointSummary: coinGeckoEndpointSummary,
+  });
+  return {
+    ok: items.some((item) => String(item.status || "") === "success"),
+    debug_only: true,
+    node_created: false,
+    external_research_items_created: 0,
+    coingecko_key_detected: Boolean(args.apiKey),
+    keyless_public_api_supported: true,
+    api_key_required_for_this_endpoint: false,
+    status: diagnostics.status,
+    crypto_assets_attempted: items.map((item) => (item.extracted_facts as Record<string, unknown> | undefined)?.symbol || item.query_or_endpoint).filter(Boolean),
+    crypto_assets_successful: items
+      .filter((item) => String(item.status || "") === "success")
+      .map((item) => (item.extracted_facts as Record<string, unknown> | undefined)?.symbol || item.query_or_endpoint),
+    crypto_assets_failed: items
+      .filter((item) => String(item.status || "") !== "success")
+      .map((item) => (item.extracted_facts as Record<string, unknown> | undefined)?.symbol || item.query_or_endpoint),
+    warnings: diagnostics.warnings,
+    observations: items.map((item) => ({
+      status: item.status,
+      query_or_endpoint: item.query_or_endpoint,
+      extracted_facts: item.extracted_facts,
+      warning: item.warning,
+    })),
+    safe_endpoint_summary: coinGeckoEndpointSummary,
+    parameters_sent_excluding_api_key: buildCoinGeckoParams(assetIds),
+  };
+}
+
 async function runFredConnectivityDebug(args: {
   apiKey?: string;
   seriesId?: string;
@@ -3457,6 +3811,9 @@ function externalObservationInterpretationNote(item: Record<string, unknown>) {
   if (sourceName === "FMP") {
     return "Company, market-data, earnings, or fundamentals context. Use for classification and factual backdrop, not as proof of event impact.";
   }
+  if (sourceName === "COINGECKO") {
+    return "Crypto market data is supporting context for risk appetite, liquidity sensitivity, regulation, stablecoin, and digital-asset channels. A 24h move alone is not a full trend.";
+  }
   if (sourceName === "GDELT") {
     return "GDELT headlines are lightweight metadata only; they can support awareness/context, not confirmation from full article research.";
   }
@@ -3512,6 +3869,18 @@ function buildExternalObservationDisplayFacts(item: Record<string, unknown>) {
       financial_metrics_available: String(facts.endpoint_key || "") === "financial_metrics",
       price: facts.price ?? null,
       volume: facts.volume ?? null,
+    };
+  }
+  if (sourceName === "COINGECKO") {
+    return {
+      coin_id: facts.coin_id || "",
+      symbol: facts.symbol || "",
+      name: facts.name || "",
+      current_price_usd: facts.current_price_usd ?? null,
+      market_cap_usd: facts.market_cap_usd ?? null,
+      price_change_percentage_24h: facts.price_change_percentage_24h ?? null,
+      volume_24h_usd: facts.volume_24h_usd ?? null,
+      last_updated: facts.last_updated || "",
     };
   }
   if (sourceName === "GDELT") {
@@ -3575,6 +3944,7 @@ function missingDataLabelForExternalItem(item: Record<string, unknown>) {
     }
     return `FMP ${sourceType || "company"} data unavailable or incomplete for ${query || "the selected ticker"}.`;
   }
+  if (sourceName === "COINGECKO") return `CoinGecko crypto market data unavailable or incomplete for ${query || "the selected crypto assets"}; do not treat crypto risk-appetite context as confirmed.`;
   if (sourceName === "GDELT") return "External GDELT headline support unavailable or limited; do not treat outside coverage as confirmed.";
   return `${sourceName || "External source"} data unavailable or incomplete${query ? ` for ${query}` : ""}.`;
 }
@@ -4635,6 +5005,119 @@ function hasConcreteOilChannel(text: string) {
   return hasOilTerm && hasConcreteChannel;
 }
 
+function hasSuccessfulEiaBrentObservation(factPack?: Record<string, unknown>) {
+  const observations = Array.isArray(factPack?.external_data_observations)
+    ? factPack?.external_data_observations as Record<string, unknown>[]
+    : [];
+  return observations.some((observation) => {
+    const sourceName = String(observation.source_name || "").toUpperCase();
+    const status = String(observation.status || "").toLowerCase();
+    if (sourceName !== "EIA" || status !== "success") return false;
+    const text = JSON.stringify([
+      observation.query_or_endpoint,
+      observation.extracted_facts,
+      observation.display_facts,
+      observation.response_summary,
+    ]).toLowerCase();
+    return text.includes("brent") || text.includes("pet.rbrte.d");
+  });
+}
+
+function hasSeaborneOilSupplyRiskContext(rawEventText: string, plan: Record<string, unknown>, factPack?: Record<string, unknown>) {
+  const externalObservationText = JSON.stringify([
+    factPack?.external_observation_facts,
+    factPack?.external_data_observations,
+  ]).toLowerCase();
+  const text = [
+    getResearchText(rawEventText, plan),
+    getFactPackHeadlineText(factPack),
+    externalObservationText,
+  ].join(" ").toLowerCase();
+  const hasSeaborneRiskTerm = textIncludesAny(text, [
+    "strait of hormuz",
+    "hormuz",
+    "middle east oil",
+    "middle east shipping",
+    "middle east supply",
+    "gulf energy",
+    "gulf oil",
+    "gulf shipping",
+    "seaborne oil",
+    "seaborne supply",
+    "tanker",
+    "tankers",
+    "war-risk insurance",
+    "war risk insurance",
+    "crude transit",
+    "lng transit",
+    "shipping route",
+    "chokepoint",
+    "choke point",
+  ]);
+  return hasConcreteOilChannel(text) && (hasSeaborneRiskTerm || hasSuccessfulEiaBrentObservation(factPack));
+}
+
+function brentOverUsoDiagnosticReason() {
+  return "USO removed because Brent Crude is the cleaner global seaborne oil benchmark for Hormuz / Middle East supply-risk events.";
+}
+
+function buildBrentCrudeRepresentativeFromUso(usoAsset: Record<string, unknown>, stage: string) {
+  const direction = safeDirection(usoAsset.direction);
+  const reason = [
+    "Brent Crude is the preferred direct oil representative for Hormuz / Middle East seaborne supply-risk events.",
+    "Tanker traffic, war-risk insurance, crude transit, LNG/crude chokepoint risk, and EIA Brent context make Brent cleaner than a U.S.-listed oil ETF proxy.",
+  ].join(" ");
+  return canonicalizeAssetRecord({
+    ...usoAsset,
+    ticker: "BRENT CRUDE",
+    ticker_or_asset: "BRENT CRUDE",
+    name: "Brent Crude",
+    asset_class: "commodity",
+    direction,
+    strength: String(usoAsset.strength || "medium").trim().toLowerCase() === "watch" ? "medium" : usoAsset.strength || "medium",
+    reason,
+    uncertainty: usoAsset.uncertainty || "Confirm whether the event remains a risk-premium move or turns into a physical/commercial shipping disruption.",
+    original_proposed_asset: usoAsset.original_proposed_asset || usoAsset.ticker || usoAsset.ticker_or_asset || "USO",
+    representative_replacement_stage: stage,
+    representative_replacement_reason: brentOverUsoDiagnosticReason(),
+  });
+}
+
+function preferBrentOverUsoForSeaborneOil(args: {
+  assets: Record<string, unknown>[];
+  rawEventText: string;
+  researchPlan: Record<string, unknown>;
+  researchFactPack?: Record<string, unknown>;
+  stage: string;
+}) {
+  const assets = canonicalizeAssetList(args.assets);
+  if (!hasSeaborneOilSupplyRiskContext(args.rawEventText, args.researchPlan, args.researchFactPack)) {
+    return { assets, diagnostics: [] as Record<string, unknown>[] };
+  }
+
+  const usoAssets = assets.filter((asset) => canonicalTicker(asset.ticker || asset.ticker_or_asset) === "USO");
+  if (!usoAssets.length) return { assets, diagnostics: [] as Record<string, unknown>[] };
+
+  const reason = brentOverUsoDiagnosticReason();
+  const hasBrent = assets.some((asset) => canonicalTicker(asset.ticker || asset.ticker_or_asset) === "BRENT CRUDE");
+  const replacement = hasBrent ? null : buildBrentCrudeRepresentativeFromUso(usoAssets[0], args.stage);
+  const keptAssets = assets.filter((asset) => canonicalTicker(asset.ticker || asset.ticker_or_asset) !== "USO");
+  const finalAssets = replacement ? [...keptAssets, replacement] : keptAssets;
+  const diagnostics = usoAssets.map((asset) => ({
+    original_proposed_asset: asset.original_proposed_asset || asset.original_ticker_or_asset || asset.ticker || asset.ticker_or_asset || "USO",
+    canonical_asset: "USO",
+    ticker: "USO",
+    name: asset.name || "USO",
+    replacement_asset: "BRENT CRUDE",
+    channel: "Oil / energy prices",
+    quality_gate_reason: reason,
+    representative_selection_stage: args.stage,
+    final_decision: hasBrent ? "deduplicated" : "replaced",
+  }));
+
+  return { assets: finalAssets, diagnostics };
+}
+
 function strictChannelGate(args: {
   asset: Record<string, unknown>;
   rawEventText: string;
@@ -5447,6 +5930,14 @@ function validateResearchExposureForInsert(args: {
     };
   }
 
+  const mismatchReason = exposureTitleExplanationMismatchReason(args.exposure);
+  if (mismatchReason) {
+    return {
+      allowed: false,
+      reason: mismatchReason,
+    };
+  }
+
   return { allowed: true, reason: "" };
 }
 
@@ -5518,6 +6009,90 @@ function withoutExposureSectorProxies(row: Record<string, unknown>, tickers: str
   };
 }
 
+function exposureExplanationText(exposure: Record<string, unknown>) {
+  return [
+    exposure.why_relevant,
+    exposure.data_needed,
+  ].map((value) => String(value || "").toLowerCase()).join(" ");
+}
+
+function detectCanonicalExposureChannelFromText(text: string) {
+  const clean = String(text || "").toLowerCase();
+  const hasStrongShippingMechanism = textIncludesAny(clean, ["vessel availability", "tanker rate", "tanker rates", "freight rate", "freight rates", "rerouting", "ton-mile", "ton mile"]);
+  if (hasStrongShippingMechanism) return "tankers_shipping";
+  if (textIncludesAny(clean, ["brent", "wti", "oil", "crude", "lng", "fuel", "energy price", "energy prices", "energy-market", "energy market", "supply risk", "supply disruption", "war-risk insurance", "war risk insurance"])) return "oil_energy";
+  if (textIncludesAny(clean, ["tanker", "tankers", "shipping", "freight", "maritime", "vessel", "rerouting", "route disruption", "ton-mile", "insurance"])) return "tankers_shipping";
+  if (textIncludesAny(clean, ["airline", "airlines", "travel", "tourism", "cruise", "cruises", "luxury", "leisure", "jet fuel", "bunker fuel", "consumer discretionary"])) return "airlines_travel";
+  if (textIncludesAny(clean, ["defense", "defence", "aerospace", "military", "missile", "missiles", "naval security", "air defense", "procurement", "munitions", "isr"])) return "defense_aerospace";
+  if (textIncludesAny(clean, ["inflation", "cpi", "energy inflation", "input cost", "input costs", "margin pressure", "pass-through", "freight pass-through"])) return "inflation_sensitive";
+  if (textIncludesAny(clean, ["rate-sensitive", "rates", "yield", "yields", "discount rate", "discount rates", "higher-for-longer", "duration", "real estate", "utilities"])) return "rates_duration";
+  if (textIncludesAny(clean, ["cyber", "cybersecurity", "state-linked cyber", "incident response", "security budget", "security budgets", "critical infrastructure security"])) return "cybersecurity_watchlist";
+  return "";
+}
+
+function detectCanonicalExposureChannelFromTitle(value: unknown) {
+  const title = normalizedExposureTheme(value);
+  if (!title) return "";
+  if (textIncludesAny(title, ["energy", "oil", "crude", "lng", "fuel"])) return "oil_energy";
+  if (textIncludesAny(title, ["tanker", "shipping", "freight", "maritime"])) return "tankers_shipping";
+  if (textIncludesAny(title, ["airline", "travel", "tourism", "cruise", "luxury", "consumer"])) return "airlines_travel";
+  if (textIncludesAny(title, ["defense", "defence", "aerospace", "military"])) return "defense_aerospace";
+  if (textIncludesAny(title, ["inflation", "input cost", "margin"])) return "inflation_sensitive";
+  if (textIncludesAny(title, ["rate", "yield", "duration", "real estate", "utilities"])) return "rates_duration";
+  if (textIncludesAny(title, ["cyber", "security"])) return "cybersecurity_watchlist";
+  return "";
+}
+
+function canonicalExposureTitle(channelKey: string) {
+  const titles: Record<string, string> = {
+    oil_energy: "Energy & Oil Supply Risk",
+    tankers_shipping: "Tankers & Shipping",
+    airlines_travel: "Airlines, Travel & Luxury Demand",
+    defense_aerospace: "Defense & Aerospace",
+    inflation_sensitive: "Inflation-Sensitive Sectors",
+    rates_duration: "Rate-Sensitive Sectors",
+    cybersecurity_watchlist: "Cybersecurity Watchlist",
+  };
+  return titles[channelKey] || "";
+}
+
+function applyCanonicalExposureChannel(row: Record<string, unknown>, channelKey: string, rowText: string) {
+  if (channelKey === "defense_aerospace") {
+    return withExposureSectorProxies({ ...row, theme: "Defense & Aerospace", sector_or_theme_type: "industry_group" }, ["XLI"]);
+  }
+  if (channelKey === "airlines_travel") {
+    return withExposureSectorProxies({ ...row, theme: "Airlines, Travel & Luxury Demand", sector_or_theme_type: "industry_group" }, ["XLY"]);
+  }
+  if (channelKey === "tankers_shipping") {
+    return withoutExposureSectorProxies({ ...row, theme: "Tankers & Shipping", sector_or_theme_type: "industry_group" }, ["XLI", "XLY", "XLE"]);
+  }
+  if (channelKey === "oil_energy") {
+    return withExposureSectorProxies({ ...row, theme: "Energy & Oil Supply Risk", sector_or_theme_type: "theme" }, ["XLE"]);
+  }
+  if (channelKey === "inflation_sensitive") {
+    return { ...row, theme: "Inflation-Sensitive Sectors", sector_or_theme_type: "theme" };
+  }
+  if (channelKey === "rates_duration") {
+    return { ...row, theme: "Rate-Sensitive Sectors", sector_or_theme_type: "theme" };
+  }
+  if (channelKey === "cybersecurity_watchlist") {
+    const broadTechSecurity = textIncludesAny(rowText, ["technology", "software", "xlk", "security budget", "security budgets", "security spending", "cybersecurity spending"]);
+    return broadTechSecurity
+      ? withExposureSectorProxies({ ...row, theme: "Cybersecurity Watchlist", sector_or_theme_type: "theme" }, ["XLK"])
+      : withoutExposureSectorProxies({ ...row, theme: "Cybersecurity Watchlist", sector_or_theme_type: "theme" }, ["XLK"]);
+  }
+  return row;
+}
+
+function exposureTitleExplanationMismatchReason(exposure: Record<string, unknown>) {
+  const titleChannel = detectCanonicalExposureChannelFromTitle(exposure.theme);
+  const explanationChannel = detectCanonicalExposureChannelFromText(exposureExplanationText(exposure));
+  if (!titleChannel || !explanationChannel || titleChannel === explanationChannel) return "";
+  const title = canonicalExposureTitle(titleChannel) || String(exposure.theme || "Exposure");
+  const explanation = canonicalExposureTitle(explanationChannel) || explanationChannel;
+  return `Rejected exposure title/explanation mismatch: ${title} title describes a different channel than the explanation, which fits ${explanation}.`;
+}
+
 function normalizeExposureForAppNode(args: {
   row: Record<string, unknown>;
   rawEventText: string;
@@ -5527,6 +6102,7 @@ function normalizeExposureForAppNode(args: {
   const originalTheme = String(row.theme || "").trim();
   const originalProxies = Array.isArray(row.sector_proxy_tickers) ? cleanSectorProxyTickers(row.sector_proxy_tickers) : [];
   const rowText = exposureMechanismText(row);
+  const explanationText = exposureExplanationText(row);
   const contextText = `${rowText} ${args.rawEventText} ${getFactPackHeadlineText(args.researchFactPack)}`.toLowerCase();
   const themeText = normalizedExposureTheme(row.theme);
   const generic = isGenericExposureTheme(row.theme);
@@ -5590,34 +6166,49 @@ function normalizeExposureForAppNode(args: {
   const hasInflationChannel = textIncludesAny(rowText, ["inflation", "cpi", "consumer price", "price pressure"]);
   const hasRatesChannel = textIncludesAny(rowText, ["rate-sensitive", "rates", "yield", "yields", "duration", "bond", "real estate", "xlre"]);
   const hasCyberChannel = textIncludesAny(rowText, ["cyber", "cybersecurity", "incident response", "security budget"]);
+  const explanationChannel = detectCanonicalExposureChannelFromText(explanationText);
+  const titleChannel = detectCanonicalExposureChannelFromTitle(row.theme);
+  const fallbackChannel = hasShippingChannel && (themeLooksShipping || !themeLooksEnergy)
+    ? "tankers_shipping"
+    : hasEnergyChannel
+      ? "oil_energy"
+      : hasAirlinesTravelChannel
+        ? "airlines_travel"
+        : hasDefenseChannel
+          ? "defense_aerospace"
+          : hasInflationChannel
+            ? "inflation_sensitive"
+            : hasRatesChannel
+              ? "rates_duration"
+              : hasCyberChannel
+                ? "cybersecurity_watchlist"
+                : "";
+  const selectedChannel = explanationChannel || fallbackChannel;
+  const repairedMismatch = Boolean(explanationChannel && titleChannel && explanationChannel !== titleChannel);
 
   let cleanupReason = "";
-  if (hasDefenseChannel) {
-    row = withExposureSectorProxies({ ...row, theme: "Defense & Aerospace", sector_or_theme_type: "industry_group" }, ["XLI"]);
-    cleanupReason = "Renamed defense/aerospace exposure and added XLI as the official sector ETF proxy.";
-  } else if (hasAirlinesTravelChannel) {
-    row = withExposureSectorProxies({ ...row, theme: "Airlines, Travel & Luxury Demand", sector_or_theme_type: "industry_group" }, ["XLY"]);
-    cleanupReason = "Replaced generic consumer/travel exposure with a concrete airlines, travel and luxury demand channel.";
-  } else if (hasShippingChannel && (themeLooksShipping || !themeLooksEnergy)) {
-    row = withoutExposureSectorProxies({ ...row, theme: "Tankers & Shipping", sector_or_theme_type: "industry_group" }, ["XLI"]);
-    cleanupReason = "Renamed shipping exposure and removed broad industrial ETF proxy because no official sector ETF cleanly represents tankers.";
-  } else if (hasEnergyChannel) {
-    row = withExposureSectorProxies({ ...row, theme: "Energy & Oil Supply Risk", sector_or_theme_type: "theme" }, ["XLE"]);
-    cleanupReason = "Renamed oil/energy exposure to the market mechanism and added XLE as the official sector ETF proxy.";
-  } else if (hasInflationChannel) {
-    row = { ...row, theme: "Inflation-Sensitive Sectors", sector_or_theme_type: "theme" };
-    cleanupReason = "Renamed inflation exposure to a market-mechanism title.";
-  } else if (hasRatesChannel) {
-    row = { ...row, theme: "Rate-Sensitive Sectors", sector_or_theme_type: "theme" };
-    cleanupReason = "Renamed rates exposure to a market-mechanism title.";
-  } else if (hasCyberChannel) {
-    const broadTechSecurity = textIncludesAny(rowText, ["technology", "software", "xlk", "security budget", "security spending", "cybersecurity spending"]);
-    row = broadTechSecurity
-      ? withExposureSectorProxies({ ...row, theme: "Cybersecurity Watchlist", sector_or_theme_type: "theme" }, ["XLK"])
-      : withoutExposureSectorProxies({ ...row, theme: "Cybersecurity Watchlist", sector_or_theme_type: "theme" }, ["XLK"]);
-    cleanupReason = broadTechSecurity
-      ? "Renamed cybersecurity exposure and kept XLK only because the row is framed as a broad tech/security exposure."
-      : "Renamed cybersecurity exposure without XLK because the row is watchlist-specific rather than a broad sector exposure.";
+  if (selectedChannel) {
+    row = applyCanonicalExposureChannel(row, selectedChannel, rowText);
+    const finalTitle = canonicalExposureTitle(selectedChannel) || String(row.theme || "").trim();
+    if (repairedMismatch) {
+      cleanupReason = `Repaired exposure title/explanation mismatch: ${originalTheme || "Untitled exposure"} described ${finalTitle}, so the title and ETF proxy were corrected to match the explanation.`;
+    } else if (generic && selectedChannel === "airlines_travel") {
+      cleanupReason = "Replaced generic consumer/travel exposure with a concrete airlines, travel and luxury demand channel.";
+    } else if (selectedChannel === "defense_aerospace") {
+      cleanupReason = "Renamed defense/aerospace exposure and added XLI as the official sector ETF proxy.";
+    } else if (selectedChannel === "tankers_shipping") {
+      cleanupReason = "Renamed shipping exposure and removed broad sector ETF proxies because no official sector ETF cleanly represents tankers.";
+    } else if (selectedChannel === "oil_energy") {
+      cleanupReason = "Renamed oil/energy exposure to the market mechanism and added XLE as the official sector ETF proxy.";
+    } else if (selectedChannel === "inflation_sensitive") {
+      cleanupReason = "Renamed inflation exposure to a market-mechanism title.";
+    } else if (selectedChannel === "rates_duration") {
+      cleanupReason = "Renamed rates exposure to a market-mechanism title.";
+    } else if (selectedChannel === "cybersecurity_watchlist") {
+      cleanupReason = String(row.sector_proxy_tickers || "").includes("XLK")
+        ? "Renamed cybersecurity exposure and kept XLK only because the row is framed as a broad tech/security exposure."
+        : "Renamed cybersecurity exposure without XLK because the row is watchlist-specific rather than a broad sector exposure.";
+    }
   }
 
   const normalizedProxies = Array.isArray(row.sector_proxy_tickers) ? cleanSectorProxyTickers(row.sector_proxy_tickers) : [];
@@ -5630,6 +6221,9 @@ function normalizeExposureForAppNode(args: {
       final_theme: String(row.theme || "").trim(),
       original_sector_proxy_tickers: originalProxies,
       final_sector_proxy_tickers: normalizedProxies,
+      original_title_channel: titleChannel ? canonicalExposureTitle(titleChannel) : "",
+      final_explanation_channel: selectedChannel ? canonicalExposureTitle(selectedChannel) : "",
+      title_explanation_mismatch_repaired: repairedMismatch,
       reason: cleanupReason,
     }
     : null;
@@ -5645,6 +6239,9 @@ function normalizeExposureForAppNode(args: {
 }
 
 function exposureChannelKey(exposure: Record<string, unknown>) {
+  const titleChannel = detectCanonicalExposureChannelFromTitle(exposure.theme);
+  if (titleChannel) return titleChannel;
+
   const text = [
     exposure.theme,
     exposure.sector_or_theme_type,
@@ -5741,6 +6338,7 @@ function buildResearchExposureRows(args: {
   const candidates: Record<string, unknown>[] = [];
   const rejected: Record<string, unknown>[] = [];
   const namingDiagnostics: Record<string, unknown>[] = [];
+  const beforeCleanup: Record<string, unknown>[] = [];
 
   for (const exposure of args.assetsToResearch) {
     const sectorProxyTickers = Array.isArray(exposure.sector_proxy_tickers)
@@ -5760,6 +6358,7 @@ function buildResearchExposureRows(args: {
       time_horizon: String(exposure.time_horizon || "").trim(),
       confidence: normalizeScore(exposure.confidence, 35),
     };
+    beforeCleanup.push({ ...baseRow });
     const normalized = normalizeExposureForAppNode({
       row: baseRow,
       rawEventText: args.rawEventText,
@@ -5798,14 +6397,24 @@ function buildResearchExposureRows(args: {
   }
 
   const compression = compressResearchExposureRows(candidates);
+  const deduplicated = compression.removed.filter((row) => String(row.compression_stage || "") === "duplicate_channel");
+  const rejectedWithReasons = [
+    ...rejected,
+    ...compression.removed,
+  ].filter((row) => String(row.exposure_rejection_reason || "").trim());
 
   return {
     inserted: compression.inserted,
     rejected,
+    before_cleanup: beforeCleanup,
+    after_cleanup: compression.inserted,
     before_compression: candidates,
     removed_by_compression: compression.removed,
+    deduplicated,
+    rejected_with_reasons: rejectedWithReasons,
     display_limit: compression.display_limit,
     naming_diagnostics: namingDiagnostics,
+    repaired_title_explanation_mismatch: namingDiagnostics.filter((item) => Boolean(item.title_explanation_mismatch_repaired)),
   };
 }
 
@@ -6387,9 +6996,9 @@ async function createValidatedDraft(input: {
         role: "system",
         content: [
           "You are Clarifin's cautious evidence-aware financial research assistant.",
-          "You must not browse the web. You may use the provided Research Fact Pack, which contains lightweight GDELT headline metadata, optional FRED/EIA/ECB/FMP external observations, and internal exposure-map candidates.",
+          "You must not browse the web. You may use the provided Research Fact Pack, which contains lightweight GDELT headline metadata, optional FRED/EIA/ECB/FMP/CoinGecko external observations, and internal exposure-map candidates.",
           "Do not pretend full article research happened. GDELT headlines are supporting context and source-count signals only, not final truth.",
-          "FRED, EIA, ECB, and FMP observations are supporting external data when present, but they are context only; do not overstate causality from a single latest value, profile field, calendar row, or headline.",
+          "FRED, EIA, ECB, FMP, and CoinGecko observations are supporting external data when present, but they are context only; do not overstate causality from a single latest value, 24h move, profile field, calendar row, or headline.",
           "Your job is to generate a draft only after evidence mapping, affected-asset validation, and a quality gate.",
           "Use only the allowed Clarifin taxonomy values for category, event_type, and event_status. Never invent custom category names.",
           "If an event describes a reported possible combination, merger discussion, takeover possibility, or deal exploration without a confirmed transaction, use event_type=Merger Speculation, not Merger / Acquisition. Use event_status=report when attributed to a report/source, speculation when not attributed, and rumor only for unsupported market chatter.",
@@ -6404,7 +7013,7 @@ async function createValidatedDraft(input: {
           "",
           "Evidence mapping rules:",
           "- Classify each important claim as input_fact, source_fact, market_reaction, inference, unverified, or missing.",
-          "- Because this version does not fetch full source URLs or full GDELT articles, source_fact is allowed only for exact user-provided source text, official FRED/EIA/ECB/FMP observations, or lightweight GDELT headline metadata. Never treat a headline as full article confirmation.",
+          "- Because this version does not fetch full source URLs or full GDELT articles, source_fact is allowed only for exact user-provided source text, official FRED/EIA/ECB/FMP observations, CoinGecko crypto market observations, or lightweight GDELT headline metadata. Never treat a headline as full article confirmation.",
           "- Distinguish raw input claims from FRED macro observations, GDELT supporting headlines, internal candidate assets, and missing/unverified data.",
           "- If related_news_count is low or source_domains are thin, lower confidence and say the event needs verification.",
           "- If multiple related GDELT headlines from different domains appear, you may say related coverage exists, but do not say the event is confirmed unless the raw input itself confirms it.",
@@ -6421,8 +7030,12 @@ async function createValidatedDraft(input: {
           "- Source-to-claim discipline: FRED macro observations can support rates, inflation, labor, credit, and financial-conditions context, but they do not prove a Fed decision or recession by themselves.",
           "- Source-to-claim discipline: ECB observations can support euro-area macro/FX context, but not a company-specific claim without another channel.",
           "- Source-to-claim discipline: FMP company profile, quote, earnings, estimate, or metrics data can support company classification and factual backdrop, but not event causality unless the event mechanism is concrete.",
+          "- Source-to-claim discipline: CoinGecko observations can support crypto risk-appetite, liquidity, stablecoin, or digital-asset market context, but a 24h move alone is not a durable trend and does not prove a market impact.",
           "- Source-to-claim discipline: GDELT headlines are metadata only; they can show related headline awareness, not confirmed article research.",
           "- Direct Impact stays concise and direct. Indirect Impact is the app-facing place for interesting second-order names when external data or research suggests plausibility but not direct conviction.",
+          "- Crypto can be Direct Impact only when the event directly concerns crypto regulation, exchanges, stablecoins, Bitcoin ETFs, DeFi, hacks, blockchain infrastructure, or crypto market structure.",
+          "- Crypto is usually Indirect Impact when the event is macro, rates, dollar, liquidity, risk-off, cybersecurity, or geopolitical and crypto is only a liquidity-sensitive or risk-appetite channel.",
+          "- Do not use CoinGecko for listed crypto equities. Crypto-related stocks such as COIN, MSTR, MARA, RIOT, and CLSK need FMP/company evidence and a concrete crypto-price, regulation, exchange-volume, mining-economics, or Bitcoin-exposure channel.",
           "",
           "Goldstandard node-quality rules:",
           "- The generator may think broadly, but the mobile app node must display selectively.",
@@ -6570,6 +7183,7 @@ Deno.serve(async (req) => {
     const fredApiKey = (Deno.env.get("FRED_API_KEY") || "").trim();
     const eiaApiKey = (Deno.env.get("EIA_API_KEY") || "").trim();
     const fmpApiKey = (Deno.env.get("FMP_API_KEY") || "").trim();
+    const coinGeckoApiKey = (Deno.env.get("COINGECKO_API_KEY") || "").trim();
     if (body.debug_fred_connectivity === true) {
       return jsonResponse(await runFredConnectivityDebug({
         apiKey: fredApiKey,
@@ -6592,6 +7206,12 @@ Deno.serve(async (req) => {
       return jsonResponse(await runFmpCapabilitiesDebug({
         apiKey: fmpApiKey,
         ticker: body.ticker,
+      }));
+    }
+    if (body.debug_coingecko_connectivity === true) {
+      return jsonResponse(await runCoinGeckoConnectivityDebug({
+        apiKey: coinGeckoApiKey,
+        assetIds: body.asset_ids,
       }));
     }
 
@@ -6698,6 +7318,15 @@ Deno.serve(async (req) => {
       skipReason: String((externalSourcesRouter.source_skip_reasons as Record<string, string> | undefined)?.FMP || ""),
     });
     externalResearchItems.push(...fmpResearch.items);
+    const cryptoResearch = await collectCryptoResearch({
+      researchPlan,
+      rawEventText,
+      tickers,
+      apiKey: coinGeckoApiKey,
+      selected: sourceSelected(externalSourcesRouter, "CoinGecko"),
+      skipReason: String((externalSourcesRouter.source_skip_reasons as Record<string, string> | undefined)?.CoinGecko || ""),
+    });
+    externalResearchItems.push(...cryptoResearch.items);
     const externalSourceDiagnostics = {
       router: externalSourcesRouter,
       gdelt: gdeltResult.diagnostics || {},
@@ -6705,12 +7334,14 @@ Deno.serve(async (req) => {
       eia: eiaResearch.diagnostics,
       ecb: ecbResearch.diagnostics,
       fmp: fmpResearch.diagnostics,
+      crypto: cryptoResearch.diagnostics,
     };
     const externalObservationFacts = [
       ...fredResearch.facts,
       ...eiaResearch.facts,
       ...ecbResearch.facts,
       ...fmpResearch.facts,
+      ...cryptoResearch.facts,
     ];
     const externalWarnings = uniqueStrings([
       ...cleanStringArray((gdeltResult as Record<string, unknown>).warnings),
@@ -6718,6 +7349,7 @@ Deno.serve(async (req) => {
       ...(Array.isArray(eiaResearch.diagnostics.warnings) ? eiaResearch.diagnostics.warnings as string[] : []),
       ...(Array.isArray(ecbResearch.diagnostics.warnings) ? ecbResearch.diagnostics.warnings as string[] : []),
       ...(Array.isArray(fmpResearch.diagnostics.warnings) ? fmpResearch.diagnostics.warnings as string[] : []),
+      ...(Array.isArray(cryptoResearch.diagnostics.warnings) ? cryptoResearch.diagnostics.warnings as string[] : []),
     ]);
     const externalDataObservations = buildExternalDataObservations(externalResearchItems);
     const externalObservationPromptDiagnostics = buildExternalObservationPromptDiagnostics(externalDataObservations);
@@ -6794,6 +7426,16 @@ Deno.serve(async (req) => {
     const debugAiProposedAssetsBeforeValidation = cloneForDebug(
       Array.isArray(generatedNode.affected_assets) ? generatedNode.affected_assets : [],
     );
+    const brentOverUsoDiagnostics: Record<string, unknown>[] = [];
+    const preGateBrentPreference = preferBrentOverUsoForSeaborneOil({
+      assets: generatedNode.affected_assets,
+      rawEventText,
+      researchPlan,
+      researchFactPack,
+      stage: "after_ai_proposal_before_server_gates",
+    });
+    generatedNode.affected_assets = preGateBrentPreference.assets;
+    brentOverUsoDiagnostics.push(...preGateBrentPreference.diagnostics);
 
     const { data: node, error: nodeError } = await supabase
       .from("nodes")
@@ -6883,12 +7525,59 @@ Deno.serve(async (req) => {
       researchFactPack,
       acceptedTickerEvidence: directAffectedEvidence,
     });
-    const conciseAssetCompression = runFinalConciseNodeCompression({
+    const postQualityGateBrentPreference = preferBrentOverUsoForSeaborneOil({
       assets: affectedAssetQualityGate.final_assets,
-      acceptedDiagnostics: affectedAssetQualityGate.accepted,
+      rawEventText,
+      researchPlan,
+      researchFactPack,
+      stage: "after_quality_gate_before_concise_compression",
+    });
+    brentOverUsoDiagnostics.push(...postQualityGateBrentPreference.diagnostics);
+    const acceptedAfterRepresentativeSelection = postQualityGateBrentPreference.diagnostics.length
+      ? [
+        ...affectedAssetQualityGate.accepted.filter((asset) => canonicalTicker(asset.ticker || asset.canonical_asset) !== "USO"),
+        ...(postQualityGateBrentPreference.assets.some((asset) => canonicalTicker(asset.ticker || asset.ticker_or_asset) === "BRENT CRUDE")
+          ? [{
+            original_proposed_asset: "USO",
+            canonical_asset: "BRENT CRUDE",
+            ticker: "BRENT CRUDE",
+            name: "Brent Crude",
+            channel: "Oil / energy prices",
+            quality_gate_reason: `Accepted via representative selection: ${brentOverUsoDiagnosticReason()}`,
+            final_decision: "inserted",
+          }]
+          : []),
+      ]
+      : affectedAssetQualityGate.accepted;
+    const conciseAssetCompression = runFinalConciseNodeCompression({
+      assets: postQualityGateBrentPreference.assets,
+      acceptedDiagnostics: acceptedAfterRepresentativeSelection,
       rawEventText,
       researchPlan,
     });
+    const finalBrentPreference = preferBrentOverUsoForSeaborneOil({
+      assets: conciseAssetCompression.final_assets,
+      rawEventText,
+      researchPlan,
+      researchFactPack,
+      stage: "final_safeguard_before_database_insert",
+    });
+    if (finalBrentPreference.diagnostics.length) {
+      brentOverUsoDiagnostics.push(...finalBrentPreference.diagnostics);
+      conciseAssetCompression.final_assets = finalBrentPreference.assets;
+      conciseAssetCompression.removed = [
+        ...conciseAssetCompression.removed,
+        ...finalBrentPreference.diagnostics,
+      ];
+      conciseAssetCompression.moved_to_watchlist = [
+        ...conciseAssetCompression.moved_to_watchlist,
+        ...finalBrentPreference.diagnostics,
+      ];
+      conciseAssetCompression.warnings = uniqueStrings([
+        ...conciseAssetCompression.warnings,
+        ...finalBrentPreference.diagnostics.map((item) => item.quality_gate_reason),
+      ]);
+    }
     const watchlistCandidates = [
       ...affectedAssetQualityGate.moved_to_watchlist,
       ...conciseAssetCompression.moved_to_watchlist,
@@ -6899,6 +7588,7 @@ Deno.serve(async (req) => {
       ...affectedAssetQualityGate.deduplicated,
       ...affectedAssetQualityGate.moved_to_watchlist,
       ...conciseAssetCompression.removed,
+      ...brentOverUsoDiagnostics,
     ].map((asset: Record<string, unknown>) => String(asset.quality_gate_reason || "").trim()).filter(Boolean));
 
     if (qualityGateWarnings.length) {
@@ -6967,6 +7657,7 @@ Deno.serve(async (req) => {
       deduplicatedAssets: [
         ...affectedAssetQualityGate.deduplicated,
         ...conciseAssetCompression.removed,
+        ...brentOverUsoDiagnostics,
       ],
     });
     const candidateAssetsRejected = buildCandidateRejectionReport({
@@ -6980,6 +7671,7 @@ Deno.serve(async (req) => {
         ...affectedAssetQualityGate.deduplicated,
         ...affectedAssetQualityGate.moved_to_watchlist,
         ...conciseAssetCompression.removed,
+        ...brentOverUsoDiagnostics,
       ],
       rawEventText,
       researchPlan,
@@ -7027,9 +7719,14 @@ Deno.serve(async (req) => {
     });
     const researchExposures = researchExposureValidation.inserted;
     const rejectedResearchExposures = researchExposureValidation.rejected;
+    const exposureRowsBeforeCleanup = researchExposureValidation.before_cleanup || [];
+    const exposureRowsAfterCleanup = researchExposureValidation.after_cleanup || researchExposures;
     const exposureRowsBeforeCompression = researchExposureValidation.before_compression || [];
     const exposuresRemovedByCompression = researchExposureValidation.removed_by_compression || [];
+    const exposuresDeduplicated = researchExposureValidation.deduplicated || [];
     const exposureNamingDiagnostics = researchExposureValidation.naming_diagnostics || [];
+    const exposuresRepairedTitleExplanationMismatch = researchExposureValidation.repaired_title_explanation_mismatch || [];
+    const exposuresRejectedWithReasons = researchExposureValidation.rejected_with_reasons || rejectedResearchExposures;
     generatedNode.assets_to_research = researchExposures;
 
     if (rejectedResearchExposures.length || exposuresRemovedByCompression.length) {
@@ -7151,6 +7848,13 @@ Deno.serve(async (req) => {
         name: asset.name || asset.ticker || "",
         reason: asset.compression_reason || asset.quality_gate_reason || "",
       })),
+      ...brentOverUsoDiagnostics.map((asset: Record<string, unknown>) => ({
+        stage: "representative_selection",
+        ticker: asset.ticker || "USO",
+        name: asset.name || asset.ticker || "USO",
+        replacement_asset: asset.replacement_asset || "BRENT CRUDE",
+        reason: asset.quality_gate_reason || brentOverUsoDiagnosticReason(),
+      })),
     ];
 
     const affectedAssetValidationDiagnostics = {
@@ -7177,7 +7881,13 @@ Deno.serve(async (req) => {
       exposures_before_compression: exposureRowsBeforeCompression,
       final_exposures_after_compression: researchExposures,
       exposures_removed_as_generic_or_duplicate: exposuresRemovedByCompression,
+      exposures_before_cleanup: exposureRowsBeforeCleanup,
+      exposures_after_cleanup: exposureRowsAfterCleanup,
+      exposures_deduplicated: exposuresDeduplicated,
+      exposures_repaired_title_explanation_mismatch: exposuresRepairedTitleExplanationMismatch,
+      exposures_rejected_with_reasons: exposuresRejectedWithReasons,
       exposure_naming_diagnostics: exposureNamingDiagnostics,
+      brent_over_uso_diagnostics: brentOverUsoDiagnostics,
       asset_decision_diagnostics: assetDecisionDiagnostics,
       direct_impact: finalGeneratedAffectedAssets,
       indirect_impact: secondOrderWatchlist,
@@ -7233,6 +7943,7 @@ Deno.serve(async (req) => {
           eia_status: (externalSourceDiagnostics.eia as Record<string, unknown> | undefined)?.status || "skipped",
           ecb_status: (externalSourceDiagnostics.ecb as Record<string, unknown> | undefined)?.status || "skipped",
           fmp_status: (externalSourceDiagnostics.fmp as Record<string, unknown> | undefined)?.status || "skipped",
+          crypto_status: (externalSourceDiagnostics.crypto as Record<string, unknown> | undefined)?.status || "skipped",
           external_data_observations_count: externalDataObservations.length,
           candidate_assets_considered_count: candidateAssetsConsidered.length,
           proposed_assets_before_compression_count: conciseAssetCompression.proposed_assets_before_compression.length,
@@ -7278,6 +7989,23 @@ Deno.serve(async (req) => {
       fmp_status: (externalSourceDiagnostics.fmp as Record<string, unknown> | undefined)?.status || "skipped",
       fmp_api_key_detected: Boolean((externalSourceDiagnostics.fmp as Record<string, unknown> | undefined)?.api_key_detected),
       fmp_capabilities: (externalSourceDiagnostics.fmp as Record<string, unknown> | undefined)?.fmp_capabilities || {},
+      crypto_diagnostics: externalSourceDiagnostics.crypto,
+      crypto_source_attempted: Boolean((externalSourceDiagnostics.crypto as Record<string, unknown> | undefined)?.attempted),
+      crypto_status: (externalSourceDiagnostics.crypto as Record<string, unknown> | undefined)?.status || "skipped",
+      coingecko_key_detected: Boolean((externalSourceDiagnostics.crypto as Record<string, unknown> | undefined)?.api_key_detected),
+      crypto_assets_attempted: cryptoResearch.items
+        .map((item) => (item.extracted_facts as Record<string, unknown> | undefined)?.symbol || item.query_or_endpoint)
+        .filter(Boolean),
+      crypto_assets_successful: cryptoResearch.items
+        .filter((item) => String(item.status || "") === "success")
+        .map((item) => (item.extracted_facts as Record<string, unknown> | undefined)?.symbol || item.query_or_endpoint)
+        .filter(Boolean),
+      crypto_assets_failed: cryptoResearch.items
+        .filter((item) => String(item.status || "") !== "success")
+        .map((item) => (item.extracted_facts as Record<string, unknown> | undefined)?.symbol || item.query_or_endpoint)
+        .filter(Boolean),
+      crypto_warnings: (externalSourceDiagnostics.crypto as Record<string, unknown> | undefined)?.warnings || [],
+      crypto_observations_created: cryptoResearch.items.filter((item) => String(item.status || "") === "success").length,
       external_observation_facts: externalObservationFacts,
       external_data_observations_in_fact_pack: researchFactPack.external_data_observations || [],
       external_observation_summary: researchFactPack.external_observation_summary || {},
@@ -7294,6 +8022,11 @@ Deno.serve(async (req) => {
       final_exposures_inserted: researchExposures,
       exposures_inserted: researchExposures,
       exposures_rejected: rejectedResearchExposures,
+      exposures_before_cleanup: exposureRowsBeforeCleanup,
+      exposures_after_cleanup: exposureRowsAfterCleanup,
+      exposures_deduplicated: exposuresDeduplicated,
+      exposures_repaired_title_explanation_mismatch: exposuresRepairedTitleExplanationMismatch,
+      exposures_rejected_with_reasons: exposuresRejectedWithReasons,
       exposures_before_compression: exposureRowsBeforeCompression,
       final_exposures_after_compression: researchExposures,
       exposures_removed_as_generic_or_duplicate: exposuresRemovedByCompression,
@@ -7305,6 +8038,7 @@ Deno.serve(async (req) => {
       candidate_assets_rejected: candidateAssetsRejected,
       rejected_assets_with_reasons: rejectedAssetsWithReasons,
       asset_decision_diagnostics: assetDecisionDiagnostics,
+      brent_over_uso_diagnostics: brentOverUsoDiagnostics,
       proposed_assets_before_compression: conciseAssetCompression.proposed_assets_before_compression,
       final_affected_assets_after_compression: affectedAssets,
       assets_moved_to_watchlist: watchlistCandidates,
@@ -7318,6 +8052,7 @@ Deno.serve(async (req) => {
       ],
       compression_warnings: uniqueStrings([
         ...conciseAssetCompression.warnings,
+        ...brentOverUsoDiagnostics.map((asset: Record<string, unknown>) => String(asset.quality_gate_reason || "").trim()).filter(Boolean),
         ...exposuresRemovedByCompression.map((exposure: Record<string, unknown>) => String(exposure.exposure_rejection_reason || "").trim()).filter(Boolean),
       ]),
       final_hard_validation_removed_assets: finalHardValidationRemovedAssets,
@@ -7334,6 +8069,11 @@ Deno.serve(async (req) => {
           proposed_exposures_before_compression: exposureRowsBeforeCompression,
           final_exposures_after_compression: researchExposures,
           exposures_removed_as_generic_or_duplicate: exposuresRemovedByCompression,
+          exposures_before_cleanup: exposureRowsBeforeCleanup,
+          exposures_after_cleanup: exposureRowsAfterCleanup,
+          exposures_deduplicated: exposuresDeduplicated,
+          exposures_repaired_title_explanation_mismatch: exposuresRepairedTitleExplanationMismatch,
+          exposures_rejected_with_reasons: exposuresRejectedWithReasons,
           exposure_naming_diagnostics: exposureNamingDiagnostics,
           display_limit: researchExposureValidation.display_limit,
         },

@@ -133,9 +133,14 @@ button { border: 0; font: inherit; background: none; padding: 0; cursor: pointer
 .timestamp { position: absolute; bottom: 20px; right: 16px; font-size: 11px; font-weight: 700; color: var(--text-light); }
 .upcoming-card .timestamp { right: 20px; bottom: 18px; }
 
-.detail-controls { display: flex; justify-content: space-between; margin-bottom: var(--sp-4); }
+.detail-controls { display: flex; justify-content: space-between; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-4); }
 .action-btn { padding: 8px 16px; border-radius: 99px; font-size: 14px; font-weight: 700; color: var(--text-main); border: 1px solid rgba(255, 255, 255, 0.8); }
 .action-btn.saved { background: var(--yellow-bg); color: var(--yellow-text); border-color: transparent; }
+.action-btn.publish-action { background: var(--green-bg); color: var(--green-text); border-color: transparent; }
+.action-btn.archive-action { background: var(--gray-bg); color: var(--gray-text); border-color: transparent; }
+.review-actions { display: flex; gap: var(--sp-2); margin-left: auto; }
+.review-badge { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 8px; background: var(--yellow-bg); color: var(--yellow-text); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; margin-left: var(--sp-2); }
+.review-card-note { color: var(--text-muted); font-size: 13px; line-height: 1.4; margin: var(--sp-2) 0 0 0; }
 
 .detail-hero { border-radius: 24px; padding: var(--sp-5); margin-bottom: var(--sp-3); }
 .detail-hero h1 { font-size: 22px; font-weight: 700; line-height: 1.2; margin: 0 0 var(--sp-3) 0; letter-spacing: -0.5px; }
@@ -168,6 +173,10 @@ details.detail-card[open] summary::after { content: "-"; }
 .asset-card p { margin: 4px 0 0 0; font-size: 13px; }
 .asset-card .evidence-note { color: var(--text-light); font-size: 12px; line-height: 1.4; margin-top: 6px; }
 .research-evidence-note { color: var(--text-light); font-size: 12px; line-height: 1.4; margin: 0 0 var(--sp-3) 0; }
+.research-evidence-section { opacity: 0.88; }
+.research-evidence-section summary { color: var(--text-muted); font-size: 14px; }
+.research-evidence-section .detail-body { color: var(--text-light); }
+.research-evidence-section .asset-card { background: rgba(0, 0, 0, 0.02); }
 .evidence-source { display: flex; flex-direction: column; gap: 6px; }
 .evidence-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--sp-2); }
 .evidence-head h3 { margin: 0; font-size: 14px; font-weight: 700; color: var(--text-main); }
@@ -175,6 +184,9 @@ details.detail-card[open] summary::after { content: "-"; }
 .status-success { background: var(--green-bg); color: var(--green-text); }
 .status-partial_success { background: var(--yellow-bg); color: var(--yellow-text); }
 .status-failed, .status-timeout, .status-rate_limited { background: var(--red-bg); color: var(--red-text); }
+.status-draft { background: var(--yellow-bg); color: var(--yellow-text); }
+.status-published { background: var(--green-bg); color: var(--green-text); }
+.review-status-section { border-color: rgba(245, 158, 11, 0.28); }
 .evidence-fact-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
 .evidence-fact-list li { color: var(--text-muted); font-size: 13px; font-weight: 400; line-height: 1.4; }
 
@@ -236,6 +248,10 @@ details.detail-card[open] summary::after { content: "-"; }
           <div class="detail-controls">
             <button class="action-btn liquid-glass" id="back-button" type="button">Back</button>
             <button class="action-btn liquid-glass" id="save-node" type="button">Save</button>
+            <div class="review-actions" id="review-actions" hidden>
+              <button class="action-btn publish-action liquid-glass" id="publish-node" type="button">Publish</button>
+              <button class="action-btn archive-action liquid-glass" id="archive-node" type="button">Archive</button>
+            </div>
           </div>
 
           <article class="detail-hero liquid-glass">
@@ -258,6 +274,7 @@ details.detail-card[open] summary::after { content: "-"; }
         <button class="nav-item active" data-view="home" type="button">Home</button>
         <button class="nav-item" data-view="watchlist" type="button">Watchlist</button>
         <button class="nav-item" data-view="saved" type="button">Saved</button>
+        <button class="nav-item" data-view="review" id="review-nav" type="button" hidden>Review</button>
       </nav>
       
     </div>
@@ -373,6 +390,7 @@ const fallbackNodes = [
   }
 ];
 let nodes = [];
+let draftNodes = [];
 
 const fallbackUpcomingEvents = [
   {
@@ -410,10 +428,12 @@ let upcomingEvents = fallbackUpcomingEvents.slice();
 
 const watchlist = ["TSMC", "Apple", "Rheinmetall", "LVMH", "Microsoft", "Vonovia"];
 const directionOrder = { positive: 0, negative: 1, mixed: 2, neutral: 2 };
-let activeView = "home";
+const reviewModeEnabled = new URLSearchParams(window.location.search).get("mode") === "review";
+let activeView = reviewModeEnabled ? "review" : "home";
 let eventMode = "top";
 let selectedNodeId = null;
 let savedNodeIds = JSON.parse(localStorage.getItem("clarifinSavedNodes") || "[]");
+let reviewLoadMessage = "";
 
 const SUPABASE_URL = "https://omoansqramrgtpecsudh.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_YXZ0BaSAQnCuOfohv7aGwQ_DZN4f8to";
@@ -579,6 +599,24 @@ function formatNameWithSymbol(primary, secondary, fallback = "") {
   const second = String(secondary || "").trim();
   if (first && second && first.toUpperCase() !== second.toUpperCase()) return `${first} - ${second}`;
   return first || second || fallback;
+}
+
+function stripLeadingSymbolFromHeading(value, symbol) {
+  const text = String(value || "").trim();
+  const ticker = String(symbol || "").trim();
+  if (!text || !ticker) return text;
+  const escapedTicker = ticker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const cleaned = text.replace(new RegExp(`^${escapedTicker}\\s*[-:]?\\s+`, "i"), "").trim();
+  return cleaned || text;
+}
+
+function formatIndirectImpactHeading(item) {
+  const title = String(item?.title || "").trim();
+  const companyName = String(item?.companyName || "").trim();
+  const symbol = String(item?.symbol || "").trim();
+  const preferred = stripLeadingSymbolFromHeading(companyName || title, symbol);
+  if (preferred && preferred.toUpperCase() !== "INDIRECT IMPACT") return preferred;
+  return symbol || preferred || "Indirect impact";
 }
 
 const OFFICIAL_SECTOR_ETFS = ["XLY", "XLP", "XLE", "XLF", "XLV", "XLI", "XLB", "XLRE", "XLK", "XLC", "XLU"];
@@ -747,12 +785,34 @@ function aggregateObservationStatus(statuses) {
 function compactObservationLabel(observation, facts) {
   const source = String(observation.sourceName || "").toUpperCase();
   const query = String(observation.queryOrEndpoint || "").trim();
-  if (source === "FRED") return query || facts.series_name || "FRED series";
-  if (source === "EIA") return query || facts.indicator_name || "EIA indicator";
+  if (source === "FRED") {
+    const seriesId = query.includes(":") ? query.split(":").pop() : "";
+    return seriesId || facts.series_name || "FRED series";
+  }
+  if (source === "EIA") {
+    const indicator = String(facts.indicator_name || "").toLowerCase();
+    if (indicator.includes("brent")) return "Brent crude";
+    if (indicator.includes("wti") || indicator.includes("cushing")) return "WTI crude";
+    if (indicator.includes("henry hub")) return "Henry Hub gas";
+    if (indicator.includes("field production of crude oil")) return "U.S. crude production";
+    if (indicator.includes("crude oil stocks")) return "U.S. crude stocks";
+    if (indicator.includes("gasoline stocks")) return "U.S. gasoline stocks";
+    if (indicator.includes("distillate")) return "U.S. distillate stocks";
+    return facts.indicator_name || "EIA indicator";
+  }
   if (source === "ECB") return facts.indicator_name || query || "ECB series";
   if (source === "FMP") return facts.ticker || observation.queryOrEndpoint || facts.company_name || "FMP";
+  if (source === "COINGECKO") return facts.symbol || facts.name || "Crypto market";
   if (source === "GDELT") return "Query";
   return query || source || "Observation";
+}
+
+function formatEvidenceValue(value, unit = "") {
+  if (!hasValue(value)) return "";
+  const number = Number(value);
+  if (!Number.isFinite(number)) return String(value);
+  if (unit === "MBBL/D" && Math.abs(number) >= 1000) return new Intl.NumberFormat("de-DE").format(number);
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 }).format(number);
 }
 
 function compactObservationLine(observation) {
@@ -789,9 +849,9 @@ function compactObservationLine(observation) {
   const latestDate = firstValue(facts, ["latest_date", "latestDate"], "");
   const unit = firstValue(facts, ["unit"], "");
   const change = firstValue(facts, ["change_from_previous", "changeFromPrevious"], "");
-  const valueText = hasValue(latestValue) ? `${formatFactualValue(latestValue)}${unit ? ` ${unit}` : ""}` : "";
+  const valueText = hasValue(latestValue) ? `${formatEvidenceValue(latestValue, unit)}${unit ? ` ${unit}` : ""}` : "";
   const dateText = latestDate ? ` on ${latestDate}` : "";
-  const changeText = hasValue(change) ? `; change ${formatFactualValue(change)}` : "";
+  const changeText = hasValue(change) ? `; change ${formatEvidenceValue(change, unit)}` : "";
   return `${label}: ${valueText || "latest value available"}${dateText}${changeText}`;
 }
 
@@ -910,6 +970,22 @@ async function supabaseFetch(path) {
   return response.json();
 }
 
+async function supabasePatch(path, payload) {
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    method: "PATCH",
+    headers: {
+      ...SUPABASE_HEADERS,
+      Prefer: "return=representation"
+    },
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Supabase update failed: ${response.status} ${body}`);
+  }
+  return response.json();
+}
+
 async function fetchRelatedRows(tableName, nodeIds, selectColumns = "*") {
   if (!nodeIds.length) return [];
   const nodeKeys = nodeIds.map(nodeLookupKey).filter(Boolean);
@@ -982,6 +1058,7 @@ function convertSupabaseNode(row, assetRows, detailRows, exposureRows = [], indi
 
   return {
     id,
+    status: firstValue(row, ["status"], "published"),
     category: firstValue(row, ["category", "topic", "type"], "Market Event"),
     eventType: firstValue(row, ["event_type", "eventType"], ""),
     eventStatus: firstValue(row, ["event_status", "eventStatus"], ""),
@@ -1062,6 +1139,38 @@ async function loadUpcomingEvents() {
   renderList();
 }
 
+async function hydrateSupabaseNodes(rows) {
+  const nodeIds = rows
+    .map((row) => firstValue(row, ["id", "slug"], ""))
+    .filter(Boolean)
+    .map(String);
+  const [assetRows, detailRows, exposureRows, indirectImpactRows, researchFactPackRows] = await Promise.all([
+    fetchRelatedRows("affected_assets", nodeIds),
+    fetchRelatedRows("node_details", nodeIds),
+    fetchRelatedRows("node_research_exposures", nodeIds),
+    fetchRelatedRows("node_indirect_impacts", nodeIds),
+    fetchRelatedRows("research_fact_packs", nodeIds, "node_id,external_data_observations,missing_data,research_warnings")
+  ]);
+  const assetsByNode = groupByNodeId(assetRows);
+  const detailsByNode = groupByNodeId(detailRows, true);
+  const exposuresByNode = groupByNodeId(exposureRows);
+  const indirectImpactsByNode = groupByNodeId(indirectImpactRows);
+  const researchFactPacksByNode = groupByNodeId(researchFactPackRows);
+
+  return sortNodesNewestFirst(rows.map((row) => {
+    const nodeId = String(firstValue(row, ["id", "slug"], ""));
+    const nodeKey = nodeLookupKey(nodeId);
+    return convertSupabaseNode(
+      row,
+      assetsByNode[nodeKey] || [],
+      detailsByNode[nodeKey] || [],
+      exposuresByNode[nodeKey] || [],
+      indirectImpactsByNode[nodeKey] || [],
+      researchFactPacksByNode[nodeKey] || []
+    );
+  }));
+}
+
 async function loadPublishedNodes() {
   try {
     const publishedRows = await supabaseFetch("nodes?select=*&status=eq.published");
@@ -1075,35 +1184,7 @@ async function loadPublishedNodes() {
       .map((row) => firstValue(row, ["id", "slug"], ""))
       .filter(Boolean)
       .map(String);
-    const [assetRows, detailRows, exposureRows, indirectImpactRows, researchFactPackRows] = await Promise.all([
-      fetchRelatedRows("affected_assets", nodeIds),
-      fetchRelatedRows("node_details", nodeIds),
-      fetchRelatedRows("node_research_exposures", nodeIds),
-      fetchRelatedRows("node_indirect_impacts", nodeIds),
-      fetchRelatedRows("research_fact_packs", nodeIds, "node_id,external_data_observations,missing_data,research_warnings")
-    ]);
-    const assetsByNode = groupByNodeId(assetRows);
-    const detailsByNode = groupByNodeId(detailRows, true);
-    const exposuresByNode = groupByNodeId(exposureRows);
-    const indirectImpactsByNode = groupByNodeId(indirectImpactRows);
-    const researchFactPacksByNode = groupByNodeId(researchFactPackRows);
-    console.log("Clarifin exposures loaded", exposureRows);
-    if (!exposureRows.length) {
-      console.warn("Clarifin Supabase: no node_research_exposures rows returned for published nodes.", { nodeIds });
-    }
-    nodes = sortNodesNewestFirst(publishedRows.map((row) => {
-      const nodeId = String(firstValue(row, ["id", "slug"], ""));
-      const nodeKey = nodeLookupKey(nodeId);
-      console.log("Clarifin exposures for node", nodeId, exposuresByNode[nodeKey] || []);
-      return convertSupabaseNode(
-        row,
-        assetsByNode[nodeKey] || [],
-        detailsByNode[nodeKey] || [],
-        exposuresByNode[nodeKey] || [],
-        indirectImpactsByNode[nodeKey] || [],
-        researchFactPacksByNode[nodeKey] || []
-      );
-    }));
+    nodes = await hydrateSupabaseNodes(publishedRows);
 
     if (selectedNodeId) {
       const selectedNode = getNode(selectedNodeId);
@@ -1118,6 +1199,56 @@ async function loadPublishedNodes() {
   }
 }
 
+async function loadDraftNodes() {
+  if (!reviewModeEnabled) return;
+  reviewLoadMessage = "";
+  try {
+    const draftRows = await supabaseFetch("nodes?select=*&status=eq.draft&order=created_at.desc");
+    draftNodes = Array.isArray(draftRows) ? await hydrateSupabaseNodes(draftRows) : [];
+  } catch (error) {
+    console.warn("Clarifin Supabase draft review load failed.", error);
+    draftNodes = [];
+    reviewLoadMessage = "Drafts could not be loaded with the current public Supabase key. Review mode may need an authenticated editor session or RLS policy for draft review.";
+  }
+  if (activeView === "review") renderList();
+}
+
+async function updateNodeReviewStatus(node, nextStatus) {
+  if (!node?.id) return;
+  const label = nextStatus === "published" ? "publish" : "archive";
+  const confirmed = window.confirm(`Confirm ${label} for this draft node?`);
+  if (!confirmed) return;
+
+  try {
+    const rows = await supabasePatch(`nodes?id=eq.${encodeURIComponent(node.id)}`, { status: nextStatus });
+    const updated = Array.isArray(rows) && rows[0] ? rows[0] : { ...node, status: nextStatus };
+    const updatedNode = convertSupabaseNode(
+      updated,
+      node.affectedAssets || [],
+      [],
+      node.researchExposures || [],
+      node.indirectImpacts || [],
+      []
+    );
+    updatedNode.whyMatters = node.whyMatters;
+    updatedNode.chains = node.chains;
+    updatedNode.scenarios = node.scenarios;
+    updatedNode.counterarguments = node.counterarguments;
+    updatedNode.sources = node.sources;
+    updatedNode.researchEvidence = node.researchEvidence;
+
+    draftNodes = draftNodes.filter((item) => item.id !== node.id);
+    if (nextStatus === "published") {
+      nodes = sortNodesNewestFirst([updatedNode, ...nodes.filter((item) => item.id !== node.id)]);
+    }
+    selectedNodeId = null;
+    renderList();
+  } catch (error) {
+    console.warn("Clarifin review status update failed.", error);
+    window.alert("Status update failed. Supabase RLS likely needs an authenticated editor/update policy or an admin Edge Function for publishing.");
+  }
+}
+
 const listScreen = document.querySelector("#list-screen");
 const detailScreen = document.querySelector("#detail-screen");
 const screenIntro = document.querySelector("#screen-intro");
@@ -1125,10 +1256,16 @@ const eventTabs = document.querySelector("#event-tabs");
 const eventList = document.querySelector("#event-list");
 const detailSections = document.querySelector("#detail-sections");
 const saveButton = document.querySelector("#save-node");
+const publishButton = document.querySelector("#publish-node");
+const archiveButton = document.querySelector("#archive-node");
+const reviewActions = document.querySelector("#review-actions");
+const reviewNav = document.querySelector("#review-nav");
 const bottomNav = document.querySelector(".bottom-nav");
 const appScreen = document.querySelector(".app-screen");
 const brandButton = document.querySelector(".brand");
 const nextEventLabel = document.querySelector(".next-event");
+
+if (reviewNav) reviewNav.hidden = !reviewModeEnabled;
 
 function ensureBottomNavVisible() {
   if (!bottomNav) return;
@@ -1233,6 +1370,10 @@ function getNextUpcomingEvent() {
 }
 
 function updateTopHeader() {
+  if (activeView === "review") {
+    nextEventLabel.textContent = "REVIEW: Draft queue";
+    return;
+  }
   const nextEvent = getNextUpcomingEvent();
   if (!nextEvent) {
     nextEventLabel.textContent = "NEXT: No major event";
@@ -1262,7 +1403,11 @@ function goHome() {
 }
 
 function getNode(id) {
-  return nodes.find((node) => node.id === id);
+  return [...nodes, ...draftNodes].find((node) => node.id === id);
+}
+
+function getCurrentListNodes() {
+  return activeView === "review" ? draftNodes : nodes;
 }
 
 function getTickers(node) {
@@ -1291,6 +1436,12 @@ function renderIntro() {
       <h1>${getGreeting()}</h1>
     `;
     eventTabs.hidden = false;
+  } else if (activeView === "review") {
+    screenIntro.innerHTML = `
+      <p class="date-label">Draft Review</p>
+      <h1>Review queue</h1>
+    `;
+    eventTabs.hidden = true;
   } else if (activeView === "watchlist") {
     screenIntro.innerHTML = `
       <p class="date-label">Watchlist</p>
@@ -1353,14 +1504,20 @@ function renderNodeCards(list) {
 
   eventList.innerHTML = list
     .map(
-      (node) => `
+      (node) => {
+        const isDraft = String(node.status || "").toLowerCase() === "draft";
+        return `
         <button class="event-card liquid-glass" data-node="${node.id}" type="button">
           <div class="card-header">
-            <span class="category-pill">${escapeHtml(node.category)}</span>
+            <div>
+              <span class="category-pill">${escapeHtml(node.category)}</span>
+              ${isDraft ? `<span class="review-badge">Draft</span>` : ""}
+            </div>
             <img src="${getRegionFlag(node.region)}" class="region-flag" alt="Region" onerror="this.style.display='none'" />
           </div>
           <h2>${escapeHtml(node.title)}</h2>
           <p>${escapeHtml(node.short)}</p>
+          ${isDraft ? `<p class="review-card-note">Review required before publishing.</p>` : ""}
           <div class="card-meta">
             <span class="score-pill yellow">${node.impact}</span>
             <span class="score-pill gray">${node.confidence}</span>
@@ -1370,7 +1527,8 @@ function renderNodeCards(list) {
           </div>
           <span class="timestamp">${escapeHtml(getNodeTimeLabel(node))}</span>
         </button>
-      `
+      `;
+      }
     )
     .join("");
 }
@@ -1474,12 +1632,24 @@ function renderList() {
     tab.classList.toggle("active", tab.dataset.eventMode === eventMode);
   });
 
-  const orderedNodes = sortNodesNewestFirst(nodes);
+  if (activeView === "review" && reviewLoadMessage) {
+    eventList.innerHTML = `
+      <article class="event-card liquid-glass">
+        <h2>Draft review unavailable</h2>
+        <p>${escapeHtml(reviewLoadMessage)}</p>
+      </article>
+    `;
+    return;
+  }
+
+  const orderedNodes = sortNodesNewestFirst(getCurrentListNodes());
 
   if (activeView === "watchlist") {
     renderNodeCards(orderedNodes.filter((node) => getWatchlistHits(node).length));
   } else if (activeView === "saved") {
     renderNodeCards(orderedNodes.filter((node) => savedNodeIds.includes(node.id)));
+  } else if (activeView === "review") {
+    renderNodeCards(orderedNodes);
   } else if (eventMode === "upcoming") {
     renderUpcomingCards();
   } else {
@@ -1487,9 +1657,9 @@ function renderList() {
   }
 }
 
-function section(title, body, open = false) {
+function section(title, body, open = false, extraClass = "") {
   return `
-    <details class="detail-card liquid-glass" ${open ? "open" : ""}>
+    <details class="detail-card liquid-glass ${escapeHtml(extraClass)}" ${open ? "open" : ""}>
       <summary>${escapeHtml(title)}</summary>
       <div class="detail-body">${body}</div>
     </details>
@@ -1574,6 +1744,24 @@ function renderResearchEvidence(evidence) {
     <ul class="asset-list">
       ${sourceCards}
       ${missingCard}
+    </ul>
+  `;
+}
+
+function renderMissingDataReview(evidence) {
+  const missingData = Array.isArray(evidence?.missingData) ? evidence.missingData : [];
+  if (!missingData.length) return "";
+  return `
+    <ul class="asset-list">
+      <li class="asset-card evidence-source">
+        <div class="evidence-head">
+          <h3>Missing data / source warnings</h3>
+          <span class="status-pill">Review</span>
+        </div>
+        <ul class="evidence-fact-list">
+          ${missingData.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+        </ul>
+      </li>
     </ul>
   `;
 }
@@ -1668,7 +1856,7 @@ function renderDetail(node) {
     ? `<ul class="asset-list">${indirectImpacts.map(item => `
       <li class="asset-card">
         <div class="asset-top">
-          <h3>${escapeHtml(formatNameWithSymbol(item.symbol, item.companyName || item.title, "Indirect impact"))}</h3>
+          <h3>${escapeHtml(formatIndirectImpactHeading(item))}</h3>
           ${item.direction ? `<span class="direction-${item.direction}">${escapeHtml(formatLabel(item.direction))}</span>` : ""}
         </div>
         ${item.strength ? `<p class="asset-subline"><strong>${escapeHtml(formatLabel(item.strength))}</strong></p>` : ""}
@@ -1700,13 +1888,13 @@ function renderDetail(node) {
 
   detailSections.innerHTML = [
     section("Why it matters", `<p>${escapeHtml(node.whyMatters)}</p>`, true),
-    section("Causal Chains", chainsHTML),
     section("Direct Impact", assetsHTML),
     ...(indirectHTML ? [section("Indirect Impact", indirectHTML)] : []),
     ...(exposuresHTML ? [section("Exposures to watch", exposuresHTML)] : []),
-    ...(researchEvidenceHTML ? [section("Research Evidence", researchEvidenceHTML)] : []),
+    section("Causal Chains", chainsHTML),
     section("Scenarios", scenariosHTML),
-    section("Counterarguments", countersHTML)
+    section("Counterarguments", countersHTML),
+    ...(researchEvidenceHTML ? [section("Research Evidence", researchEvidenceHTML, false, "research-evidence-section")] : [])
   ].join("");
 
   if (node.isSupabaseNode && !exposuresToWatch.length && !node.exposuresLoaded) {
