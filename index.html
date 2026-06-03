@@ -141,6 +141,7 @@ button { border: 0; font: inherit; background: none; padding: 0; cursor: pointer
 .review-actions { display: flex; gap: var(--sp-2); margin-left: auto; }
 .review-badge { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 8px; background: var(--yellow-bg); color: var(--yellow-text); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; margin-left: var(--sp-2); }
 .review-card-note { color: var(--text-muted); font-size: 13px; line-height: 1.4; margin: var(--sp-2) 0 0 0; }
+.review-token-action { margin-top: var(--sp-3); padding: 7px 12px; border-radius: 99px; background: var(--gray-bg); color: var(--gray-text); font-size: 13px; font-weight: 700; }
 
 .detail-hero { border-radius: 24px; padding: var(--sp-5); margin-bottom: var(--sp-3); }
 .detail-hero h1 { font-size: 22px; font-weight: 700; line-height: 1.2; margin: 0 0 var(--sp-3) 0; letter-spacing: -0.5px; }
@@ -434,6 +435,7 @@ let eventMode = "top";
 let selectedNodeId = null;
 let savedNodeIds = JSON.parse(localStorage.getItem("clarifinSavedNodes") || "[]");
 let reviewLoadMessage = "";
+const REVIEW_TOKEN_STORAGE_KEY = "clarifinReviewAdminToken";
 
 const SUPABASE_URL = "https://omoansqramrgtpecsudh.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_YXZ0BaSAQnCuOfohv7aGwQ_DZN4f8to";
@@ -970,22 +972,6 @@ async function supabaseFetch(path) {
   return response.json();
 }
 
-async function supabasePatch(path, payload) {
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    method: "PATCH",
-    headers: {
-      ...SUPABASE_HEADERS,
-      Prefer: "return=representation"
-    },
-    body: JSON.stringify(payload)
-  });
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Supabase update failed: ${response.status} ${body}`);
-  }
-  return response.json();
-}
-
 async function fetchRelatedRows(tableName, nodeIds, selectColumns = "*") {
   if (!nodeIds.length) return [];
   const nodeKeys = nodeIds.map(nodeLookupKey).filter(Boolean);
@@ -1171,6 +1157,58 @@ async function hydrateSupabaseNodes(rows) {
   }));
 }
 
+function promptForReviewAdminToken(message = "Enter review admin token") {
+  let token = window.prompt(message) || "";
+  token = token.trim();
+  if (token) localStorage.setItem(REVIEW_TOKEN_STORAGE_KEY, token);
+  return token;
+}
+
+function getReviewAdminToken() {
+  const token = localStorage.getItem(REVIEW_TOKEN_STORAGE_KEY) || "";
+  return token || promptForReviewAdminToken();
+}
+
+function changeReviewAdminToken() {
+  localStorage.removeItem(REVIEW_TOKEN_STORAGE_KEY);
+  const token = promptForReviewAdminToken("Enter review admin token");
+  reviewLoadMessage = token ? "" : "Review token is required to load draft nodes.";
+  loadDraftNodes();
+}
+
+async function callReviewNodeAction(payload) {
+  const token = getReviewAdminToken();
+  if (!token) {
+    throw new Error("Review token is required to load draft nodes.");
+  }
+
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/review-node-action`, {
+    method: "POST",
+    headers: {
+      ...SUPABASE_HEADERS,
+      "x-review-admin-token": token,
+    },
+    body: JSON.stringify(payload),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    if (response.status === 401) localStorage.removeItem(REVIEW_TOKEN_STORAGE_KEY);
+    throw new Error(body.error || `Review action failed: ${response.status}`);
+  }
+  return body;
+}
+
+function hydrateReviewDraftPayload(drafts) {
+  return sortNodesNewestFirst((Array.isArray(drafts) ? drafts : []).map((draft) => convertSupabaseNode(
+    draft.node || {},
+    draft.affected_assets || [],
+    draft.node_details || [],
+    draft.node_research_exposures || [],
+    draft.node_indirect_impacts || [],
+    draft.research_fact_packs || []
+  )));
+}
+
 async function loadPublishedNodes() {
   try {
     const publishedRows = await supabaseFetch("nodes?select=*&status=eq.published");
@@ -1180,10 +1218,6 @@ async function loadPublishedNodes() {
       return;
     }
 
-    const nodeIds = publishedRows
-      .map((row) => firstValue(row, ["id", "slug"], ""))
-      .filter(Boolean)
-      .map(String);
     nodes = await hydrateSupabaseNodes(publishedRows);
 
     if (selectedNodeId) {
@@ -1203,12 +1237,12 @@ async function loadDraftNodes() {
   if (!reviewModeEnabled) return;
   reviewLoadMessage = "";
   try {
-    const draftRows = await supabaseFetch("nodes?select=*&status=eq.draft&order=created_at.desc");
-    draftNodes = Array.isArray(draftRows) ? await hydrateSupabaseNodes(draftRows) : [];
+    const result = await callReviewNodeAction({ action: "list_drafts" });
+    draftNodes = hydrateReviewDraftPayload(result.drafts || []);
   } catch (error) {
     console.warn("Clarifin Supabase draft review load failed.", error);
     draftNodes = [];
-    reviewLoadMessage = "Drafts could not be loaded with the current public Supabase key. Review mode may need an authenticated editor session or RLS policy for draft review.";
+    reviewLoadMessage = error instanceof Error ? error.message : "Drafts could not be loaded. Check the review admin token.";
   }
   if (activeView === "review") renderList();
 }
@@ -1220,8 +1254,11 @@ async function updateNodeReviewStatus(node, nextStatus) {
   if (!confirmed) return;
 
   try {
-    const rows = await supabasePatch(`nodes?id=eq.${encodeURIComponent(node.id)}`, { status: nextStatus });
-    const updated = Array.isArray(rows) && rows[0] ? rows[0] : { ...node, status: nextStatus };
+    const result = await callReviewNodeAction({
+      action: nextStatus === "published" ? "publish" : "archive",
+      node_id: node.id,
+    });
+    const updated = result.node || { ...node, status: nextStatus };
     const updatedNode = convertSupabaseNode(
       updated,
       node.affectedAssets || [],
@@ -1245,7 +1282,7 @@ async function updateNodeReviewStatus(node, nextStatus) {
     renderList();
   } catch (error) {
     console.warn("Clarifin review status update failed.", error);
-    window.alert("Status update failed. Supabase RLS likely needs an authenticated editor/update policy or an admin Edge Function for publishing.");
+    window.alert(error instanceof Error ? error.message : "Status update failed.");
   }
 }
 
@@ -1440,6 +1477,7 @@ function renderIntro() {
     screenIntro.innerHTML = `
       <p class="date-label">Draft Review</p>
       <h1>Review queue</h1>
+      <button class="review-token-action" id="change-review-token" type="button">Change review token</button>
     `;
     eventTabs.hidden = true;
   } else if (activeView === "watchlist") {
@@ -1625,6 +1663,7 @@ function renderList() {
   detailScreen.hidden = true;
   ensureBottomNavVisible();
   scrollAppToTop();
+  setActiveNav(activeView);
   renderIntro();
   updateTopHeader();
 
@@ -1792,6 +1831,9 @@ function renderUpcomingDetail(event) {
 
   saveButton.hidden = true;
   saveButton.classList.remove("saved");
+  if (reviewActions) reviewActions.hidden = true;
+  if (publishButton) publishButton.hidden = true;
+  if (archiveButton) archiveButton.hidden = true;
 
   const earningsFacts = detailRows([
     { label: "EPS estimate", value: event.epsEstimate },
@@ -1814,6 +1856,9 @@ function renderUpcomingDetail(event) {
 
 function renderDetail(node) {
   selectedNodeId = node.id;
+  const nodeStatus = String(node.status || "published").toLowerCase();
+  const isReviewNode = reviewModeEnabled && (activeView === "review" || nodeStatus !== "published");
+  const isDraftNode = nodeStatus === "draft";
   listScreen.hidden = true;
   detailScreen.hidden = false;
   ensureBottomNavVisible();
@@ -1829,20 +1874,24 @@ function renderDetail(node) {
   document.querySelector("#impact-label").hidden = false;
   document.querySelector("#confidence-label").hidden = false;
   document.querySelector("#event-type-label").hidden = true;
-  document.querySelector("#event-status-label").hidden = true;
+  document.querySelector("#event-status-label").hidden = !isReviewNode;
   document.querySelector("#event-type-label").textContent = "";
-  document.querySelector("#event-status-label").textContent = "";
+  document.querySelector("#event-status-label").textContent = isReviewNode ? `${formatLabel(nodeStatus)} - review required` : "";
 
   const isSaved = savedNodeIds.includes(node.id);
-  saveButton.hidden = false;
+  saveButton.hidden = isReviewNode;
   saveButton.textContent = isSaved ? "Saved" : "Save";
   saveButton.classList.toggle("saved", isSaved);
+  if (reviewActions) reviewActions.hidden = !(reviewModeEnabled && isDraftNode);
+  if (publishButton) publishButton.hidden = !(reviewModeEnabled && isDraftNode);
+  if (archiveButton) archiveButton.hidden = !(reviewModeEnabled && isDraftNode);
 
   const chains = Array.isArray(node.chains) ? node.chains : [];
   const affectedAssets = Array.isArray(node.affectedAssets) ? node.affectedAssets.filter(isValidatedAsset) : [];
   const indirectImpacts = filterDuplicateIndirectImpacts(Array.isArray(node.indirectImpacts) ? node.indirectImpacts : [], affectedAssets);
   const exposuresToWatch = Array.isArray(node.exposuresToWatch) ? node.exposuresToWatch : (Array.isArray(node.researchExposures) ? node.researchExposures : []);
   const researchEvidence = node.researchEvidence || { sources: [], missingData: [] };
+  const missingDataHTML = isReviewNode ? renderMissingDataReview(researchEvidence) : "";
   const scenarios = Array.isArray(node.scenarios) ? node.scenarios : [];
   const counterarguments = Array.isArray(node.counterarguments) ? node.counterarguments : [];
 
@@ -1887,6 +1936,10 @@ function renderDetail(node) {
     : "<p>No counterarguments available yet.</p>";
 
   detailSections.innerHTML = [
+    ...(isReviewNode ? [section("Review Status", detailRows([
+      { label: "Node status", value: formatLabel(nodeStatus) },
+      { label: "Review", value: isDraftNode ? "Review required before publishing." : "Already published or outside draft queue." }
+    ]), true, "review-status-section")] : []),
     section("Why it matters", `<p>${escapeHtml(node.whyMatters)}</p>`, true),
     section("Direct Impact", assetsHTML),
     ...(indirectHTML ? [section("Indirect Impact", indirectHTML)] : []),
@@ -1894,6 +1947,7 @@ function renderDetail(node) {
     section("Causal Chains", chainsHTML),
     section("Scenarios", scenariosHTML),
     section("Counterarguments", countersHTML),
+    ...(missingDataHTML ? [section("Missing Data", missingDataHTML, false, "review-status-section")] : []),
     ...(researchEvidenceHTML ? [section("Research Evidence", researchEvidenceHTML, false, "research-evidence-section")] : [])
   ].join("");
 
@@ -1956,6 +2010,23 @@ saveButton.addEventListener("click", () => {
   renderDetail(getNode(selectedNodeId));
 });
 
+publishButton?.addEventListener("click", () => {
+  const node = getNode(selectedNodeId);
+  if (!node) return;
+  updateNodeReviewStatus(node, "published");
+});
+
+archiveButton?.addEventListener("click", () => {
+  const node = getNode(selectedNodeId);
+  if (!node) return;
+  updateNodeReviewStatus(node, "archived");
+});
+
+screenIntro.addEventListener("click", (event) => {
+  if (!event.target.closest("#change-review-token")) return;
+  changeReviewAdminToken();
+});
+
 document.querySelectorAll(".event-tab").forEach((tab) => {
   tab.addEventListener("click", () => {
     eventMode = tab.dataset.eventMode;
@@ -1984,6 +2055,7 @@ brandButton.setAttribute("tabindex", "0");
 
 renderList();
 loadPublishedNodes();
+loadDraftNodes();
 loadUpcomingEvents();
 
     </script>
