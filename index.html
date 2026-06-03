@@ -148,10 +148,13 @@ button { border: 0; font: inherit; background: none; padding: 0; cursor: pointer
 .review-mini-tab.active { background: #fff; color: var(--text-main); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); }
 .candidate-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
 .candidate-actions .action-btn { font-size: 12px; padding: 7px 10px; }
-.candidate-score-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-2); margin: var(--sp-3) 0; }
+.candidate-score-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(58px, 1fr)); gap: var(--sp-2); margin: var(--sp-3) 0; }
 .candidate-score { background: rgba(0, 0, 0, 0.03); border-radius: 10px; padding: var(--sp-2); }
 .candidate-score span { display: block; color: var(--text-muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; }
 .candidate-score strong { display: block; margin-top: 2px; color: var(--text-main); font-size: 14px; }
+.candidate-facts { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-2) 0; }
+.candidate-fact { display: inline-flex; align-items: center; gap: 4px; border-radius: 10px; background: rgba(0, 0, 0, 0.035); padding: 5px 8px; color: var(--text-muted); font-size: 11px; font-weight: 700; }
+.candidate-fact strong { color: var(--text-main); font-weight: 700; }
 .pipeline-result { margin-top: var(--sp-3); color: var(--text-muted); font-size: 13px; line-height: 1.4; }
 
 .detail-hero { border-radius: 24px; padding: var(--sp-5); margin-bottom: var(--sp-3); }
@@ -1246,6 +1249,10 @@ function hydrateReviewDraftPayload(drafts) {
 }
 
 function normalizeCandidate(row) {
+  const sourcePayload = firstValue(row, ["source_payload", "sourcePayload"], {}) || {};
+  const calendarPayload = firstValue(sourcePayload, ["calendar"], {}) || {};
+  const candidateAssets = Array.isArray(row.candidate_assets) ? row.candidate_assets : [];
+  const ticker = firstValue(row, ["ticker", "symbol"], "") || candidateAssets[0] || firstValue(calendarPayload, ["symbol"], "");
   return {
     id: String(firstValue(row, ["id"], "")),
     createdAt: firstValue(row, ["created_at", "createdAt"], ""),
@@ -1259,6 +1266,15 @@ function normalizeCandidate(row) {
     urgencyScore: toNumber(firstValue(row, ["urgency_score", "urgencyScore"], 0), 0),
     confidenceScore: toNumber(firstValue(row, ["confidence_score", "confidenceScore"], 0), 0),
     totalScore: toNumber(firstValue(row, ["total_score", "totalScore"], 0), 0),
+    marketImportanceScore: toNumber(firstValue(row, ["market_importance_score", "marketImportanceScore"], 0), 0),
+    displayBucket: firstValue(row, ["display_bucket", "displayBucket"], "top"),
+    eventType: firstValue(row, ["event_type", "eventType"], ""),
+    ticker: String(ticker || "").toUpperCase(),
+    companyName: firstValue(row, ["company_name", "companyName"], "") || firstValue(calendarPayload, ["company", "companyName", "name"], ""),
+    earningsDate: firstValue(row, ["earnings_date", "earningsDate"], "") || firstValue(calendarPayload, ["date"], ""),
+    epsEstimate: firstValue(row, ["eps_estimate", "epsEstimate"], "") || firstValue(calendarPayload, ["epsEstimated", "epsEstimate", "estimatedEps"], ""),
+    revenueEstimate: firstValue(row, ["revenue_estimate", "revenueEstimate"], "") || firstValue(calendarPayload, ["revenueEstimated", "revenueEstimate", "estimatedRevenue"], ""),
+    fiscalDateEnding: firstValue(row, ["fiscal_date_ending", "fiscalDateEnding"], "") || firstValue(calendarPayload, ["fiscalDateEnding", "fiscal_date_ending"], ""),
     status: firstValue(row, ["status"], "candidate"),
     whyItMatters: firstValue(row, ["why_it_matters", "whyItMatters"], ""),
     relatedNodeId: firstValue(row, ["related_node_id", "relatedNodeId"], ""),
@@ -1361,16 +1377,42 @@ async function updateNodeReviewStatus(node, nextStatus) {
   }
 }
 
+function countResultItems(value) {
+  if (Array.isArray(value)) return value.length;
+  const numeric = Number(value || 0);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
 function pipelineSummary(result) {
+  const warnings = Array.isArray(result.warnings) ? result.warnings.length : countResultItems(result.warnings);
+  const errors = Array.isArray(result.errors) ? result.errors.length : countResultItems(result.errors);
+  const duplicatedOrSkipped =
+    countResultItems(result.candidates_duplicates)
+    + countResultItems(result.candidates_updated)
+    + countResultItems(result.candidates_skipped);
   return [
-    `created ${result.candidates_created || 0}`,
-    `duplicates ${result.candidates_duplicates || 0}`,
-    `generated ${result.nodes_generated || 0}`,
-    `auto-published ${result.nodes_auto_published || 0}`,
-    `draft ${result.nodes_left_as_draft || 0}`,
-    Array.isArray(result.warnings) && result.warnings.length ? `warnings ${result.warnings.length}` : "",
-    Array.isArray(result.errors) && result.errors.length ? `errors ${result.errors.length}` : "",
+    `candidates created: ${countResultItems(result.candidates_created)}`,
+    `candidates duplicated/skipped: ${duplicatedOrSkipped}`,
+    `nodes generated: ${countResultItems(result.nodes_generated)}`,
+    `nodes auto-published: ${countResultItems(result.nodes_auto_published)}`,
+    `nodes left as draft: ${countResultItems(result.nodes_left_as_draft)}`,
+    `warnings: ${warnings}`,
+    errors ? `errors: ${errors}` : "",
   ].filter(Boolean).join(" - ");
+}
+
+function pipelineResultNotice(result) {
+  const candidatesCreated = countResultItems(result.candidates_created);
+  const nodesGenerated = countResultItems(result.nodes_generated);
+  const summary = `Pipeline complete: ${pipelineSummary(result)}.`;
+  if (candidatesCreated > 0 && nodesGenerated === 0) {
+    const candidateText = candidatesCreated === 1 ? "1 candidate created" : `${candidatesCreated} candidates created`;
+    const actionText = candidatesCreated === 1
+      ? "Open the Candidates tab to review it."
+      : "Open the Candidates tab to review them.";
+    return `${candidateText}. ${actionText} ${summary}`;
+  }
+  return summary;
 }
 
 async function refreshReviewData() {
@@ -1378,6 +1420,7 @@ async function refreshReviewData() {
     loadDraftNodes(),
     loadEventCandidates(),
     loadPublishedNodes(),
+    loadUpcomingEvents(),
   ]);
 }
 
@@ -1388,7 +1431,12 @@ async function runAutoPipeline() {
   renderList();
   try {
     const result = await callAutoPipelineAction({ action: "run_once" });
-    pipelineResultMessage = `Pipeline complete: ${pipelineSummary(result)}.`;
+    const candidatesCreated = countResultItems(result.candidates_created);
+    const nodesGenerated = countResultItems(result.nodes_generated);
+    if (candidatesCreated > 0 && nodesGenerated === 0) {
+      reviewTab = "candidates";
+    }
+    pipelineResultMessage = pipelineResultNotice(result);
     reviewLoadMessage = "";
     await refreshReviewData();
   } catch (error) {
@@ -1725,6 +1773,31 @@ function renderNodeCards(list) {
     .join("");
 }
 
+function formatCandidateNumber(value, options = {}) {
+  if (value === "" || value === null || value === undefined) return "";
+  const number = Number(value);
+  if (!Number.isFinite(number)) return String(value);
+  return number.toLocaleString("en-US", options);
+}
+
+function renderCandidateFacts(candidate) {
+  const facts = [];
+  if (candidate.displayBucket) facts.push(["Bucket", formatLabel(candidate.displayBucket)]);
+  if (candidate.ticker) facts.push(["Ticker", candidate.ticker]);
+  if (candidate.companyName) facts.push(["Company", candidate.companyName]);
+  if (candidate.earningsDate) facts.push(["Date", candidate.earningsDate]);
+  if (candidate.epsEstimate !== "") facts.push(["EPS est.", formatCandidateNumber(candidate.epsEstimate, { maximumFractionDigits: 2 })]);
+  if (candidate.revenueEstimate !== "") facts.push(["Revenue est.", formatCandidateNumber(candidate.revenueEstimate, { notation: "compact", maximumFractionDigits: 2 })]);
+  if (candidate.sourceName) facts.push(["Source", candidate.sourceName]);
+  if (candidate.marketImportanceScore) facts.push(["Market importance", Math.round(candidate.marketImportanceScore)]);
+  if (!facts.length) return "";
+  return `
+    <div class="candidate-facts">
+      ${facts.map(([label, value]) => `<span class="candidate-fact">${escapeHtml(label)} <strong>${escapeHtml(value)}</strong></span>`).join("")}
+    </div>
+  `;
+}
+
 function renderCandidateCards(list) {
   if (!list.length) {
     eventList.innerHTML = `<article class="event-card liquid-glass"><p>No candidates here yet.</p></article>`;
@@ -1741,14 +1814,16 @@ function renderCandidateCards(list) {
             <span class="category-pill">${escapeHtml(candidate.category)}</span>
             <span class="review-badge">${escapeHtml(formatLabel(candidate.status))}</span>
           </div>
-          <span class="status-pill">${escapeHtml(candidate.sourceName || "Source")}</span>
+          <span class="status-pill">${escapeHtml(formatLabel(candidate.displayBucket || "top"))}</span>
         </div>
         <h2>${escapeHtml(candidate.title)}</h2>
         ${candidate.summary ? `<p>${escapeHtml(candidate.summary)}</p>` : ""}
+        ${renderCandidateFacts(candidate)}
         <div class="candidate-score-grid">
           <div class="candidate-score"><span>Rel</span><strong>${Math.round(candidate.relevanceScore)}</strong></div>
           <div class="candidate-score"><span>Urg</span><strong>${Math.round(candidate.urgencyScore)}</strong></div>
           <div class="candidate-score"><span>Conf</span><strong>${Math.round(candidate.confidenceScore)}</strong></div>
+          ${candidate.marketImportanceScore ? `<div class="candidate-score"><span>Mkt</span><strong>${Math.round(candidate.marketImportanceScore)}</strong></div>` : ""}
           <div class="candidate-score"><span>Total</span><strong>${Math.round(candidate.totalScore)}</strong></div>
         </div>
         ${candidate.whyItMatters ? `<p>${escapeHtml(candidate.whyItMatters)}</p>` : ""}
