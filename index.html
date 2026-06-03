@@ -142,6 +142,17 @@ button { border: 0; font: inherit; background: none; padding: 0; cursor: pointer
 .review-badge { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 8px; background: var(--yellow-bg); color: var(--yellow-text); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; margin-left: var(--sp-2); }
 .review-card-note { color: var(--text-muted); font-size: 13px; line-height: 1.4; margin: var(--sp-2) 0 0 0; }
 .review-token-action { margin-top: var(--sp-3); padding: 7px 12px; border-radius: 99px; background: var(--gray-bg); color: var(--gray-text); font-size: 13px; font-weight: 700; }
+.review-toolbar { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
+.review-mini-tabs { display: inline-flex; background: rgba(0, 0, 0, 0.04); padding: 4px; border-radius: 99px; margin-top: var(--sp-3); }
+.review-mini-tab { padding: 7px 12px; border-radius: 99px; font-size: 13px; font-weight: 700; color: var(--text-muted); }
+.review-mini-tab.active { background: #fff; color: var(--text-main); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); }
+.candidate-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
+.candidate-actions .action-btn { font-size: 12px; padding: 7px 10px; }
+.candidate-score-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-2); margin: var(--sp-3) 0; }
+.candidate-score { background: rgba(0, 0, 0, 0.03); border-radius: 10px; padding: var(--sp-2); }
+.candidate-score span { display: block; color: var(--text-muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; }
+.candidate-score strong { display: block; margin-top: 2px; color: var(--text-main); font-size: 14px; }
+.pipeline-result { margin-top: var(--sp-3); color: var(--text-muted); font-size: 13px; line-height: 1.4; }
 
 .detail-hero { border-radius: 24px; padding: var(--sp-5); margin-bottom: var(--sp-3); }
 .detail-hero h1 { font-size: 22px; font-weight: 700; line-height: 1.2; margin: 0 0 var(--sp-3) 0; letter-spacing: -0.5px; }
@@ -392,6 +403,7 @@ const fallbackNodes = [
 ];
 let nodes = [];
 let draftNodes = [];
+let eventCandidates = [];
 
 const fallbackUpcomingEvents = [
   {
@@ -432,9 +444,11 @@ const directionOrder = { positive: 0, negative: 1, mixed: 2, neutral: 2 };
 const reviewModeEnabled = new URLSearchParams(window.location.search).get("mode") === "review";
 let activeView = reviewModeEnabled ? "review" : "home";
 let eventMode = "top";
+let reviewTab = "drafts";
 let selectedNodeId = null;
 let savedNodeIds = JSON.parse(localStorage.getItem("clarifinSavedNodes") || "[]");
 let reviewLoadMessage = "";
+let pipelineResultMessage = "";
 const REVIEW_TOKEN_STORAGE_KEY = "clarifinReviewAdminToken";
 
 const SUPABASE_URL = "https://omoansqramrgtpecsudh.supabase.co";
@@ -1173,7 +1187,7 @@ function changeReviewAdminToken() {
   localStorage.removeItem(REVIEW_TOKEN_STORAGE_KEY);
   const token = promptForReviewAdminToken("Enter review admin token");
   reviewLoadMessage = token ? "" : "Review token is required to load draft nodes.";
-  loadDraftNodes();
+  refreshReviewData();
 }
 
 async function callReviewNodeAction(payload) {
@@ -1198,6 +1212,28 @@ async function callReviewNodeAction(payload) {
   return body;
 }
 
+async function callAutoPipelineAction(payload) {
+  const token = getReviewAdminToken();
+  if (!token) {
+    throw new Error("Review token is required to run the auto pipeline.");
+  }
+
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/auto-event-pipeline`, {
+    method: "POST",
+    headers: {
+      ...SUPABASE_HEADERS,
+      "x-review-admin-token": token,
+    },
+    body: JSON.stringify(payload),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    if (response.status === 401) localStorage.removeItem(REVIEW_TOKEN_STORAGE_KEY);
+    throw new Error(body.error || `Auto pipeline action failed: ${response.status}`);
+  }
+  return body;
+}
+
 function hydrateReviewDraftPayload(drafts) {
   return sortNodesNewestFirst((Array.isArray(drafts) ? drafts : []).map((draft) => convertSupabaseNode(
     draft.node || {},
@@ -1207,6 +1243,30 @@ function hydrateReviewDraftPayload(drafts) {
     draft.node_indirect_impacts || [],
     draft.research_fact_packs || []
   )));
+}
+
+function normalizeCandidate(row) {
+  return {
+    id: String(firstValue(row, ["id"], "")),
+    createdAt: firstValue(row, ["created_at", "createdAt"], ""),
+    sourceName: firstValue(row, ["source_name", "sourceName"], ""),
+    sourceType: firstValue(row, ["source_type", "sourceType"], ""),
+    title: firstValue(row, ["title"], "Untitled candidate"),
+    summary: firstValue(row, ["summary"], ""),
+    category: firstValue(row, ["category"], "Markets"),
+    region: firstValue(row, ["region"], "global"),
+    relevanceScore: toNumber(firstValue(row, ["relevance_score", "relevanceScore"], 0), 0),
+    urgencyScore: toNumber(firstValue(row, ["urgency_score", "urgencyScore"], 0), 0),
+    confidenceScore: toNumber(firstValue(row, ["confidence_score", "confidenceScore"], 0), 0),
+    totalScore: toNumber(firstValue(row, ["total_score", "totalScore"], 0), 0),
+    status: firstValue(row, ["status"], "candidate"),
+    whyItMatters: firstValue(row, ["why_it_matters", "whyItMatters"], ""),
+    relatedNodeId: firstValue(row, ["related_node_id", "relatedNodeId"], ""),
+    autoPublished: Boolean(firstValue(row, ["auto_published", "autoPublished"], false)),
+    autoPublishReason: firstValue(row, ["auto_publish_reason", "autoPublishReason"], ""),
+    autoGenerationStatus: firstValue(row, ["auto_generation_status", "autoGenerationStatus"], ""),
+    autoGenerationError: firstValue(row, ["auto_generation_error", "autoGenerationError"], ""),
+  };
 }
 
 async function loadPublishedNodes() {
@@ -1247,6 +1307,21 @@ async function loadDraftNodes() {
   if (activeView === "review") renderList();
 }
 
+async function loadEventCandidates() {
+  if (!reviewModeEnabled) return;
+  try {
+    const result = await callAutoPipelineAction({ action: "list_candidates" });
+    eventCandidates = Array.isArray(result.candidates) ? result.candidates.map(normalizeCandidate) : [];
+  } catch (error) {
+    console.warn("Clarifin event candidates load failed.", error);
+    if (!reviewLoadMessage) {
+      reviewLoadMessage = error instanceof Error ? error.message : "Event candidates could not be loaded.";
+    }
+    eventCandidates = [];
+  }
+  if (activeView === "review") renderList();
+}
+
 async function updateNodeReviewStatus(node, nextStatus) {
   if (!node?.id) return;
   const label = nextStatus === "published" ? "publish" : "archive";
@@ -1283,6 +1358,77 @@ async function updateNodeReviewStatus(node, nextStatus) {
   } catch (error) {
     console.warn("Clarifin review status update failed.", error);
     window.alert(error instanceof Error ? error.message : "Status update failed.");
+  }
+}
+
+function pipelineSummary(result) {
+  return [
+    `created ${result.candidates_created || 0}`,
+    `duplicates ${result.candidates_duplicates || 0}`,
+    `generated ${result.nodes_generated || 0}`,
+    `auto-published ${result.nodes_auto_published || 0}`,
+    `draft ${result.nodes_left_as_draft || 0}`,
+    Array.isArray(result.warnings) && result.warnings.length ? `warnings ${result.warnings.length}` : "",
+    Array.isArray(result.errors) && result.errors.length ? `errors ${result.errors.length}` : "",
+  ].filter(Boolean).join(" - ");
+}
+
+async function refreshReviewData() {
+  await Promise.all([
+    loadDraftNodes(),
+    loadEventCandidates(),
+    loadPublishedNodes(),
+  ]);
+}
+
+async function runAutoPipeline() {
+  const confirmed = window.confirm("Run the auto event pipeline now? This may create draft nodes and can auto-publish candidates that pass safeguards.");
+  if (!confirmed) return;
+  pipelineResultMessage = "Auto pipeline running...";
+  renderList();
+  try {
+    const result = await callAutoPipelineAction({ action: "run_once" });
+    pipelineResultMessage = `Pipeline complete: ${pipelineSummary(result)}.`;
+    reviewLoadMessage = "";
+    await refreshReviewData();
+  } catch (error) {
+    console.warn("Clarifin auto pipeline failed.", error);
+    pipelineResultMessage = error instanceof Error ? error.message : "Auto pipeline failed.";
+    renderList();
+  }
+}
+
+async function runCandidateAction(action, candidateId) {
+  if (!candidateId) return;
+  const actionLabel = {
+    generate: "generate a node from this candidate",
+    publish: "publish this generated candidate node",
+    ignore: "ignore this candidate",
+    archive: "archive this candidate",
+  }[action] || action;
+  const needsConfirm = ["generate", "publish"].includes(action);
+  if (needsConfirm && !window.confirm(`Confirm: ${actionLabel}?`)) return;
+
+  const actionMap = {
+    generate: "generate_candidate",
+    publish: "publish_candidate_node",
+    ignore: "ignore_candidate",
+    archive: "archive_candidate",
+  };
+  try {
+    const result = await callAutoPipelineAction({
+      action: actionMap[action],
+      candidate_id: candidateId,
+    });
+    pipelineResultMessage = result.generated_nodes_summary
+      ? `Candidate action complete: ${result.generated_nodes_summary.length} node result(s).`
+      : `Candidate action complete: ${formatLabel(action)}.`;
+    reviewLoadMessage = "";
+    await refreshReviewData();
+  } catch (error) {
+    console.warn("Clarifin candidate action failed.", error);
+    pipelineResultMessage = error instanceof Error ? error.message : "Candidate action failed.";
+    renderList();
   }
 }
 
@@ -1477,7 +1623,15 @@ function renderIntro() {
     screenIntro.innerHTML = `
       <p class="date-label">Draft Review</p>
       <h1>Review queue</h1>
-      <button class="review-token-action" id="change-review-token" type="button">Change review token</button>
+      <div class="review-mini-tabs">
+        <button class="review-mini-tab ${reviewTab === "drafts" ? "active" : ""}" data-review-tab="drafts" type="button">Drafts</button>
+        <button class="review-mini-tab ${reviewTab === "candidates" ? "active" : ""}" data-review-tab="candidates" type="button">Candidates</button>
+      </div>
+      <div class="review-toolbar">
+        <button class="review-token-action" id="run-auto-pipeline" type="button">Run auto pipeline</button>
+        <button class="review-token-action" id="change-review-token" type="button">Change review token</button>
+      </div>
+      ${pipelineResultMessage ? `<p class="pipeline-result">${escapeHtml(pipelineResultMessage)}</p>` : ""}
     `;
     eventTabs.hidden = true;
   } else if (activeView === "watchlist") {
@@ -1569,6 +1723,47 @@ function renderNodeCards(list) {
       }
     )
     .join("");
+}
+
+function renderCandidateCards(list) {
+  if (!list.length) {
+    eventList.innerHTML = `<article class="event-card liquid-glass"><p>No candidates here yet.</p></article>`;
+    return;
+  }
+
+  eventList.innerHTML = list.map((candidate) => {
+    const canGenerate = ["candidate", "selected_for_generation", "failed"].includes(String(candidate.status || "").toLowerCase());
+    const canPublish = Boolean(candidate.relatedNodeId) && String(candidate.status || "").toLowerCase() !== "published";
+    return `
+      <article class="event-card liquid-glass" data-candidate="${escapeHtml(candidate.id)}">
+        <div class="card-header">
+          <div>
+            <span class="category-pill">${escapeHtml(candidate.category)}</span>
+            <span class="review-badge">${escapeHtml(formatLabel(candidate.status))}</span>
+          </div>
+          <span class="status-pill">${escapeHtml(candidate.sourceName || "Source")}</span>
+        </div>
+        <h2>${escapeHtml(candidate.title)}</h2>
+        ${candidate.summary ? `<p>${escapeHtml(candidate.summary)}</p>` : ""}
+        <div class="candidate-score-grid">
+          <div class="candidate-score"><span>Rel</span><strong>${Math.round(candidate.relevanceScore)}</strong></div>
+          <div class="candidate-score"><span>Urg</span><strong>${Math.round(candidate.urgencyScore)}</strong></div>
+          <div class="candidate-score"><span>Conf</span><strong>${Math.round(candidate.confidenceScore)}</strong></div>
+          <div class="candidate-score"><span>Total</span><strong>${Math.round(candidate.totalScore)}</strong></div>
+        </div>
+        ${candidate.whyItMatters ? `<p>${escapeHtml(candidate.whyItMatters)}</p>` : ""}
+        ${candidate.relatedNodeId ? `<p class="review-card-note">Related node: ${escapeHtml(candidate.relatedNodeId)}</p>` : ""}
+        ${candidate.autoPublishReason ? `<p class="review-card-note">Auto publish: ${escapeHtml(candidate.autoPublishReason)}</p>` : ""}
+        ${candidate.autoGenerationError ? `<p class="review-card-note">Generation error: ${escapeHtml(candidate.autoGenerationError)}</p>` : ""}
+        <div class="candidate-actions">
+          ${canGenerate ? `<button class="action-btn liquid-glass" data-candidate-action="generate" data-candidate-id="${escapeHtml(candidate.id)}" type="button">Generate node</button>` : ""}
+          ${canPublish ? `<button class="action-btn publish-action liquid-glass" data-candidate-action="publish" data-candidate-id="${escapeHtml(candidate.id)}" type="button">Publish generated</button>` : ""}
+          <button class="action-btn liquid-glass" data-candidate-action="ignore" data-candidate-id="${escapeHtml(candidate.id)}" type="button">Ignore</button>
+          <button class="action-btn archive-action liquid-glass" data-candidate-action="archive" data-candidate-id="${escapeHtml(candidate.id)}" type="button">Archive</button>
+        </div>
+      </article>
+    `;
+  }).join("");
 }
 
 function isEarningsEvent(event) {
@@ -1688,7 +1883,8 @@ function renderList() {
   } else if (activeView === "saved") {
     renderNodeCards(orderedNodes.filter((node) => savedNodeIds.includes(node.id)));
   } else if (activeView === "review") {
-    renderNodeCards(orderedNodes);
+    if (reviewTab === "candidates") renderCandidateCards(eventCandidates);
+    else renderNodeCards(orderedNodes);
   } else if (eventMode === "upcoming") {
     renderUpcomingCards();
   } else {
@@ -1987,6 +2183,11 @@ function renderDetail(node) {
 }
 
 eventList.addEventListener("click", (event) => {
+  const candidateAction = event.target.closest("[data-candidate-action]");
+  if (candidateAction) {
+    runCandidateAction(candidateAction.dataset.candidateAction, candidateAction.dataset.candidateId);
+    return;
+  }
   const card = event.target.closest(".event-card");
   if (!card) return;
   if (card.dataset.node) {
@@ -2023,8 +2224,19 @@ archiveButton?.addEventListener("click", () => {
 });
 
 screenIntro.addEventListener("click", (event) => {
-  if (!event.target.closest("#change-review-token")) return;
-  changeReviewAdminToken();
+  const tab = event.target.closest("[data-review-tab]");
+  if (tab) {
+    reviewTab = tab.dataset.reviewTab || "drafts";
+    renderList();
+    return;
+  }
+  if (event.target.closest("#run-auto-pipeline")) {
+    runAutoPipeline();
+    return;
+  }
+  if (event.target.closest("#change-review-token")) {
+    changeReviewAdminToken();
+  }
 });
 
 document.querySelectorAll(".event-tab").forEach((tab) => {
@@ -2056,6 +2268,7 @@ brandButton.setAttribute("tabindex", "0");
 renderList();
 loadPublishedNodes();
 loadDraftNodes();
+loadEventCandidates();
 loadUpcomingEvents();
 
     </script>
