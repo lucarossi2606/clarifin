@@ -118,7 +118,7 @@ button { border: 0; font: inherit; background: none; padding: 0; cursor: pointer
 }
 
 .event-card h2 { font-size: 18px; font-weight: 700; line-height: 1.25; margin: 0 0 var(--sp-2) 0; letter-spacing: -0.3px; max-width: calc(100% - 64px); overflow-wrap: anywhere; }
-.event-card > p { font-size: 14px; color: var(--text-light); line-height: 1.4; margin: 0 0 var(--sp-4) 0; max-width: calc(100% - 64px); overflow-wrap: anywhere; }
+.event-card > p { font-family: inherit; font-size: 13px; font-weight: 700; letter-spacing: 0; color: var(--text-light); line-height: 1.4; margin: 0 0 var(--sp-4) 0; max-width: calc(100% - 64px); overflow-wrap: anywhere; }
 
 .card-meta { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3); }
 .score-pill { padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 700; background: var(--yellow-bg); color: var(--yellow-text); }
@@ -139,7 +139,7 @@ button { border: 0; font: inherit; background: none; padding: 0; cursor: pointer
 
 .detail-hero { border-radius: 24px; padding: var(--sp-5); margin-bottom: var(--sp-3); }
 .detail-hero h1 { font-size: 22px; font-weight: 700; line-height: 1.2; margin: 0 0 var(--sp-3) 0; letter-spacing: -0.5px; }
-.detail-summary { font-size: 14px; color: var(--text-light); line-height: 1.5; margin: 0 0 var(--sp-4) 0; }
+.detail-summary { font-family: inherit; font-size: 13px; font-weight: 700; letter-spacing: 0; color: var(--text-light); line-height: 1.5; margin: 0 0 var(--sp-4) 0; }
 .signal-row { display: flex; gap: var(--sp-2); }
 
 .detail-sections { display: flex; flex-direction: column; gap: var(--sp-3); }
@@ -167,6 +167,16 @@ details.detail-card[open] summary::after { content: "-"; }
 .direction-mixed, .direction-neutral { color: var(--gray-text); }
 .asset-card p { margin: 4px 0 0 0; font-size: 13px; }
 .asset-card .evidence-note { color: var(--text-light); font-size: 12px; line-height: 1.4; margin-top: 6px; }
+.research-evidence-note { color: var(--text-light); font-size: 12px; line-height: 1.4; margin: 0 0 var(--sp-3) 0; }
+.evidence-source { display: flex; flex-direction: column; gap: 6px; }
+.evidence-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--sp-2); }
+.evidence-head h3 { margin: 0; font-size: 14px; font-weight: 700; color: var(--text-main); }
+.status-pill { padding: 3px 8px; border-radius: 8px; font-size: 11px; font-weight: 700; text-transform: capitalize; background: var(--gray-bg); color: var(--gray-text); white-space: nowrap; }
+.status-success { background: var(--green-bg); color: var(--green-text); }
+.status-partial_success { background: var(--yellow-bg); color: var(--yellow-text); }
+.status-failed, .status-timeout, .status-rate_limited { background: var(--red-bg); color: var(--red-text); }
+.evidence-fact-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.evidence-fact-list li { color: var(--text-muted); font-size: 13px; font-weight: 400; line-height: 1.4; }
 
 .bottom-nav {
   position: fixed !important;
@@ -564,6 +574,13 @@ function formatLabel(value) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function formatNameWithSymbol(primary, secondary, fallback = "") {
+  const first = String(primary || "").trim();
+  const second = String(secondary || "").trim();
+  if (first && second && first.toUpperCase() !== second.toUpperCase()) return `${first} - ${second}`;
+  return first || second || fallback;
+}
+
 const OFFICIAL_SECTOR_ETFS = ["XLY", "XLP", "XLE", "XLF", "XLV", "XLI", "XLB", "XLRE", "XLK", "XLC", "XLU"];
 const SECTOR_ETF_PROXIES = new Set(OFFICIAL_SECTOR_ETFS);
 const INVALID_ASSET_LABELS = new Set(["UNKNOWN", "N/A", "NA", "NONE", "TBD", "UNVERIFIED"]);
@@ -650,17 +667,186 @@ function normalizeResearchExposure(exposure) {
 function normalizeIndirectImpact(item) {
   const symbol = firstValue(item, ["symbol", "ticker", "canonical_asset"], "");
   const companyName = firstValue(item, ["company_name", "company", "name"], "");
+  const rawDirection = firstValue(item, ["direction", "impact_direction", "sentiment"], "");
+  const rawStrength = String(firstValue(item, ["strength"], "weak") || "weak").trim().toLowerCase();
   return {
     symbol,
     companyName,
     title: firstValue(item, ["title"], companyName || symbol || "Indirect impact"),
-    direction: normalizeDirection(firstValue(item, ["direction", "impact_direction", "sentiment"], "mixed")),
-    strength: String(firstValue(item, ["strength"], "weak") || "weak").trim().toLowerCase(),
+    direction: rawDirection ? normalizeDirection(rawDirection) : "",
+    strength: ["weak", "medium", "high"].includes(rawStrength) ? rawStrength : "weak",
     reason: firstValue(item, ["reason", "watchlist_reason", "description"], ""),
     evidenceRequiredToUpgrade: firstValue(item, ["evidence_required_to_upgrade", "evidenceRequiredToUpgrade", "data_needed"], ""),
     sourceChannel: firstValue(item, ["source_channel", "category", "channel"], ""),
     sortOrder: toNumber(firstValue(item, ["sort_order", "sortOrder"], 0), 0)
   };
+}
+
+function getAppFacingIndirectImpacts(row, detail = {}) {
+  const appFacingSections = parseJsonValue(firstValue(row, ["app_facing_sections", "appFacingSections"], firstValue(detail, ["app_facing_sections", "appFacingSections"], {}))) || {};
+  const candidates = [
+    firstValue(row, ["indirect_impact", "indirectImpact"], null),
+    firstValue(detail, ["indirect_impact", "indirectImpact"], null),
+    appFacingSections.indirect_impact || appFacingSections.indirectImpact || null
+  ];
+  for (const candidate of candidates) {
+    const items = toArray(candidate)
+      .map(normalizeIndirectImpact)
+      .filter((item) => item.title && item.reason)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    if (items.length) return items;
+  }
+  return [];
+}
+
+function assetIdentityTokens(asset) {
+  return [
+    asset?.ticker,
+    asset?.symbol,
+    asset?.name,
+    asset?.companyName,
+    asset?.title
+  ]
+    .map((value) => String(value || "").trim().toUpperCase())
+    .filter(Boolean);
+}
+
+function filterDuplicateIndirectImpacts(indirectImpacts, directAssets) {
+  const directTokens = new Set((Array.isArray(directAssets) ? directAssets : []).flatMap(assetIdentityTokens));
+  const seen = new Set();
+  return (Array.isArray(indirectImpacts) ? indirectImpacts : [])
+    .filter((item) => {
+      const tokens = assetIdentityTokens(item);
+      if (!tokens.length || tokens.some((token) => directTokens.has(token))) return false;
+      const key = tokens[0];
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function normalizeObservationStatus(value) {
+  const status = String(value || "skipped").trim().toLowerCase();
+  const allowed = ["success", "partial_success", "skipped", "failed", "timeout", "rate_limited", "no_results"];
+  return allowed.includes(status) ? status : "failed";
+}
+
+function aggregateObservationStatus(statuses) {
+  const normalized = statuses.map(normalizeObservationStatus).filter(Boolean);
+  if (!normalized.length) return "skipped";
+  const unique = [...new Set(normalized)];
+  if (unique.length === 1) return unique[0];
+  if (unique.includes("success")) return "partial_success";
+  if (unique.includes("rate_limited")) return "rate_limited";
+  if (unique.includes("timeout")) return "timeout";
+  if (unique.includes("failed")) return "failed";
+  if (unique.includes("no_results")) return "no_results";
+  return "skipped";
+}
+
+function compactObservationLabel(observation, facts) {
+  const source = String(observation.sourceName || "").toUpperCase();
+  const query = String(observation.queryOrEndpoint || "").trim();
+  if (source === "FRED") return query || facts.series_name || "FRED series";
+  if (source === "EIA") return query || facts.indicator_name || "EIA indicator";
+  if (source === "ECB") return facts.indicator_name || query || "ECB series";
+  if (source === "FMP") return facts.ticker || observation.queryOrEndpoint || facts.company_name || "FMP";
+  if (source === "GDELT") return "Query";
+  return query || source || "Observation";
+}
+
+function compactObservationLine(observation) {
+  const source = String(observation.sourceName || "").toUpperCase();
+  const status = normalizeObservationStatus(observation.status);
+  const facts = observation.displayFacts || {};
+  const warning = firstValue(observation.responseSummary, ["warning"], observation.warning || "");
+  if (source === "GDELT") {
+    const query = firstValue(facts, ["query"], observation.queryOrEndpoint || "");
+    const count = firstValue(facts, ["headline_count", "headlineCount"], "");
+    if (status !== "success") return warning || "External headline support unavailable.";
+    return `${query ? `Query: ${query}. ` : ""}${hasValue(count) ? `Headlines: ${count}. ` : ""}Headlines are metadata only.`;
+  }
+
+  if (status !== "success") {
+    return warning || `${compactObservationLabel(observation, facts)} unavailable.`;
+  }
+
+  if (source === "FMP") {
+    const parts = [
+      facts.company_name,
+      facts.sector,
+      facts.industry,
+      hasValue(facts.earnings_date) ? `earnings ${facts.earnings_date}` : "",
+      hasValue(facts.eps_estimate) ? `EPS est. ${formatFactualValue(facts.eps_estimate)}` : "",
+      hasValue(facts.revenue_estimate) ? `revenue est. ${formatFactualValue(facts.revenue_estimate)}` : "",
+      hasValue(facts.market_cap) ? `market cap ${formatFactualValue(facts.market_cap)}` : ""
+    ].filter(Boolean);
+    return `${compactObservationLabel(observation, facts)}: ${parts.join(" - ") || "company context available"}`;
+  }
+
+  const label = compactObservationLabel(observation, facts);
+  const latestValue = firstValue(facts, ["latest_value", "latestValue"], "");
+  const latestDate = firstValue(facts, ["latest_date", "latestDate"], "");
+  const unit = firstValue(facts, ["unit"], "");
+  const change = firstValue(facts, ["change_from_previous", "changeFromPrevious"], "");
+  const valueText = hasValue(latestValue) ? `${formatFactualValue(latestValue)}${unit ? ` ${unit}` : ""}` : "";
+  const dateText = latestDate ? ` on ${latestDate}` : "";
+  const changeText = hasValue(change) ? `; change ${formatFactualValue(change)}` : "";
+  return `${label}: ${valueText || "latest value available"}${dateText}${changeText}`;
+}
+
+function normalizeExternalObservation(item) {
+  const displayFacts = parseJsonValue(firstValue(item, ["display_facts", "displayFacts"], {})) || {};
+  const responseSummary = parseJsonValue(firstValue(item, ["response_summary", "responseSummary"], {})) || {};
+  return {
+    sourceName: String(firstValue(item, ["source_name", "sourceName"], "") || "").toUpperCase(),
+    sourceType: firstValue(item, ["source_type", "sourceType"], ""),
+    queryOrEndpoint: firstValue(item, ["query_or_endpoint", "queryOrEndpoint"], ""),
+    status: normalizeObservationStatus(firstValue(item, ["status"], "")),
+    dataQuality: firstValue(item, ["data_quality", "dataQuality"], "unknown"),
+    displayFacts,
+    responseSummary,
+    interpretationNote: firstValue(item, ["interpretation_note", "interpretationNote"], ""),
+    warning: firstValue(item, ["warning"], "")
+  };
+}
+
+function normalizeResearchEvidence(factPackRows) {
+  const factPack = factPackRows[0] || {};
+  const observations = toArray(firstValue(factPack, ["external_data_observations", "externalDataObservations"], []))
+    .map(normalizeExternalObservation)
+    .filter((item) => item.sourceName);
+  const missingData = uniqueStrings([
+    ...toArray(firstValue(factPack, ["missing_data", "missingData"], [])),
+    ...toArray(firstValue(factPack, ["research_warnings", "researchWarnings"], [])),
+    ...observations
+      .filter((item) => item.status !== "success")
+      .map((item) => compactObservationLine(item))
+  ].map((item) => String(item || "").trim()).filter(Boolean));
+
+  const grouped = observations.reduce((groups, item) => {
+    if (!groups[item.sourceName]) groups[item.sourceName] = [];
+    groups[item.sourceName].push(item);
+    return groups;
+  }, {});
+
+  return {
+    sources: Object.entries(grouped).map(([sourceName, items]) => ({
+      sourceName,
+      status: aggregateObservationStatus(items.map((item) => item.status)),
+      facts: items.map(compactObservationLine).filter(Boolean).slice(0, 5),
+      metadataOnly: sourceName === "GDELT"
+    })),
+    missingData: missingData.slice(0, 6)
+  };
+}
+
+function hasResearchEvidence(evidence) {
+  return Boolean(evidence && ((Array.isArray(evidence.sources) && evidence.sources.length) || (Array.isArray(evidence.missingData) && evidence.missingData.length)));
+}
+
+function uniqueStrings(values) {
+  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
 }
 
 function getExposureSectorEtfs(exposure) {
@@ -724,20 +910,20 @@ async function supabaseFetch(path) {
   return response.json();
 }
 
-async function fetchRelatedRows(tableName, nodeIds) {
+async function fetchRelatedRows(tableName, nodeIds, selectColumns = "*") {
   if (!nodeIds.length) return [];
   const nodeKeys = nodeIds.map(nodeLookupKey).filter(Boolean);
   const encodedIds = nodeIds.map((id) => encodeURIComponent(id)).join(",");
   for (const column of ["node_id", "nodeId", "node", "clarifin_node_id"]) {
     try {
-      const rows = await supabaseFetch(`${tableName}?select=*&${column}=in.(${encodedIds})`);
+      const rows = await supabaseFetch(`${tableName}?select=${encodeURIComponent(selectColumns)}&${column}=in.(${encodedIds})`);
       return rows.filter((row) => nodeKeys.includes(nodeLookupKey(relatedNodeId(row, tableName === "node_details"))));
     } catch (error) {
       console.warn(`Clarifin Supabase: ${tableName} lookup by ${column} failed.`, error);
     }
   }
   try {
-    const rows = await supabaseFetch(`${tableName}?select=*`);
+    const rows = await supabaseFetch(`${tableName}?select=${encodeURIComponent(selectColumns)}`);
     return rows.filter((row) => nodeKeys.includes(nodeLookupKey(relatedNodeId(row, tableName === "node_details"))));
   } catch (error) {
     console.warn(`Clarifin Supabase: ${tableName} unavailable.`, error);
@@ -764,7 +950,16 @@ async function loadIndirectImpactsForNode(nodeId) {
     .sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
-function convertSupabaseNode(row, assetRows, detailRows, exposureRows = [], indirectImpactRows = []) {
+async function loadResearchEvidenceForNode(nodeId) {
+  const factPackRows = await fetchRelatedRows(
+    "research_fact_packs",
+    [nodeId],
+    "node_id,external_data_observations,missing_data,research_warnings"
+  );
+  return normalizeResearchEvidence(factPackRows);
+}
+
+function convertSupabaseNode(row, assetRows, detailRows, exposureRows = [], indirectImpactRows = [], researchFactPackRows = []) {
   const detail = detailRows[0] || {};
   const title = firstValue(row, ["title", "headline", "name"], "Untitled node");
   const id = String(firstValue(row, ["id", "slug"], slugify(title)));
@@ -774,6 +969,16 @@ function convertSupabaseNode(row, assetRows, detailRows, exposureRows = [], indi
   const sources = toArray(firstValue(detail, ["sources"], firstValue(row, ["sources"], []))).map((item) => typeof item === "string" ? item : firstValue(item, ["name", "title", "url"], ""));
   const impact = toNumber(firstValue(row, ["impact", "impact_score", "impactScore"], 50), 50);
   const confidence = toNumber(firstValue(row, ["confidence", "confidence_score", "confidenceScore"], 50), 50);
+  const affectedAssets = assetRows.map(normalizeAsset).filter(isValidatedAsset);
+  const persistedIndirectImpacts = indirectImpactRows
+    .map(normalizeIndirectImpact)
+    .filter((item) => item.title && item.reason)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+  const appFacingIndirectImpacts = persistedIndirectImpacts.length ? [] : getAppFacingIndirectImpacts(row, detail);
+  const indirectImpacts = filterDuplicateIndirectImpacts(
+    persistedIndirectImpacts.length ? persistedIndirectImpacts : appFacingIndirectImpacts,
+    affectedAssets
+  );
 
   return {
     id,
@@ -791,13 +996,15 @@ function convertSupabaseNode(row, assetRows, detailRows, exposureRows = [], indi
     created_at: firstValue(row, ["created_at", "createdAt"], ""),
     whyMatters: firstValue(detail, ["whyMatters", "why_matters", "why_it_matters"], firstValue(row, ["whyMatters", "why_matters", "why_it_matters"], "No deeper explanation available yet.")),
     chains,
-    affectedAssets: assetRows.map(normalizeAsset).filter(isValidatedAsset),
-    indirectImpacts: indirectImpactRows.map(normalizeIndirectImpact).filter((item) => item.title && item.reason).sort((a, b) => a.sortOrder - b.sortOrder),
+    affectedAssets,
+    indirectImpacts,
+    researchEvidence: normalizeResearchEvidence(researchFactPackRows),
     researchExposures: exposureRows.map(normalizeResearchExposure).filter((exposure) => exposure.theme || exposure.whyRelevant || exposure.sectorProxyTickers.length || exposure.dataNeeded || exposure.timeHorizon),
     exposuresToWatch: exposureRows.map(normalizeResearchExposure).filter((exposure) => exposure.theme || exposure.whyRelevant || exposure.sectorProxyTickers.length || exposure.dataNeeded || exposure.timeHorizon),
     isSupabaseNode: true,
     exposuresLoaded: exposureRows.length > 0,
-    indirectImpactsLoaded: indirectImpactRows.length > 0,
+    indirectImpactsLoaded: indirectImpactRows.length > 0 || appFacingIndirectImpacts.length > 0,
+    researchEvidenceLoaded: researchFactPackRows.length > 0,
     scenarios: scenarios.filter((scenario) => scenario.title || scenario.body),
     counterarguments: counterarguments.filter(Boolean),
     sources: sources.filter(Boolean)
@@ -868,16 +1075,18 @@ async function loadPublishedNodes() {
       .map((row) => firstValue(row, ["id", "slug"], ""))
       .filter(Boolean)
       .map(String);
-    const [assetRows, detailRows, exposureRows, indirectImpactRows] = await Promise.all([
+    const [assetRows, detailRows, exposureRows, indirectImpactRows, researchFactPackRows] = await Promise.all([
       fetchRelatedRows("affected_assets", nodeIds),
       fetchRelatedRows("node_details", nodeIds),
       fetchRelatedRows("node_research_exposures", nodeIds),
-      fetchRelatedRows("node_indirect_impacts", nodeIds)
+      fetchRelatedRows("node_indirect_impacts", nodeIds),
+      fetchRelatedRows("research_fact_packs", nodeIds, "node_id,external_data_observations,missing_data,research_warnings")
     ]);
     const assetsByNode = groupByNodeId(assetRows);
     const detailsByNode = groupByNodeId(detailRows, true);
     const exposuresByNode = groupByNodeId(exposureRows);
     const indirectImpactsByNode = groupByNodeId(indirectImpactRows);
+    const researchFactPacksByNode = groupByNodeId(researchFactPackRows);
     console.log("Clarifin exposures loaded", exposureRows);
     if (!exposureRows.length) {
       console.warn("Clarifin Supabase: no node_research_exposures rows returned for published nodes.", { nodeIds });
@@ -886,7 +1095,14 @@ async function loadPublishedNodes() {
       const nodeId = String(firstValue(row, ["id", "slug"], ""));
       const nodeKey = nodeLookupKey(nodeId);
       console.log("Clarifin exposures for node", nodeId, exposuresByNode[nodeKey] || []);
-      return convertSupabaseNode(row, assetsByNode[nodeKey] || [], detailsByNode[nodeKey] || [], exposuresByNode[nodeKey] || [], indirectImpactsByNode[nodeKey] || []);
+      return convertSupabaseNode(
+        row,
+        assetsByNode[nodeKey] || [],
+        detailsByNode[nodeKey] || [],
+        exposuresByNode[nodeKey] || [],
+        indirectImpactsByNode[nodeKey] || [],
+        researchFactPacksByNode[nodeKey] || []
+      );
     }));
 
     if (selectedNodeId) {
@@ -1323,6 +1539,45 @@ function detailRows(rows) {
   `;
 }
 
+function renderResearchEvidence(evidence) {
+  if (!hasResearchEvidence(evidence)) return "";
+  const sources = Array.isArray(evidence.sources) ? evidence.sources : [];
+  const missingData = Array.isArray(evidence.missingData) ? evidence.missingData : [];
+  const sourceCards = sources.map((source) => `
+    <li class="asset-card evidence-source">
+      <div class="evidence-head">
+        <h3>${escapeHtml(source.sourceName)}</h3>
+        <span class="status-pill status-${escapeHtml(source.status)}">${escapeHtml(formatLabel(source.status))}</span>
+      </div>
+      ${source.metadataOnly ? `<p class="evidence-note">Headlines are metadata only, not confirmed article research.</p>` : ""}
+      ${source.facts?.length ? `
+        <ul class="evidence-fact-list">
+          ${source.facts.map((fact) => `<li>${escapeHtml(fact)}</li>`).join("")}
+        </ul>
+      ` : `<p>Source selected, but no compact observation was available.</p>`}
+    </li>
+  `).join("");
+  const missingCard = missingData.length ? `
+    <li class="asset-card evidence-source">
+      <div class="evidence-head">
+        <h3>Missing data / source warnings</h3>
+        <span class="status-pill">Missing</span>
+      </div>
+      <ul class="evidence-fact-list">
+        ${missingData.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+      </ul>
+    </li>
+  ` : "";
+
+  return `
+    <p class="research-evidence-note">API observations are supporting evidence. They do not automatically prove market impact; failed sources are missing data, not evidence.</p>
+    <ul class="asset-list">
+      ${sourceCards}
+      ${missingCard}
+    </ul>
+  `;
+}
+
 function renderUpcomingDetail(event) {
   selectedNodeId = null;
   activeView = "home";
@@ -1397,8 +1652,9 @@ function renderDetail(node) {
 
   const chains = Array.isArray(node.chains) ? node.chains : [];
   const affectedAssets = Array.isArray(node.affectedAssets) ? node.affectedAssets.filter(isValidatedAsset) : [];
-  const indirectImpacts = Array.isArray(node.indirectImpacts) ? node.indirectImpacts : [];
+  const indirectImpacts = filterDuplicateIndirectImpacts(Array.isArray(node.indirectImpacts) ? node.indirectImpacts : [], affectedAssets);
   const exposuresToWatch = Array.isArray(node.exposuresToWatch) ? node.exposuresToWatch : (Array.isArray(node.researchExposures) ? node.researchExposures : []);
+  const researchEvidence = node.researchEvidence || { sources: [], missingData: [] };
   const scenarios = Array.isArray(node.scenarios) ? node.scenarios : [];
   const counterarguments = Array.isArray(node.counterarguments) ? node.counterarguments : [];
 
@@ -1406,13 +1662,13 @@ function renderDetail(node) {
     ? `<ul class="chain-list">${chains.map(c => `<li class="chain-step"><strong>${escapeHtml(c.title)}</strong><p>${escapeHtml(c.explanation || c.assetImpact || c.sectorImpact || c.mechanism)}</p></li>`).join("")}</ul>`
     : "<p>No causal chains available yet.</p>";
   const assetsHTML = affectedAssets.length
-    ? `<ul class="asset-list">${affectedAssets.map(a => `<li class="asset-card"><div class="asset-top"><h3>${escapeHtml(a.name || a.ticker)}</h3><span class="direction-${a.direction}">${escapeHtml(formatLabel(a.direction))}</span></div>${a.assetClass ? `<p class="asset-subline"><strong>${escapeHtml(formatLabel(a.assetClass))}</strong></p>` : ""}<p>${escapeHtml(a.reason)}</p></li>`).join("")}</ul>`
+    ? `<ul class="asset-list">${affectedAssets.map(a => `<li class="asset-card"><div class="asset-top"><h3>${escapeHtml(formatNameWithSymbol(a.ticker, a.name, "Direct impact"))}</h3><span class="direction-${a.direction}">${escapeHtml(formatLabel(a.direction))}</span></div>${a.assetClass ? `<p class="asset-subline"><strong>${escapeHtml(formatLabel(a.assetClass))}</strong></p>` : ""}<p>${escapeHtml(a.reason)}</p></li>`).join("")}</ul>`
     : "<p>No concrete affected assets yet.</p>";
   const indirectHTML = indirectImpacts.length
     ? `<ul class="asset-list">${indirectImpacts.map(item => `
       <li class="asset-card">
         <div class="asset-top">
-          <h3>${escapeHtml(item.title || item.companyName || item.symbol)}</h3>
+          <h3>${escapeHtml(formatNameWithSymbol(item.symbol, item.companyName || item.title, "Indirect impact"))}</h3>
           ${item.direction ? `<span class="direction-${item.direction}">${escapeHtml(formatLabel(item.direction))}</span>` : ""}
         </div>
         ${item.strength ? `<p class="asset-subline"><strong>${escapeHtml(formatLabel(item.strength))}</strong></p>` : ""}
@@ -1434,6 +1690,7 @@ function renderDetail(node) {
       </li>`;
     }).join("")}</ul>`
     : "";
+  const researchEvidenceHTML = renderResearchEvidence(researchEvidence);
   const scenariosHTML = scenarios.length
     ? `<ul class="scenario-list">${scenarios.map(s => `<li class="scenario-item"><strong>${escapeHtml(s.title)}:</strong><p>${escapeHtml(s.body)}</p></li>`).join("")}</ul>`
     : "<p>No scenarios available yet.</p>";
@@ -1447,6 +1704,7 @@ function renderDetail(node) {
     section("Direct Impact", assetsHTML),
     ...(indirectHTML ? [section("Indirect Impact", indirectHTML)] : []),
     ...(exposuresHTML ? [section("Exposures to watch", exposuresHTML)] : []),
+    ...(researchEvidenceHTML ? [section("Research Evidence", researchEvidenceHTML)] : []),
     section("Scenarios", scenariosHTML),
     section("Counterarguments", countersHTML)
   ].join("");
@@ -1471,6 +1729,17 @@ function renderDetail(node) {
       if (selectedNodeId === node.id) renderDetail(node);
     }).catch((error) => {
       console.warn("Clarifin Supabase: could not load node_indirect_impacts for selected node.", { nodeId: node.id, error });
+    });
+  }
+
+  if (node.isSupabaseNode && !hasResearchEvidence(researchEvidence) && !node.researchEvidenceLoaded) {
+    node.researchEvidenceLoaded = true;
+    loadResearchEvidenceForNode(node.id).then((evidence) => {
+      if (!hasResearchEvidence(evidence)) return;
+      node.researchEvidence = evidence;
+      if (selectedNodeId === node.id) renderDetail(node);
+    }).catch((error) => {
+      console.warn("Clarifin Supabase: could not load research_fact_packs for selected node.", { nodeId: node.id, error });
     });
   }
 }

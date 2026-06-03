@@ -113,6 +113,103 @@
         color: inherit;
         font-weight: 700;
       }
+
+      .research-evidence {
+        display: none;
+        margin-top: 18px;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 16px;
+        background: #fff;
+      }
+
+      .research-evidence.visible {
+        display: block;
+      }
+
+      .research-evidence h2 {
+        margin: 0 0 8px;
+        font-size: 18px;
+      }
+
+      .research-evidence-note,
+      .evidence-warning {
+        margin: 0 0 12px;
+        color: #7d828a;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .evidence-list {
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 0;
+        margin: 0;
+      }
+
+      .evidence-card {
+        border-radius: 8px;
+        background: #f4f6f8;
+        padding: 12px;
+      }
+
+      .evidence-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: flex-start;
+        margin-bottom: 6px;
+      }
+
+      .evidence-head h3 {
+        margin: 0;
+        font-size: 14px;
+      }
+
+      .status-pill {
+        padding: 3px 8px;
+        border-radius: 8px;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: capitalize;
+        background: rgba(107, 114, 128, 0.12);
+        color: #7e899a;
+        white-space: nowrap;
+      }
+
+      .status-success {
+        background: rgba(16, 185, 129, 0.12);
+        color: #059669;
+      }
+
+      .status-partial_success {
+        background: rgba(245, 158, 11, 0.15);
+        color: #b45309;
+      }
+
+      .status-failed,
+      .status-timeout,
+      .status-rate_limited {
+        background: rgba(239, 68, 68, 0.12);
+        color: #dc2626;
+      }
+
+      .evidence-card ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .evidence-card li {
+        color: #6b7280;
+        font-size: 13px;
+        line-height: 1.45;
+      }
     </style>
   </head>
   <body>
@@ -136,6 +233,7 @@
       </form>
 
       <div id="message" class="message"></div>
+      <section id="research-evidence" class="research-evidence" aria-live="polite"></section>
     </main>
 
     <script>
@@ -147,6 +245,7 @@
       const form = document.querySelector("#generator-form");
       const button = document.querySelector("#submit-button");
       const message = document.querySelector("#message");
+      const researchEvidence = document.querySelector("#research-evidence");
 
       function splitOptionalList(value) {
         return value
@@ -160,11 +259,174 @@
         message.innerHTML = html;
       }
 
+      function hideResearchEvidence() {
+        researchEvidence.className = "research-evidence";
+        researchEvidence.innerHTML = "";
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function hasValue(value) {
+        return value !== undefined && value !== null && String(value).trim() !== "";
+      }
+
+      function formatLabel(value) {
+        return String(value || "")
+          .replace(/_/g, " ")
+          .trim()
+          .replace(/\b\w/g, (letter) => letter.toUpperCase());
+      }
+
+      function formatFactualValue(value) {
+        if (!hasValue(value)) return "";
+        if (typeof value === "number") return new Intl.NumberFormat("en-US").format(value);
+        return String(value);
+      }
+
+      function normalizeObservationStatus(value) {
+        const status = String(value || "skipped").trim().toLowerCase();
+        const allowed = ["success", "partial_success", "skipped", "failed", "timeout", "rate_limited", "no_results"];
+        return allowed.includes(status) ? status : "failed";
+      }
+
+      function aggregateObservationStatus(statuses) {
+        const normalized = statuses.map(normalizeObservationStatus).filter(Boolean);
+        if (!normalized.length) return "skipped";
+        const unique = [...new Set(normalized)];
+        if (unique.length === 1) return unique[0];
+        if (unique.includes("success")) return "partial_success";
+        if (unique.includes("rate_limited")) return "rate_limited";
+        if (unique.includes("timeout")) return "timeout";
+        if (unique.includes("failed")) return "failed";
+        if (unique.includes("no_results")) return "no_results";
+        return "skipped";
+      }
+
+      function compactObservationLabel(observation, facts) {
+        const source = String(observation.source_name || "").toUpperCase();
+        const query = String(observation.query_or_endpoint || "").trim();
+        if (source === "FRED") return query || facts.series_name || "FRED series";
+        if (source === "EIA") return query || facts.indicator_name || "EIA indicator";
+        if (source === "ECB") return facts.indicator_name || query || "ECB series";
+        if (source === "FMP") return facts.ticker || query || facts.company_name || "FMP";
+        if (source === "GDELT") return "Query";
+        return query || source || "Observation";
+      }
+
+      function compactObservationLine(observation) {
+        const source = String(observation.source_name || "").toUpperCase();
+        const status = normalizeObservationStatus(observation.status);
+        const facts = observation.display_facts || {};
+        const responseSummary = observation.response_summary || {};
+        const warning = responseSummary.warning || observation.warning || "";
+
+        if (source === "GDELT") {
+          const query = facts.query || observation.query_or_endpoint || "";
+          const count = facts.headline_count ?? "";
+          if (status !== "success") return warning || "External headline support unavailable.";
+          return `${query ? `Query: ${query}. ` : ""}${hasValue(count) ? `Headlines: ${count}. ` : ""}Headlines are metadata only.`;
+        }
+
+        if (status !== "success") {
+          return warning || `${compactObservationLabel(observation, facts)} unavailable.`;
+        }
+
+        if (source === "FMP") {
+          const parts = [
+            facts.company_name,
+            facts.sector,
+            facts.industry,
+            hasValue(facts.earnings_date) ? `earnings ${facts.earnings_date}` : "",
+            hasValue(facts.eps_estimate) ? `EPS est. ${formatFactualValue(facts.eps_estimate)}` : "",
+            hasValue(facts.revenue_estimate) ? `revenue est. ${formatFactualValue(facts.revenue_estimate)}` : "",
+            hasValue(facts.market_cap) ? `market cap ${formatFactualValue(facts.market_cap)}` : ""
+          ].filter(Boolean);
+          return `${compactObservationLabel(observation, facts)}: ${parts.join(" - ") || "company context available"}`;
+        }
+
+        const label = compactObservationLabel(observation, facts);
+        const latestValue = facts.latest_value ?? "";
+        const latestDate = facts.latest_date || "";
+        const unit = facts.unit || "";
+        const change = facts.change_from_previous ?? "";
+        const valueText = hasValue(latestValue) ? `${formatFactualValue(latestValue)}${unit ? ` ${unit}` : ""}` : "";
+        const dateText = latestDate ? ` on ${latestDate}` : "";
+        const changeText = hasValue(change) ? `; change ${formatFactualValue(change)}` : "";
+        return `${label}: ${valueText || "latest value available"}${dateText}${changeText}`;
+      }
+
+      function renderResearchEvidence(result) {
+        const observations = Array.isArray(result.external_data_observations_in_fact_pack)
+          ? result.external_data_observations_in_fact_pack
+          : [];
+        const grouped = observations.reduce((groups, item) => {
+          const sourceName = String(item.source_name || "").toUpperCase();
+          if (!sourceName) return groups;
+          if (!groups[sourceName]) groups[sourceName] = [];
+          groups[sourceName].push(item);
+          return groups;
+        }, {});
+        const sources = Object.entries(grouped).map(([sourceName, items]) => ({
+          sourceName,
+          status: aggregateObservationStatus(items.map((item) => item.status)),
+          facts: items.map(compactObservationLine).filter(Boolean).slice(0, 5),
+          metadataOnly: sourceName === "GDELT"
+        }));
+        const missingData = [
+          ...(Array.isArray(result.missing_data_from_failed_sources) ? result.missing_data_from_failed_sources : []),
+          ...(Array.isArray(result.source_warnings) ? result.source_warnings : [])
+        ].map((item) => String(item || "").trim()).filter(Boolean).slice(0, 6);
+
+        if (!sources.length && !missingData.length) {
+          hideResearchEvidence();
+          return;
+        }
+
+        researchEvidence.className = "research-evidence visible";
+        researchEvidence.innerHTML = `
+          <h2>Research Evidence</h2>
+          <p class="research-evidence-note">API observations are supporting evidence. They do not automatically prove market impact; failed sources are missing data, not evidence.</p>
+          <ul class="evidence-list">
+            ${sources.map((source) => `
+              <li class="evidence-card">
+                <div class="evidence-head">
+                  <h3>${escapeHtml(source.sourceName)}</h3>
+                  <span class="status-pill status-${escapeHtml(source.status)}">${escapeHtml(formatLabel(source.status))}</span>
+                </div>
+                ${source.metadataOnly ? `<p class="evidence-warning">Headlines are metadata only, not confirmed article research.</p>` : ""}
+                <ul>
+                  ${source.facts.map((fact) => `<li>${escapeHtml(fact)}</li>`).join("")}
+                </ul>
+              </li>
+            `).join("")}
+            ${missingData.length ? `
+              <li class="evidence-card">
+                <div class="evidence-head">
+                  <h3>Missing data / source warnings</h3>
+                  <span class="status-pill">Missing</span>
+                </div>
+                <ul>
+                  ${missingData.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+                </ul>
+              </li>
+            ` : ""}
+          </ul>
+        `;
+      }
+
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         button.disabled = true;
         button.textContent = "Generating...";
         showMessage("success", "Generating draft. This can take a few seconds.");
+        hideResearchEvidence();
 
         const formData = new FormData(form);
         const payload = {
@@ -193,8 +455,10 @@
             "success",
             `Draft created successfully.<br><strong>Node ID:</strong> ${result.node_id}<br><br>Open Supabase Table Editor and check the <strong>nodes</strong> table for rows where <strong>status = draft</strong>.<br><a href="${DASHBOARD_DRAFTS_URL}" target="_blank" rel="noreferrer">Open Supabase Table Editor</a>`
           );
+          renderResearchEvidence(result);
           form.reset();
         } catch (error) {
+          hideResearchEvidence();
           showMessage("error", error.message || "Something went wrong.");
         } finally {
           button.disabled = false;

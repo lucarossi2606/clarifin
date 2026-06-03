@@ -310,9 +310,10 @@ const fmpEndpointCatalog: Record<string, {
   params: Record<string, string>;
 }> = {
   company_profile: { endpoint: "profile", sourceType: "company_profile", enabled: true, params: {} },
+  quote_basic: { endpoint: "quote", sourceType: "market_data", enabled: true, params: {} },
   earnings_calendar: { endpoint: "earnings-calendar", sourceType: "earnings", enabled: true, params: {} },
-  earnings_estimates: { endpoint: "analyst-estimates", sourceType: "earnings", enabled: false, params: {} },
-  financial_metrics: { endpoint: "key-metrics-ttm", sourceType: "fundamentals", enabled: false, params: {} },
+  earnings_estimates: { endpoint: "analyst-estimates", sourceType: "earnings", enabled: true, params: { period: "annual" } },
+  financial_metrics: { endpoint: "key-metrics-ttm", sourceType: "fundamentals", enabled: true, params: {} },
   stock_news: { endpoint: "news/stock", sourceType: "news", enabled: false, params: {} },
   press_releases: { endpoint: "press-releases", sourceType: "news", enabled: false, params: {} },
 };
@@ -2756,6 +2757,35 @@ function buildFmpParamsExcludingApiKey(endpointKey: string, ticker: string) {
   return params;
 }
 
+function getFmpPayloadErrorMessage(payload: unknown) {
+  const rows = Array.isArray(payload) ? payload as Record<string, unknown>[] : payload && typeof payload === "object" ? [payload as Record<string, unknown>] : [];
+  const first = rows[0] || {};
+  return sanitizeExternalErrorMessage(String(
+    first["Error Message"]
+    || first["error message"]
+    || first.error
+    || first.message
+    || first.Message
+    || "",
+  ).trim());
+}
+
+function isFmpPlanOrPermissionError(message: string) {
+  const normalized = String(message || "").toLowerCase();
+  return textIncludesAny(normalized, [
+    "not available",
+    "upgrade",
+    "premium",
+    "plan",
+    "subscription",
+    "permission",
+    "limit",
+    "forbidden",
+    "unauthorized",
+    "invalid api key",
+  ]);
+}
+
 function summarizeFmpPayload(endpointKey: string, payload: unknown) {
   const rows = Array.isArray(payload) ? payload as Record<string, unknown>[] : payload && typeof payload === "object" ? [payload as Record<string, unknown>] : [];
   const first = rows[0] || {};
@@ -2777,6 +2807,15 @@ function summarizeFmpPayload(endpointKey: string, payload: unknown) {
       revenue_estimate: first.revenueEstimated ?? first.revenueEstimate ?? null,
     };
   }
+  if (endpointKey === "quote_basic") {
+    return {
+      price: first.price ?? null,
+      market_cap: first.marketCap ?? first.mktCap ?? null,
+      volume: first.volume ?? null,
+      exchange: first.exchange || first.exchangeShortName || "",
+      currency: first.currency || "",
+    };
+  }
   return {
     row_count: rows.length,
     sample_keys: Object.keys(first).slice(0, 8),
@@ -2795,6 +2834,11 @@ function buildFmpExternalResearchItem(args: {
   const config = fmpEndpointCatalog[args.endpointKey];
   const rows = Array.isArray(args.payload) ? args.payload as unknown[] : args.payload ? [args.payload] : [];
   const facts = args.status === "success" ? summarizeFmpPayload(args.endpointKey, args.payload) : {};
+  const failureReason = args.status === "failed" && isFmpPlanOrPermissionError(args.errorMessage || "")
+    ? "plan_or_permission_limit"
+    : args.status === "failed"
+      ? "endpoint_failed"
+      : args.status;
   const warning = args.status === "success"
     ? ""
     : args.status === "rate_limited"
@@ -2818,6 +2862,7 @@ function buildFmpExternalResearchItem(args: {
       status: args.status,
       http_status: args.httpStatus ?? null,
       row_count: rows.length,
+      failure_reason: failureReason,
       warning,
     },
     raw_payload: { rows: rows.slice(0, 5), note: "Limited FMP rows only; API key and full URL are not stored." },
@@ -2854,6 +2899,17 @@ async function fetchFmpResearchEndpoint(endpointKey: string, ticker: string, api
       });
     }
     const payload = await response.json();
+    const payloadErrorMessage = getFmpPayloadErrorMessage(payload);
+    if (payloadErrorMessage) {
+      return buildFmpExternalResearchItem({
+        endpointKey,
+        ticker,
+        status: "failed",
+        httpStatus: response.status,
+        errorMessage: payloadErrorMessage,
+        apiKeyDetected: true,
+      });
+    }
     const rows = Array.isArray(payload) ? payload : payload ? [payload] : [];
     return buildFmpExternalResearchItem({
       endpointKey,
@@ -2875,6 +2931,22 @@ async function fetchFmpResearchEndpoint(endpointKey: string, ticker: string, api
   }
 }
 
+function selectFmpEndpointKeysForTopic(researchPlan: Record<string, unknown>, rawEventText: string) {
+  const text = getExternalRouterText(researchPlan, rawEventText);
+  const endpointKeys = ["company_profile", "quote_basic"];
+  if (textIncludesAny(text, ["earnings", "eps", "revenue", "fiscal", "guidance", "earnings release", "earnings preview"])) {
+    endpointKeys.push("earnings_calendar");
+    if (fmpEndpointCatalog.earnings_estimates.enabled) endpointKeys.push("earnings_estimates");
+  }
+  if (textIncludesAny(text, ["margin", "margins", "profitability", "valuation", "leverage", "debt"]) && fmpEndpointCatalog.financial_metrics.enabled) {
+    endpointKeys.push("financial_metrics");
+  }
+  if (textIncludesAny(text, ["company news", "press release", "product launch", "ceo", "management"]) && fmpEndpointCatalog.stock_news.enabled) {
+    endpointKeys.push("stock_news");
+  }
+  return uniqueStrings(endpointKeys).filter((key) => fmpEndpointCatalog[key]?.enabled).slice(0, 3);
+}
+
 async function collectFmpCompanyResearch(args: {
   researchPlan: Record<string, unknown>;
   rawEventText: string;
@@ -2886,16 +2958,17 @@ async function collectFmpCompanyResearch(args: {
   const apiKeyDetected = Boolean(args.apiKey);
   const items: Record<string, unknown>[] = [];
   if (!args.selected) {
+    const diagnostics = buildGenericSourceDiagnostics({
+      sourceName: "FMP",
+      selected: false,
+      apiKeyDetected,
+      items,
+      endpointSummary: fmpEndpointSummary,
+      skipReason: args.skipReason,
+    });
     return {
       items,
-      diagnostics: buildGenericSourceDiagnostics({
-        sourceName: "FMP",
-        selected: false,
-        apiKeyDetected,
-        items,
-        endpointSummary: fmpEndpointSummary,
-        skipReason: args.skipReason,
-      }),
+      diagnostics: { ...diagnostics, fmp_capabilities: buildFmpCapabilitiesFromItems(items) },
       facts: [],
     };
   }
@@ -2929,9 +3002,7 @@ async function collectFmpCompanyResearch(args: {
       data_quality: "unknown",
     });
   } else {
-    const enabledEndpointKeys = Object.entries(fmpEndpointCatalog)
-      .filter(([_key, config]) => config.enabled)
-      .map(([key]) => key);
+    const enabledEndpointKeys = selectFmpEndpointKeysForTopic(args.researchPlan, args.rawEventText);
     for (const ticker of tickers) {
       for (const endpointKey of enabledEndpointKeys) {
         items.push(await fetchFmpResearchEndpoint(endpointKey, ticker, args.apiKey || ""));
@@ -2939,16 +3010,231 @@ async function collectFmpCompanyResearch(args: {
       }
     }
   }
+  const diagnostics = buildGenericSourceDiagnostics({
+    sourceName: "FMP",
+    selected: true,
+    apiKeyDetected,
+    items,
+    endpointSummary: fmpEndpointSummary,
+  });
   return {
     items,
-    diagnostics: buildGenericSourceDiagnostics({
-      sourceName: "FMP",
-      selected: true,
-      apiKeyDetected,
-      items,
-      endpointSummary: fmpEndpointSummary,
-    }),
+    diagnostics: { ...diagnostics, fmp_capabilities: buildFmpCapabilitiesFromItems(items) },
     facts: items.filter((item) => String(item.status || "") === "success").map((item) => item.extracted_facts),
+  };
+}
+
+function resolveEiaDebugSeriesId(value: unknown) {
+  const requested = String(value || "").trim().toUpperCase();
+  if (!requested) return eiaSeriesCatalog.US_CRUDE_STOCKS_EX_SPR.seriesId;
+  if (eiaSeriesCatalog[requested]) return eiaSeriesCatalog[requested].seriesId;
+  const bySeriesId = Object.values(eiaSeriesCatalog).find((series) => series.seriesId.toUpperCase() === requested);
+  return bySeriesId?.seriesId || requested;
+}
+
+function eiaItemToConnectivityDebug(item: Record<string, unknown>, apiKeyDetected: boolean) {
+  const responseSummary = item.response_summary as Record<string, unknown> | undefined;
+  const facts = item.extracted_facts as Record<string, unknown> | undefined;
+  const httpStatus = Number(responseSummary?.http_status);
+  return {
+    ok: String(item.status || "") === "success",
+    debug_only: true,
+    node_created: false,
+    external_research_items_created: 0,
+    eia_api_key_detected: apiKeyDetected,
+    endpoint_reached: Number.isFinite(httpStatus),
+    http_status: Number.isFinite(httpStatus) ? httpStatus : null,
+    status: item.status || "failed",
+    test_series_id: facts?.series_id || "",
+    test_series_title: facts?.title || "",
+    selected_route_valid: String(item.status || "") === "success",
+    observations_returned: String(item.status || "") === "success",
+    latest_observation_period: facts?.latest_period || "",
+    latest_observation_value: facts?.latest_value ?? null,
+    latest_observation_units: facts?.units || "",
+    error_message: responseSummary?.warning || item.warning || "",
+    safe_endpoint_summary: eiaEndpointSummary,
+    parameters_sent_excluding_api_key: (item.request_summary as Record<string, unknown> | undefined)?.parameters_sent_excluding_api_key || {},
+  };
+}
+
+async function runEiaConnectivityDebug(args: {
+  apiKey?: string;
+  seriesId?: string;
+}) {
+  const apiKeyDetected = Boolean(args.apiKey);
+  const seriesId = resolveEiaDebugSeriesId(args.seriesId);
+  if (!apiKeyDetected) {
+    return {
+      ok: false,
+      debug_only: true,
+      node_created: false,
+      external_research_items_created: 0,
+      eia_api_key_detected: false,
+      endpoint_reached: false,
+      http_status: null,
+      status: "skipped",
+      test_series_id: seriesId,
+      selected_route_valid: false,
+      observations_returned: false,
+      latest_observation_period: "",
+      latest_observation_value: null,
+      latest_observation_units: "",
+      error_message: "EIA_API_KEY is not configured.",
+      safe_endpoint_summary: eiaEndpointSummary,
+      parameters_sent_excluding_api_key: buildEiaParamsExcludingApiKey(seriesId),
+    };
+  }
+  const item = await fetchEiaSeriesOrRoute(seriesId, args.apiKey || "");
+  return eiaItemToConnectivityDebug(item, apiKeyDetected);
+}
+
+function resolveEcbDebugSeriesPath(value: unknown) {
+  const requested = String(value || "").trim();
+  if (!requested) return `${ecbSeriesCatalog.EUR_USD.flowRef}/${ecbSeriesCatalog.EUR_USD.key}`;
+  if (ecbSeriesCatalog[requested.toUpperCase()]) {
+    const series = ecbSeriesCatalog[requested.toUpperCase()];
+    return `${series.flowRef}/${series.key}`;
+  }
+  return requested.includes("/") ? requested : `${ecbSeriesCatalog.EUR_USD.flowRef}/${ecbSeriesCatalog.EUR_USD.key}`;
+}
+
+function ecbItemToConnectivityDebug(item: Record<string, unknown>) {
+  const responseSummary = item.response_summary as Record<string, unknown> | undefined;
+  const facts = item.extracted_facts as Record<string, unknown> | undefined;
+  const httpStatus = Number(responseSummary?.http_status);
+  return {
+    ok: String(item.status || "") === "success",
+    debug_only: true,
+    node_created: false,
+    external_research_items_created: 0,
+    ecb_api_key_required: false,
+    ecb_api_key_notice: ecbEndpointSummary.api_key_notice,
+    endpoint_reached: Number.isFinite(httpStatus),
+    http_status: Number.isFinite(httpStatus) ? httpStatus : null,
+    status: item.status || "failed",
+    test_query: `${facts?.flow_ref || ""}/${facts?.key || ""}`,
+    selected_query_valid: String(item.status || "") === "success",
+    observations_returned: String(item.status || "") === "success",
+    latest_observation_period: facts?.latest_period || "",
+    latest_observation_value: facts?.latest_value ?? null,
+    error_message: responseSummary?.warning || item.warning || "",
+    safe_endpoint_summary: ecbEndpointSummary,
+    parameters_sent: (item.request_summary as Record<string, unknown> | undefined)?.parameters_sent || {},
+  };
+}
+
+async function runEcbConnectivityDebug(args: {
+  seriesPath?: string;
+}) {
+  const seriesPath = resolveEcbDebugSeriesPath(args.seriesPath);
+  const item = await fetchEcbSeries(seriesPath);
+  return ecbItemToConnectivityDebug(item);
+}
+
+function endpointCapabilityFromFmpItem(endpointKey: string, item: Record<string, unknown>) {
+  const responseSummary = item.response_summary as Record<string, unknown> | undefined;
+  const status = String(item.status || "");
+  const errorMessage = String(responseSummary?.warning || item.warning || "");
+  const disabledByPlan = isFmpPlanOrPermissionError(errorMessage)
+    || String(responseSummary?.failure_reason || "") === "plan_or_permission_limit";
+  return {
+    endpoint_key: endpointKey,
+    available: status === "success",
+    status,
+    http_status: responseSummary?.http_status ?? null,
+    disabled_due_to_plan: disabledByPlan,
+    error_message: status === "success" ? "" : errorMessage,
+    row_count: responseSummary?.row_count ?? 0,
+  };
+}
+
+function buildFmpCapabilitiesFromItems(items: Record<string, unknown>[]) {
+  const capabilities = items
+    .filter((item) => String(item.source_name || "") === "FMP")
+    .map((item) => {
+      const requestSummary = item.request_summary as Record<string, unknown> | undefined;
+      const endpointKey = String(requestSummary?.endpoint_key || "").trim();
+      return endpointKey ? endpointCapabilityFromFmpItem(endpointKey, item) : null;
+    })
+    .filter(Boolean) as Record<string, unknown>[];
+  const available = new Set(capabilities.filter((item) => item.available === true).map((item) => String(item.endpoint_key || "")));
+  return {
+    profile_available: available.has("company_profile"),
+    quote_available: available.has("quote_basic"),
+    earnings_calendar_available: available.has("earnings_calendar"),
+    earnings_estimates_available: available.has("earnings_estimates"),
+    metrics_available: available.has("financial_metrics"),
+    news_available: available.has("stock_news") || available.has("press_releases"),
+    endpoints_disabled_due_to_plan: capabilities
+      .filter((item) => item.disabled_due_to_plan === true)
+      .map((item) => item.endpoint_key),
+    endpoint_errors: capabilities
+      .filter((item) => item.available !== true)
+      .map((item) => ({
+        endpoint_key: item.endpoint_key,
+        status: item.status,
+        http_status: item.http_status,
+        disabled_due_to_plan: item.disabled_due_to_plan,
+        error_message: item.error_message,
+      })),
+  };
+}
+
+async function runFmpCapabilitiesDebug(args: {
+  apiKey?: string;
+  ticker?: string;
+}) {
+  const apiKeyDetected = Boolean(args.apiKey);
+  const ticker = canonicalTicker(args.ticker || "AAPL");
+  const endpointKeys = [
+    "company_profile",
+    "quote_basic",
+    "earnings_calendar",
+    "earnings_estimates",
+    "financial_metrics",
+    "stock_news",
+    "press_releases",
+  ];
+  if (!apiKeyDetected) {
+    return {
+      ok: false,
+      debug_only: true,
+      node_created: false,
+      external_research_items_created: 0,
+      fmp_api_key_detected: false,
+      ticker,
+      fmp_capabilities: {
+        profile_available: false,
+        quote_available: false,
+        earnings_calendar_available: false,
+        metrics_available: false,
+        news_available: false,
+        endpoints_disabled_due_to_plan: [],
+        endpoint_errors: [{ endpoint_key: "all", error_message: "FMP_API_KEY is not configured." }],
+      },
+      safe_endpoint_summary: fmpEndpointSummary,
+    };
+  }
+
+  const items: Record<string, unknown>[] = [];
+  for (let index = 0; index < endpointKeys.length; index += 1) {
+    items.push(await fetchFmpResearchEndpoint(endpointKeys[index], ticker, args.apiKey || ""));
+    if (index < endpointKeys.length - 1) await delay(350);
+  }
+  const capabilities = endpointKeys.map((endpointKey, index) => endpointCapabilityFromFmpItem(endpointKey, items[index]));
+  const available = new Set(capabilities.filter((item) => item.available).map((item) => item.endpoint_key));
+
+  return {
+    ok: available.size > 0,
+    debug_only: true,
+    node_created: false,
+    external_research_items_created: 0,
+    fmp_api_key_detected: true,
+    ticker,
+    endpoint_results: capabilities,
+    fmp_capabilities: buildFmpCapabilitiesFromItems(items),
+    safe_endpoint_summary: fmpEndpointSummary,
   };
 }
 
@@ -3151,6 +3437,183 @@ function summarizeExternalResearchItems(items: Record<string, unknown>[], saveRe
   };
 }
 
+function externalObservationInterpretationNote(item: Record<string, unknown>) {
+  const sourceName = String(item.source_name || "").toUpperCase();
+  const facts = item.extracted_facts as Record<string, unknown> | undefined;
+  const responseSummary = item.response_summary as Record<string, unknown> | undefined;
+  const status = String(item.status || "");
+  if (status !== "success") {
+    return "This source did not return usable factual observations; treat it as missing data or a warning, not evidence.";
+  }
+  if (sourceName === "FRED") {
+    return "Official macro time-series context. Use latest value and change as context only; do not infer a policy reaction from one data point.";
+  }
+  if (sourceName === "EIA") {
+    return "Official energy-market context. Inventory, production, or price data can support energy backdrop, but does not by itself prove a disruption.";
+  }
+  if (sourceName === "ECB") {
+    return "Official European macro/FX context. Use as market context only; do not infer recession or policy conclusions without supporting evidence.";
+  }
+  if (sourceName === "FMP") {
+    return "Company, market-data, earnings, or fundamentals context. Use for classification and factual backdrop, not as proof of event impact.";
+  }
+  if (sourceName === "GDELT") {
+    return "GDELT headlines are lightweight metadata only; they can support awareness/context, not confirmation from full article research.";
+  }
+  return "Supporting external observation. Use only when directly relevant to the causal claim.";
+}
+
+function buildExternalObservationDisplayFacts(item: Record<string, unknown>) {
+  const sourceName = String(item.source_name || "").toUpperCase();
+  const facts = item.extracted_facts as Record<string, unknown> | undefined || {};
+  const responseSummary = item.response_summary as Record<string, unknown> | undefined || {};
+  if (sourceName === "FRED") {
+    return {
+      series_name: facts.title || facts.series_id || item.query_or_endpoint || "",
+      latest_value: facts.latest_value ?? null,
+      latest_date: facts.latest_date || "",
+      previous_value: facts.previous_value ?? null,
+      change_from_previous: facts.change_from_previous ?? null,
+      three_month_change: facts.three_month_change ?? null,
+      twelve_month_change: facts.twelve_month_change ?? null,
+    };
+  }
+  if (sourceName === "EIA") {
+    return {
+      indicator_name: facts.title || facts.series_id || item.query_or_endpoint || "",
+      latest_value: facts.latest_value ?? null,
+      latest_date: facts.latest_period || "",
+      unit: facts.units || "",
+      previous_value: facts.previous_value ?? null,
+      change_from_previous: facts.change_from_previous ?? null,
+    };
+  }
+  if (sourceName === "ECB") {
+    return {
+      indicator_name: facts.title || `${facts.flow_ref || ""}/${facts.key || ""}`.replace(/^\/|\/$/g, ""),
+      latest_value: facts.latest_value ?? null,
+      latest_date: facts.latest_period || "",
+      previous_value: facts.previous_value ?? null,
+      change_from_previous: facts.change_from_previous ?? null,
+    };
+  }
+  if (sourceName === "FMP") {
+    return {
+      ticker: facts.ticker || "",
+      company_name: facts.company_name || "",
+      sector: facts.sector || "",
+      industry: facts.industry || "",
+      market_cap: facts.market_cap ?? null,
+      exchange: facts.exchange || "",
+      country: facts.country || "",
+      earnings_date: facts.next_event_date || "",
+      eps_estimate: facts.eps_estimate ?? null,
+      revenue_estimate: facts.revenue_estimate ?? null,
+      financial_metrics_available: String(facts.endpoint_key || "") === "financial_metrics",
+      price: facts.price ?? null,
+      volume: facts.volume ?? null,
+    };
+  }
+  if (sourceName === "GDELT") {
+    return {
+      query: (item.request_summary as Record<string, unknown> | undefined)?.query || item.query_or_endpoint || "",
+      headline_count: responseSummary.related_headline_count ?? 0,
+      status: item.status || "",
+      warning: item.warning || "",
+      caveat: "Headlines are metadata only, not confirmed article research.",
+    };
+  }
+  return facts;
+}
+
+function buildExternalDataObservations(items: Record<string, unknown>[]) {
+  return items.map((item) => {
+    const status = String(item.status || "failed");
+    const usable = status === "success";
+    const responseSummary = item.response_summary as Record<string, unknown> | undefined || {};
+    return {
+      source_name: item.source_name || "",
+      source_type: item.source_type || "",
+      query_or_endpoint: item.query_or_endpoint || "",
+      status,
+      data_quality: item.data_quality || "unknown",
+      used_in_final_node_candidate: usable && Boolean(item.used_in_final_node),
+      extracted_facts: item.extracted_facts || {},
+      display_facts: buildExternalObservationDisplayFacts(item),
+      response_summary: {
+        status: responseSummary.status || status,
+        http_status: responseSummary.http_status ?? null,
+        warning: responseSummary.warning || item.warning || "",
+      },
+      interpretation_note: externalObservationInterpretationNote(item),
+    };
+  });
+}
+
+function buildExternalObservationSummary(observations: Record<string, unknown>[]) {
+  const confirmed = observations.filter((item) => String(item.status || "") === "success");
+  const warnings = observations.filter((item) => String(item.status || "") !== "success");
+  return {
+    confirmed_data_observations: confirmed,
+    api_failures_or_warnings: warnings,
+    missing_data: warnings
+      .map((item) => String((item.response_summary as Record<string, unknown> | undefined)?.warning || item.interpretation_note || "").trim())
+      .filter(Boolean),
+  };
+}
+
+function missingDataLabelForExternalItem(item: Record<string, unknown>) {
+  const sourceName = String(item.source_name || "").toUpperCase();
+  const sourceType = String(item.source_type || "").toLowerCase();
+  const query = String(item.query_or_endpoint || "").trim();
+  if (sourceName === "EIA") return `Latest EIA energy data unavailable or incomplete for ${query || "the selected energy indicator"}.`;
+  if (sourceName === "FRED") return `Latest FRED macro data unavailable or incomplete for ${query || "the selected macro series"}.`;
+  if (sourceName === "ECB") return `Latest ECB European macro/FX data unavailable or incomplete for ${query || "the selected ECB series"}.`;
+  if (sourceName === "FMP") {
+    if (String(item.status || "") === "failed" && isFmpPlanOrPermissionError(String(item.warning || ""))) {
+      return `FMP ${sourceType || "company"} endpoint is restricted by the current plan for ${query || "the selected ticker"}; do not treat company-news context as confirmed.`;
+    }
+    return `FMP ${sourceType || "company"} data unavailable or incomplete for ${query || "the selected ticker"}.`;
+  }
+  if (sourceName === "GDELT") return "External GDELT headline support unavailable or limited; do not treat outside coverage as confirmed.";
+  return `${sourceName || "External source"} data unavailable or incomplete${query ? ` for ${query}` : ""}.`;
+}
+
+function buildMissingDataFromFailedExternalSources(items: Record<string, unknown>[]) {
+  return uniqueStrings(items
+    .filter((item) => String(item.status || "") !== "success")
+    .map(missingDataLabelForExternalItem)
+    .filter(Boolean));
+}
+
+function buildExternalObservationPromptDiagnostics(observations: Record<string, unknown>[]) {
+  const used = observations
+    .filter((item) => item.used_in_final_node_candidate === true)
+    .map((item) => ({
+      source_name: item.source_name,
+      source_type: item.source_type,
+      query_or_endpoint: item.query_or_endpoint,
+      status: item.status,
+      reason_used: "Successful external observation passed into Research Fact Pack and final prompt as factual context.",
+    }));
+  const notUsed = observations
+    .filter((item) => item.used_in_final_node_candidate !== true)
+    .map((item) => ({
+      source_name: item.source_name,
+      source_type: item.source_type,
+      query_or_endpoint: item.query_or_endpoint,
+      status: item.status,
+      reason_not_used: String(item.status || "") === "success"
+        ? "Observation was successful but not marked as materially used."
+        : "Observation failed, timed out, was rate-limited, skipped, or returned no results; pass only as missing data/warning.",
+    }));
+  return {
+    external_observations_passed_to_prompt: observations.length,
+    external_observations_used_in_prompt: used,
+    external_observations_not_used: notUsed,
+  };
+}
+
 function buildResearchFactPack(args: {
   rawEventText: string;
   researchPlan: Record<string, unknown>;
@@ -3160,6 +3623,8 @@ function buildResearchFactPack(args: {
   fredFacts?: unknown[];
   externalSourceDiagnostics?: Record<string, unknown>;
   externalObservationFacts?: unknown[];
+  externalDataObservations?: Record<string, unknown>[];
+  missingDataFromFailedSources?: string[];
   externalWarnings?: string[];
   candidateAssets: Record<string, unknown>[];
 }) {
@@ -3183,12 +3648,17 @@ function buildResearchFactPack(args: {
   const fredDiagnostics = args.fredDiagnostics || summarizeFredDiagnostics([], false, false);
   const fredWarnings = Array.isArray(fredDiagnostics.warnings) ? fredDiagnostics.warnings as string[] : [];
   const externalWarnings = cleanStringArray(args.externalWarnings);
+  const externalDataObservations = Array.isArray(args.externalDataObservations) ? args.externalDataObservations : [];
+  const externalObservationSummary = buildExternalObservationSummary(externalDataObservations);
+  const missingDataFromFailedSources = cleanStringArray(args.missingDataFromFailedSources);
   const missingData = uniqueStrings([
     ...(Array.isArray(args.researchPlan.data_needed_before_strong_conclusion) ? args.researchPlan.data_needed_before_strong_conclusion : []),
     ...(Array.isArray(args.researchPlan.not_known_from_input) ? args.researchPlan.not_known_from_input : []),
     ...collectTransmissionMissingData(args.researchPlan),
     relatedNews.length ? "" : "No recent related GDELT headlines were found for the lightweight query.",
     "Full article text was not fetched in this version.",
+    ...missingDataFromFailedSources,
+    ...externalObservationSummary.missing_data,
   ]);
   const eventStatus = normalizeEventStatus(classification?.event_status || "unknown");
   const eventStatusHint = relatedNews.length >= 3 && sourceDomains.length >= 2
@@ -3204,6 +3674,8 @@ function buildResearchFactPack(args: {
     fred_macro_facts: Array.isArray(args.fredFacts) ? args.fredFacts : [],
     external_source_diagnostics: args.externalSourceDiagnostics || {},
     external_observation_facts: Array.isArray(args.externalObservationFacts) ? args.externalObservationFacts : [],
+    external_data_observations: externalDataObservations,
+    external_observation_summary: externalObservationSummary,
     event_status_hint: eventStatusHint,
     related_news_count: relatedNews.length,
     related_news_headlines: relatedNews,
@@ -3223,6 +3695,10 @@ function summarizeResearchFactPack(factPack: Record<string, unknown>) {
     fred_macro_facts_count: Array.isArray(factPack.fred_macro_facts) ? factPack.fred_macro_facts.length : 0,
     external_source_diagnostics: factPack.external_source_diagnostics || {},
     external_observation_facts_count: Array.isArray(factPack.external_observation_facts) ? factPack.external_observation_facts.length : 0,
+    external_data_observations_count: Array.isArray(factPack.external_data_observations) ? factPack.external_data_observations.length : 0,
+    confirmed_external_observations_count: Array.isArray((factPack.external_observation_summary as Record<string, unknown> | undefined)?.confirmed_data_observations)
+      ? ((factPack.external_observation_summary as Record<string, unknown>).confirmed_data_observations as unknown[]).length
+      : 0,
     related_news_count: factPack.related_news_count || 0,
     source_domains: Array.isArray(factPack.source_domains) ? factPack.source_domains : [],
     research_warnings: Array.isArray(factPack.research_warnings) ? factPack.research_warnings : [],
@@ -5936,6 +6412,18 @@ async function createValidatedDraft(input: {
           "- The final node must not present inference or unverified claims as confirmed fact.",
           "- Missing information should be explicitly flagged instead of guessed.",
           "",
+          "External data observation rules:",
+          "- Use external_data_observations in the Research Fact Pack as factual context only when the source status is success.",
+          "- Do not infer a trend from one latest value unless the observation includes a previous value, change, or supporting history.",
+          "- Failed, skipped, timed-out, no-results, or rate-limited sources are missing-data signals or warnings, not evidence for a market claim.",
+          "- Stale, incomplete, or low-quality external observations should lower confidence and should not drive Direct Impact alone.",
+          "- Source-to-claim discipline: EIA energy observations can support an oil, gas, inventory, production, or fuel-cost backdrop, but they do not prove a disruption occurred.",
+          "- Source-to-claim discipline: FRED macro observations can support rates, inflation, labor, credit, and financial-conditions context, but they do not prove a Fed decision or recession by themselves.",
+          "- Source-to-claim discipline: ECB observations can support euro-area macro/FX context, but not a company-specific claim without another channel.",
+          "- Source-to-claim discipline: FMP company profile, quote, earnings, estimate, or metrics data can support company classification and factual backdrop, but not event causality unless the event mechanism is concrete.",
+          "- Source-to-claim discipline: GDELT headlines are metadata only; they can show related headline awareness, not confirmed article research.",
+          "- Direct Impact stays concise and direct. Indirect Impact is the app-facing place for interesting second-order names when external data or research suggests plausibility but not direct conviction.",
+          "",
           "Goldstandard node-quality rules:",
           "- The generator may think broadly, but the mobile app node must display selectively.",
           "- Final affected_assets should usually contain 4 to 8 assets. Do not exceed this unless the event is truly systemic and every asset has a strong direct causal channel.",
@@ -6089,6 +6577,23 @@ Deno.serve(async (req) => {
         seriesIds: body.series_ids,
       }));
     }
+    if (body.debug_eia_connectivity === true) {
+      return jsonResponse(await runEiaConnectivityDebug({
+        apiKey: eiaApiKey,
+        seriesId: body.series_id || body.series_key,
+      }));
+    }
+    if (body.debug_ecb_connectivity === true) {
+      return jsonResponse(await runEcbConnectivityDebug({
+        seriesPath: body.series_path || body.series_key,
+      }));
+    }
+    if (body.debug_fmp_capabilities === true) {
+      return jsonResponse(await runFmpCapabilitiesDebug({
+        apiKey: fmpApiKey,
+        ticker: body.ticker,
+      }));
+    }
 
     const rawEventText = String(body.raw_event_text || "").trim();
     const sourceUrls = cleanStringArray(body.source_urls);
@@ -6214,6 +6719,9 @@ Deno.serve(async (req) => {
       ...(Array.isArray(ecbResearch.diagnostics.warnings) ? ecbResearch.diagnostics.warnings as string[] : []),
       ...(Array.isArray(fmpResearch.diagnostics.warnings) ? fmpResearch.diagnostics.warnings as string[] : []),
     ]);
+    const externalDataObservations = buildExternalDataObservations(externalResearchItems);
+    const externalObservationPromptDiagnostics = buildExternalObservationPromptDiagnostics(externalDataObservations);
+    const missingDataFromFailedSources = buildMissingDataFromFailedExternalSources(externalResearchItems);
     const researchFactPack = buildResearchFactPack({
       rawEventText,
       researchPlan,
@@ -6223,6 +6731,8 @@ Deno.serve(async (req) => {
       fredFacts: fredResearch.facts,
       externalSourceDiagnostics,
       externalObservationFacts,
+      externalDataObservations,
+      missingDataFromFailedSources,
       externalWarnings,
       candidateAssets: candidateAssetsConsidered,
     });
@@ -6239,6 +6749,9 @@ Deno.serve(async (req) => {
       apiKey: openAiApiKey,
       model,
     });
+    if (missingDataFromFailedSources.length) {
+      appendMissingData(validatedDraft, missingDataFromFailedSources);
+    }
 
     const generatedNode = normalizeGeneratedNode(validatedDraft, sourceUrls);
     const taxonomyClassification = researchPlan.event_classification as Record<string, unknown> | undefined;
@@ -6489,6 +7002,7 @@ Deno.serve(async (req) => {
     });
     let indirectImpactsInsertSucceeded = indirectImpactPersistence.rows.length === 0;
     let indirectImpactsInsertError = "";
+    let indirectImpactsInsertWarning = "";
     let indirectImpactsInserted: Record<string, unknown>[] = [];
 
     if (indirectImpactPersistence.rows.length) {
@@ -6497,7 +7011,8 @@ Deno.serve(async (req) => {
         .insert(indirectImpactPersistence.rows);
       if (indirectImpactError) {
         indirectImpactsInsertError = indirectImpactError.message;
-        warnings.push(`node_indirect_impacts was not saved: ${indirectImpactError.message}`);
+        indirectImpactsInsertWarning = `node_indirect_impacts was not saved: ${indirectImpactError.message}`;
+        warnings.push(indirectImpactsInsertWarning);
       } else {
         indirectImpactsInsertSucceeded = true;
         indirectImpactsInserted = indirectImpactPersistence.rows;
@@ -6590,6 +7105,7 @@ Deno.serve(async (req) => {
       related_news: researchFactPack.related_news_headlines,
       source_domains: researchFactPack.source_domains,
       candidate_assets: researchFactPack.candidate_assets_from_exposure_map,
+      external_data_observations: researchFactPack.external_data_observations,
       research_warnings: researchFactPack.research_warnings,
       missing_data: researchFactPack.missing_data,
     });
@@ -6669,6 +7185,7 @@ Deno.serve(async (req) => {
       indirect_impacts_inserted: indirectImpactsInserted,
       indirect_impacts_skipped: indirectImpactPersistence.skipped,
       indirect_impacts_insert_succeeded: indirectImpactsInsertSucceeded,
+      indirect_impacts_insert_warning: indirectImpactsInsertWarning,
       indirect_impacts_insert_error: indirectImpactsInsertError,
     };
 
@@ -6694,6 +7211,7 @@ Deno.serve(async (req) => {
       indirect_impacts_rejected: indirectImpactPersistence.skipped,
       indirect_impacts_insert_succeeded: indirectImpactsInsertSucceeded,
       indirect_impacts_table_insert_succeeded: indirectImpactsInsertSucceeded,
+      indirect_impacts_insert_warning: indirectImpactsInsertWarning,
       indirect_impacts_insert_error: indirectImpactsInsertError,
       app_facing_sections: {
         direct_impact: {
@@ -6715,6 +7233,7 @@ Deno.serve(async (req) => {
           eia_status: (externalSourceDiagnostics.eia as Record<string, unknown> | undefined)?.status || "skipped",
           ecb_status: (externalSourceDiagnostics.ecb as Record<string, unknown> | undefined)?.status || "skipped",
           fmp_status: (externalSourceDiagnostics.fmp as Record<string, unknown> | undefined)?.status || "skipped",
+          external_data_observations_count: externalDataObservations.length,
           candidate_assets_considered_count: candidateAssetsConsidered.length,
           proposed_assets_before_compression_count: conciseAssetCompression.proposed_assets_before_compression.length,
           proposed_exposures_before_compression_count: exposureRowsBeforeCompression.length,
@@ -6758,7 +7277,15 @@ Deno.serve(async (req) => {
       fmp_attempted: Boolean((externalSourceDiagnostics.fmp as Record<string, unknown> | undefined)?.attempted),
       fmp_status: (externalSourceDiagnostics.fmp as Record<string, unknown> | undefined)?.status || "skipped",
       fmp_api_key_detected: Boolean((externalSourceDiagnostics.fmp as Record<string, unknown> | undefined)?.api_key_detected),
+      fmp_capabilities: (externalSourceDiagnostics.fmp as Record<string, unknown> | undefined)?.fmp_capabilities || {},
       external_observation_facts: externalObservationFacts,
+      external_data_observations_in_fact_pack: researchFactPack.external_data_observations || [],
+      external_observation_summary: researchFactPack.external_observation_summary || {},
+      external_observations_passed_to_prompt: externalObservationPromptDiagnostics.external_observations_passed_to_prompt,
+      external_observations_used_in_prompt: externalObservationPromptDiagnostics.external_observations_used_in_prompt,
+      external_observations_not_used: externalObservationPromptDiagnostics.external_observations_not_used,
+      source_warnings: externalResearchSummary.warnings || [],
+      missing_data_from_failed_sources: missingDataFromFailedSources,
       related_news_count: researchFactPack.related_news_count,
       related_news_headlines: researchFactPack.related_news_headlines,
       source_domains: researchFactPack.source_domains,
