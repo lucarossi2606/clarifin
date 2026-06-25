@@ -57,6 +57,79 @@ function groupByNodeId(rows: Record<string, unknown>[]) {
   }, {});
 }
 
+function cleanString(value: unknown) {
+  return String(value || "").trim();
+}
+
+function isGenericExposureTheme(value: unknown) {
+  const theme = cleanString(value).toLowerCase().replace(/\s+/g, " ");
+  return new Set([
+    "demand",
+    "governance",
+    "policy",
+    "regional policy",
+    "consumer",
+    "consumer spending",
+    "sector",
+    "theme",
+    "market",
+    "market impact",
+    "markets",
+    "sentiment",
+    "investor sentiment",
+    "market dynamics",
+    "regional dynamics",
+    "regional security dynamics",
+    "various sectors",
+  ]).has(theme);
+}
+
+function textLooksGenericForPublish(value: unknown) {
+  const text = cleanString(value).toLowerCase();
+  if (!text) return true;
+  if (text.split(/\s+/).filter(Boolean).length < 16) return true;
+  return [
+    "could lead to reduced military tensions",
+    "potentially stabilizing the region",
+    "impacting various sectors",
+    "may influence policy",
+    "market impact",
+  ].some((term) => text.includes(term));
+}
+
+async function validateDraftPublishQuality(supabase: any, nodeId: string) {
+  const [
+    affectedAssets,
+    exposures,
+    details,
+  ] = await Promise.all([
+    loadRowsByNodeIds(supabase, "affected_assets", [nodeId]),
+    loadRowsByNodeIds(supabase, "node_research_exposures", [nodeId]),
+    loadRowsByNodeIds(supabase, "node_details", [nodeId]),
+  ]);
+  const detail = details[0] || {};
+  const chains = Array.isArray(detail.causal_chain) ? detail.causal_chain as Record<string, unknown>[] : [];
+  const why = cleanString(detail.why_matters);
+  const reasons: string[] = [];
+  const genericExposures = exposures.filter((exposure) => isGenericExposureTheme(exposure.theme));
+
+  if (!affectedAssets.length) reasons.push("Direct Impact is empty after validation.");
+  if (!exposures.length) reasons.push("No app-facing research exposures survived validation.");
+  if (genericExposures.length) {
+    reasons.push(`Generic exposure labels cannot be published: ${genericExposures.map((row) => cleanString(row.theme)).join(", ")}.`);
+  }
+  if (textLooksGenericForPublish(why)) reasons.push("Why it matters is missing or generic.");
+  if (!chains.length) reasons.push("No causal chains survived generation.");
+
+  return {
+    passed: reasons.length === 0,
+    reasons,
+    direct_impact_count: affectedAssets.length,
+    exposure_count: exposures.length,
+    causal_chain_count: chains.length,
+  };
+}
+
 async function listDrafts(supabase: any) {
   const { data: nodeRows, error: nodeError } = await supabase
     .from("nodes")
@@ -106,6 +179,18 @@ async function listDrafts(supabase: any) {
 }
 
 async function updateDraftStatus(supabase: any, nodeId: string, nextStatus: "published" | "archived") {
+  if (nextStatus === "published") {
+    const quality = await validateDraftPublishQuality(supabase, nodeId);
+    if (!quality.passed) {
+      return jsonResponse({
+        ok: false,
+        error: "Draft failed publish quality gate.",
+        publish_blocked: true,
+        quality,
+      }, 422);
+    }
+  }
+
   const { data, error } = await supabase
     .from("nodes")
     .update({ status: nextStatus })

@@ -1,0 +1,20 @@
+{
+  "name": "normal_earnings_upcoming",
+  "description": "Normal single-company upcoming earnings should route to Upcoming and not become a broad auto-published market node.",
+  "input": {
+    "raw_event_text": "DOCU reports earnings tomorrow.",
+    "source_urls": [],
+    "tickers": ["DOCU"]
+  },
+  "expected": {
+    "category_any": ["Earnings", "Company"],
+    "event_type_any": ["earnings", "upcoming"],
+    "event_status_any": ["upcoming", "scheduled"],
+    "upcoming_only_unless_manually_selected": true,
+    "not_top_event_by_default": true,
+    "must_not_auto_publish": true,
+    "max_direct_impact_count": 2,
+    "no_broad_market_node": true,
+    "forbidden_generic_exposure_labels": true
+  }
+}

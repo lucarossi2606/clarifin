@@ -1,0 +1,24 @@
+{
+  "name": "cpi_hotter_than_expected",
+  "description": "Hot CPI macro fixture for rates, duration, broad equity, USD, and exposure routing.",
+  "input": {
+    "raw_event_text": "U.S. CPI comes in hotter than expected, pushing Treasury yields higher and reducing near-term rate-cut expectations.",
+    "source_urls": [],
+    "tickers": []
+  },
+  "expected": {
+    "category_any": ["Macro", "Economics", "Central Banks / Rates"],
+    "event_type_any": ["inflation", "cpi", "rates", "economic data"],
+    "min_direct_impact_count": 2,
+    "min_exposures_count": 3,
+    "required_direct_channels": [
+      "rates_duration",
+      "broad_equity"
+    ],
+    "optional_direct_channels": ["usd_fx"],
+    "exposure_terms_any": ["rates", "growth", "financials", "real estate", "duration", "inflation"],
+    "forbidden_generic_exposure_labels": true,
+    "sector_etfs_only_in_exposures": true,
+    "no_irrelevant_company_watchlist": true
+  }
+}

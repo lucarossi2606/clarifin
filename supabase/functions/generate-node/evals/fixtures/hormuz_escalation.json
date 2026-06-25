@@ -1,0 +1,27 @@
+{
+  "name": "hormuz_escalation",
+  "description": "Hormuz escalation fixture for concrete oil, shipping, insurance, safe-haven, tanker, airline, defense, and rates channels.",
+  "input": {
+    "raw_event_text": "Iran conflict escalates and shipping through the Strait of Hormuz becomes unsafe for commercial vessels.",
+    "source_urls": [],
+    "tickers": []
+  },
+  "expected": {
+    "category": "Geopolitics",
+    "event_type_any": ["escalation", "conflict", "shipping disruption", "geopolitical"],
+    "min_direct_impact_count": 4,
+    "min_indirect_impact_count": 2,
+    "min_exposures_count": 4,
+    "required_direct_channels": [
+      "oil_energy",
+      "safe_haven_rates_or_risk",
+      "travel_airline_tanker_or_defense"
+    ],
+    "requires_concrete_oil_shipping_insurance_channel": true,
+    "direct_must_include_any_assets": ["BRENT CRUDE", "WTI CRUDE", "USO", "BNO"],
+    "weak_company_links_not_direct": true,
+    "max_direct_impact_count": 12,
+    "forbidden_generic_exposure_labels": true,
+    "sector_etfs_only_in_exposures": true
+  }
+}

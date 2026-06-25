@@ -1,0 +1,29 @@
+{
+  "name": "iran_deescalation_ceasefire",
+  "description": "Goldstandard U.S.-Iran de-escalation / ceasefire fixture for inverse risk-premium handling.",
+  "input": {
+    "raw_event_text": "The U.S. and Iran have agreed on a deal to bring their nearly four-month war to an end, with both sides declaring the immediate and permanent termination of military operations on all fronts, including in Lebanon, Pakistan Prime Minister Shehbaz Sharif said on Sunday.",
+    "source_urls": [],
+    "tickers": []
+  },
+  "expected": {
+    "category": "Geopolitics",
+    "event_type_any": ["de-escalation", "ceasefire", "peace-framework", "peace framework", "geopolitical de-escalation"],
+    "min_direct_impact_count": 5,
+    "min_indirect_impact_count": 3,
+    "min_exposures_count": 4,
+    "required_direct_channels": [
+      "oil_energy",
+      "safe_haven_rates_or_risk",
+      "travel_airline_tanker_or_defense"
+    ],
+    "why_it_matters_terms_any": ["oil", "shipping", "insurance", "inflation", "rates", "defense", "risk assets", "energy"],
+    "why_it_matters_min_terms": 3,
+    "requires_deescalation_inverse_risk_premium": true,
+    "causal_chains_market_specific": true,
+    "forbidden_generic_exposure_labels": true,
+    "sector_etfs_only_in_exposures": true,
+    "weak_company_links_not_direct": true,
+    "must_not_publish_if_direct_impact_empty": true
+  }
+}

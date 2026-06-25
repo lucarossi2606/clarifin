@@ -1,0 +1,25 @@
+{
+  "name": "mega_cap_earnings",
+  "description": "Mega-cap Nvidia earnings fixture for broad AI, semiconductor, QQQ, hyperscaler capex, margins, and guidance read-through.",
+  "input": {
+    "raw_event_text": "Nvidia reports earnings tomorrow with investors focused on AI data-center demand, margins, guidance and hyperscaler capex.",
+    "source_urls": [],
+    "tickers": ["NVDA"]
+  },
+  "expected": {
+    "category_any": ["Earnings", "Company"],
+    "event_type_any": ["earnings", "upcoming"],
+    "top_event_eligible": true,
+    "min_direct_impact_count": 2,
+    "min_indirect_impact_count": 2,
+    "min_exposures_count": 3,
+    "required_direct_channels": [
+      "semiconductors_ai",
+      "broad_equity"
+    ],
+    "indirect_or_exposure_assets": ["ASML", "TSM", "TSMC"],
+    "exposure_terms_any": ["semiconductor", "ai", "data-center", "hyperscaler", "capex", "margins", "guidance"],
+    "forbidden_generic_exposure_labels": true,
+    "no_generic_earnings_text": true
+  }
+}

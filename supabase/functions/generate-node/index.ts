@@ -875,7 +875,7 @@ function applyTaxonomyGuardrails(plan: Record<string, unknown>, rawEventText: st
   const hasPossibilityLanguage = /\b(possibility|possible|discussed|discussion|considering|exploring|speculation|rumor|rumour)\b/.test(raw);
   const hasCombinationLanguage = /\b(combin\w*|merger|merge|acquisition|takeover|deal)\b/.test(raw);
   const hasDenialLanguage = /\b(denied|denies|denial|officials denied|mixed reports)\b/.test(raw);
-  const hasDeEscalationLanguage = /\b(de-escalation|deescalation|ceasefire|agreement|deal to reduce tensions|diplomatic talks|negotiation)\b/.test(raw);
+  const hasDeEscalationLanguage = /\b(de-escalation|deescalation|ceasefire|peace deal|peace agreement|end of hostilities|termination of military operations|military operations ended|end military operations|war to an end|war ends|conflict pause|truce|agreement|deal to reduce tensions|diplomatic talks|negotiation)\b/.test(raw);
   const hasEscalationLanguage = /\b(escalation|attack|strike|invasion|conflict risk|sanctions|shipping disruption|blockade)\b/.test(raw);
 
   if (hasCombinationLanguage && hasPossibilityLanguage) {
@@ -895,6 +895,170 @@ function applyTaxonomyGuardrails(plan: Record<string, unknown>, rawEventText: st
   }
 
   plan.event_classification = classification;
+}
+
+function isMiddleEastDeescalationEvent(rawEventText: string, plan: Record<string, unknown>) {
+  const text = [
+    rawEventText,
+    JSON.stringify(plan.event_classification || {}),
+    JSON.stringify(plan.entities || {}),
+    getTransmissionText(plan),
+  ].join(" ").toLowerCase().replace(/de[-\s]?escalation/g, "deescalation");
+  const deescalationTerms = [
+    "deescalation",
+    "ceasefire",
+    "peace deal",
+    "peace agreement",
+    "end of hostilities",
+    "termination of military operations",
+    "military operations ended",
+    "end military operations",
+    "war to an end",
+    "war ends",
+    "conflict pause",
+    "truce",
+    "permanent termination",
+    "deal to bring",
+    "diplomatic agreement",
+  ];
+  const regionalTerms = [
+    "iran",
+    "u.s.-iran",
+    "us-iran",
+    "united states and iran",
+    "middle east",
+    "lebanon",
+    "gulf",
+    "hormuz",
+    "strait of hormuz",
+    "regional military operations",
+    "proxy conflict",
+  ];
+  return textIncludesAny(text, deescalationTerms) && textIncludesAny(text, regionalTerms);
+}
+
+function getDeescalationMarketContextText(rawEventText: string, plan: Record<string, unknown>) {
+  if (!isMiddleEastDeescalationEvent(rawEventText, plan)) return "";
+  return [
+    "U.S.-Iran Middle East geopolitical de-escalation",
+    "oil geopolitical risk premium unwind",
+    "Strait of Hormuz Gulf shipping route safety",
+    "war-risk insurance normalization",
+    "tanker-rate premium unwind",
+    "jet fuel airline cost relief",
+    "LNG and European energy-import relief",
+    "inflation expectations and central bank rate-cut expectations relief",
+    "safe-haven gold demand unwind",
+    "defense-premium unwind",
+    "risk-on equities and broad market risk appetite",
+    "Europe and emerging-market oil-importer relief",
+    "travel tourism luxury sentiment improvement",
+    "cyber-escalation probability reduction",
+  ].join(" ");
+}
+
+function addUniqueArrayItems(target: Record<string, unknown>, field: string, values: string[], maxItems = 24) {
+  const existing = Array.isArray(target[field]) ? target[field] as string[] : [];
+  target[field] = uniqueStrings([...existing, ...values]).slice(0, maxItems);
+}
+
+function addResearchPlanPotentialAsset(plan: Record<string, unknown>, item: Record<string, unknown>) {
+  const list = Array.isArray(plan.potentially_affected_assets_to_research)
+    ? plan.potentially_affected_assets_to_research as Record<string, unknown>[]
+    : [];
+  const key = String(item.asset_or_ticker || "").trim().toUpperCase();
+  if (!key || list.some((existing) => String(existing.asset_or_ticker || "").trim().toUpperCase() === key)) {
+    plan.potentially_affected_assets_to_research = list;
+    return;
+  }
+  plan.potentially_affected_assets_to_research = [...list, item].slice(0, 10);
+}
+
+function enrichResearchPlanForDeescalation(plan: Record<string, unknown>, rawEventText: string) {
+  if (!isMiddleEastDeescalationEvent(rawEventText, plan)) return;
+  const classification = plan.event_classification as Record<string, unknown> | undefined;
+  if (classification) {
+    classification.category = "Geopolitics";
+    classification.event_type = "Geopolitical De-escalation";
+    classification.time_sensitivity = classification.time_sensitivity || "immediate";
+    plan.event_classification = classification;
+  }
+
+  const entities = plan.entities as Record<string, unknown> | undefined;
+  if (entities) {
+    addUniqueArrayItems(entities, "geographies", ["Iran", "U.S.", "Middle East", "Lebanon", "Gulf", "Strait of Hormuz"], 18);
+    plan.entities = entities;
+  }
+
+  addTransmissionChannel(plan, {
+    channel: "commodities",
+    mechanism: "A credible U.S.-Iran de-escalation can unwind the crude oil geopolitical risk premium by lowering perceived Strait of Hormuz, Gulf shipping and energy-supply disruption risk.",
+    directly_affected_entities: ["Brent Crude", "WTI Crude", "Gold"],
+    indirectly_affected_entities_to_research: ["upstream energy producers", "airlines", "energy importers", "inflation hedges"],
+    possible_public_assets_to_check: ["XLE", "USO"],
+    time_horizon: "immediate",
+    confidence: 76,
+    missing_data: ["Confirm whether Gulf shipping, insurance markets and energy flows normalize after the agreement."],
+  });
+  addTransmissionChannel(plan, {
+    channel: "supply_chain",
+    mechanism: "If shippers and insurers treat Gulf and Hormuz transit as safer, war-risk premiums, rerouting pressure and tanker-rate premia can normalize.",
+    directly_affected_entities: ["tanker operators", "marine insurance", "energy import logistics"],
+    indirectly_affected_entities_to_research: ["European industrial users", "airlines", "chemical producers"],
+    possible_public_assets_to_check: [],
+    time_horizon: "near_term",
+    confidence: 70,
+    missing_data: ["Verify tanker rates, insurance premia and rerouting behavior after the ceasefire."],
+  });
+  addTransmissionChannel(plan, {
+    channel: "rates",
+    mechanism: "Lower energy and transport-risk premia can reduce headline inflation pressure and support duration, rate-sensitive equities and growth assets.",
+    directly_affected_entities: ["long-duration Treasuries", "rate-sensitive equities"],
+    indirectly_affected_entities_to_research: ["real estate", "growth equities", "central-bank expectations"],
+    possible_public_assets_to_check: ["XLRE"],
+    time_horizon: "near_term",
+    confidence: 68,
+    missing_data: ["Check market-implied inflation expectations, yields and central-bank pricing."],
+  });
+  addTransmissionChannel(plan, {
+    channel: "sector_readthrough",
+    mechanism: "Regional de-escalation can compress short-term defense-premium narratives while improving airline, travel, European cyclicals and importer sentiment.",
+    directly_affected_entities: ["defense contractors", "airlines", "European equities", "travel assets"],
+    indirectly_affected_entities_to_research: ["luxury goods", "payments networks", "cybersecurity vendors"],
+    possible_public_assets_to_check: ["XLI", "XLY"],
+    time_horizon: "near_term",
+    confidence: 70,
+    missing_data: ["Separate short-term risk-premium unwind from long-term defense spending and company-specific demand."],
+  });
+  addTransmissionChannel(plan, {
+    channel: "FX",
+    mechanism: "Safe-haven demand can unwind when escalation risk falls, but the dollar reaction remains mixed because lower oil prices, rates and risk appetite can pull in different directions.",
+    directly_affected_entities: ["US Dollar Index"],
+    indirectly_affected_entities_to_research: ["gold", "emerging-market assets", "Europe oil importers"],
+    possible_public_assets_to_check: [],
+    time_horizon: "immediate",
+    confidence: 58,
+    missing_data: ["Verify whether the dollar trades as a safe haven or rate differential proxy after the announcement."],
+  });
+
+  [
+    ["BRENT CRUDE", "commodity", "Peace-deal de-escalation can reduce Gulf/Hormuz supply-risk premia in crude.", "inference"],
+    ["GLD", "commodity", "Safe-haven gold demand can fade when regional escalation probability falls.", "inference"],
+    ["TLT", "bond", "Lower energy inflation pressure can support duration, although growth and risk-on effects may offset.", "inference"],
+    ["SPY", "index", "Broad equities can benefit if geopolitical tail risk and energy inflation pressure decline.", "inference"],
+    ["DAL", "public_equity", "Airlines can benefit from lower jet-fuel and route-risk premia.", "inference"],
+    ["FRO", "public_equity", "Tanker operators can lose war-risk and rerouting premia when Gulf transit normalizes.", "inference"],
+    ["LMT", "public_equity", "Defense names can lose some short-term emergency premium while long-term budgets remain supported.", "inference"],
+    ["DAX", "index", "European equities can benefit from lower imported-energy and industrial input risk.", "inference"],
+  ].forEach(([asset, assetType, reason, evidence]) => {
+    addResearchPlanPotentialAsset(plan, {
+      asset_or_ticker: asset,
+      asset_type: assetType,
+      why_it_might_matter: reason,
+      evidence_from_input: evidence,
+      needs_verification: true,
+    });
+  });
 }
 function summarizeResearchPlan(plan: Record<string, unknown>) {
   const classification = plan.event_classification as Record<string, unknown> | undefined;
@@ -988,6 +1152,12 @@ const canonicalAssetAliases: Record<string, { ticker: string; name: string; asse
   CRWD: { ticker: "CRWD", name: "CrowdStrike", asset_class: "stock" },
   "PALO ALTO NETWORKS": { ticker: "PANW", name: "Palo Alto Networks", asset_class: "stock" },
   PANW: { ticker: "PANW", name: "Palo Alto Networks", asset_class: "stock" },
+  FRONTLINE: { ticker: "FRO", name: "Frontline", asset_class: "stock" },
+  FRO: { ticker: "FRO", name: "Frontline", asset_class: "stock" },
+  "SCORPIO TANKERS": { ticker: "STNG", name: "Scorpio Tankers", asset_class: "stock" },
+  STNG: { ticker: "STNG", name: "Scorpio Tankers", asset_class: "stock" },
+  BASF: { ticker: "BAS.DE", name: "BASF", asset_class: "stock" },
+  "BAS DE": { ticker: "BAS.DE", name: "BASF", asset_class: "stock" },
   NVIDIA: { ticker: "NVDA", name: "Nvidia", asset_class: "stock" },
   NVDA: { ticker: "NVDA", name: "Nvidia", asset_class: "stock" },
   ASML: { ticker: "ASML", name: "ASML", asset_class: "stock" },
@@ -4241,6 +4411,7 @@ const broadConcreteAffectedAssetSet = new Set([
   "LMT", "NOC", "RTX", "GD",
   "CCL", "RCL", "NCLH",
   "DAL", "UAL", "AAL", "LUV",
+  "FRO", "STNG",
   "EEM", "EWZ", "EWW",
 ]);
 
@@ -4252,15 +4423,18 @@ const bondRateAssets = new Set(["TLT", "BND", "IEF", "SHY", "US10Y", "BUND YIELD
 const defenseAssets = new Set(["LMT", "NOC", "RTX", "GD"]);
 const cruiseAssets = new Set(["CCL", "RCL", "NCLH"]);
 const airlineAssets = new Set(["DAL", "UAL", "AAL", "LUV"]);
+const tankerAssets = new Set(["FRO", "STNG"]);
 const cyberWatchlistAssets = new Set(["CRWD", "PANW", "ZS", "FTNT", "OKTA", "S"]);
 const semiconductorWatchlistAssets = new Set(["NVDA", "ASML", "TSM", "TSMC", "AMD", "AVGO", "INTC"]);
 const luxuryWatchlistAssets = new Set(["RACE", "RMS.PA", "MC.PA", "LVMUY", "P911.DE", "POAHY", "TSLA"]);
 const paymentsWatchlistAssets = new Set(["V", "MA", "AXP", "PYPL"]);
+const europeanIndustrialWatchlistAssets = new Set(["BAS.DE"]);
 const indirectWatchlistAssets = new Set([
   ...cyberWatchlistAssets,
   ...semiconductorWatchlistAssets,
   ...luxuryWatchlistAssets,
   ...paymentsWatchlistAssets,
+  ...europeanIndustrialWatchlistAssets,
   "AAPL",
 ]);
 
@@ -4646,6 +4820,109 @@ function addInferredAsset(
   assets.push(inferredAsset);
 }
 
+function deescalationDirectAssetSeeds(rawEventText: string, plan: Record<string, unknown>) {
+  if (!isMiddleEastDeescalationEvent(rawEventText, plan)) return [];
+  return [
+    {
+      ticker: "BRENT CRUDE",
+      name: "Brent Crude",
+      asset_class: "commodity",
+      direction: "negative",
+      strength: "medium",
+      reason: "Lower probability of Hormuz and Gulf shipping disruption can unwind the crude geopolitical supply-risk premium and reduce near-term oil-price support.",
+      uncertainty: "Confirm whether shipping routes, insurance markets and energy flows normalize after the agreement.",
+    },
+    {
+      ticker: "GLD",
+      name: "Gold / GLD",
+      asset_class: "commodity",
+      direction: "negative",
+      strength: "medium",
+      reason: "A credible ceasefire can reduce safe-haven demand tied to Middle East escalation, lowering the gold risk-premium bid.",
+      uncertainty: "Gold can still rise if the agreement breaks down or broader risk aversion persists.",
+    },
+    {
+      ticker: "TLT",
+      name: "Long-duration US Treasuries",
+      asset_class: "bond",
+      direction: "mixed",
+      strength: "medium",
+      reason: "Lower energy and transport-risk premia can ease inflation expectations and support duration, while stronger risk appetite can offset part of the bond bid.",
+      uncertainty: "The bond reaction depends on breakevens, real yields and central-bank pricing after the announcement.",
+    },
+    {
+      ticker: "SPY",
+      name: "S&P 500 / SPY",
+      asset_class: "index",
+      direction: "positive",
+      strength: "medium",
+      reason: "Reduced geopolitical tail risk can improve broad equity risk appetite if shipping routes, proxy fronts and energy-price pressure normalize.",
+      uncertainty: "Equity upside depends on confirmation, oil-price follow-through and whether the ceasefire holds.",
+    },
+    {
+      ticker: "DAL",
+      name: "Delta Air Lines",
+      asset_class: "stock",
+      direction: "positive",
+      strength: "medium",
+      reason: "Lower jet-fuel and route-risk premia can relieve airline margin pressure when Middle East escalation risk falls.",
+      uncertainty: "Company impact depends on fuel hedging, route exposure, demand and broader travel sentiment.",
+    },
+    {
+      ticker: "FRO",
+      name: "Frontline",
+      asset_class: "stock",
+      direction: "negative",
+      strength: "medium",
+      reason: "Lower Gulf war-risk insurance and rerouting probability can reduce tanker-rate premia that benefited operators during escalation.",
+      uncertainty: "Tanker impact depends on spot-rate response, vessel availability and whether insurers actually reduce war-risk premia.",
+    },
+    {
+      ticker: "LMT",
+      name: "Lockheed Martin",
+      asset_class: "stock",
+      direction: "mixed",
+      strength: "medium",
+      reason: "De-escalation can compress the short-term emergency defense-premium narrative even though structural defense budgets remain supported.",
+      uncertainty: "This is a short-term premium channel, not a structural negative thesis on long-term defense spending.",
+    },
+    {
+      ticker: "DAX",
+      name: "DAX",
+      asset_class: "index",
+      direction: "positive",
+      strength: "medium",
+      reason: "Europe is an energy importer, so lower oil, LNG and industrial input risk can improve risk appetite for European cyclicals.",
+      uncertainty: "Use a supported Europe index or ETF proxy only if it is available in the asset map and validated by market response.",
+    },
+  ].map((asset) => canonicalizeAssetRecord(asset));
+}
+
+function seedDeescalationAffectedAssets(generatedNode: Record<string, unknown>, rawEventText: string, plan: Record<string, unknown>) {
+  const seeds = deescalationDirectAssetSeeds(rawEventText, plan);
+  if (!seeds.length) return [];
+  const assets = canonicalizeAssetList(Array.isArray(generatedNode.affected_assets) ? generatedNode.affected_assets as Record<string, unknown>[] : []);
+  const diagnostics: Record<string, unknown>[] = [];
+
+  for (const seed of seeds) {
+    const ticker = canonicalTicker(seed.ticker || seed.ticker_or_asset);
+    if (!ticker || hasEquivalentAsset(assets, ticker)) continue;
+    assets.push(seed);
+    diagnostics.push({
+      original_proposed_asset: ticker,
+      canonical_asset: ticker,
+      ticker,
+      name: seed.name || ticker,
+      channel: assetGateLabel(assetChannelKey(seed)),
+      quality_gate_reason: "Seeded by U.S.-Iran / Middle East de-escalation fallback because the market channel is implied by war-risk premium unwind, not necessarily named in the headline.",
+      final_decision: "seeded",
+    });
+  }
+
+  generatedNode.affected_assets = canonicalizeAssetList(assets);
+  return diagnostics;
+}
+
 function inferConcreteMacroAffectedAssets(rawEventText: string, plan: Record<string, unknown>) {
   const text = getResearchText(rawEventText, plan);
   const sign = detectEventSign(rawEventText, plan);
@@ -4777,6 +5054,89 @@ function getSectorEtfExposuresFromAffectedAssets(validatedDraft: Record<string, 
     .filter(Boolean) as Record<string, unknown>[];
 }
 
+function getDeescalationExposureSeeds(rawEventText: string, researchPlan: Record<string, unknown>) {
+  if (!isMiddleEastDeescalationEvent(rawEventText, researchPlan)) return [];
+  return [
+    {
+      theme: "Oil Risk Premium Unwind",
+      sector_or_theme_type: "theme",
+      why_relevant: "Peace-deal de-escalation reduces the perceived Gulf, Hormuz and Middle East supply-risk premium embedded in crude.",
+      sector_proxy_tickers: ["XLE"],
+      possible_tickers_to_check: ["XLE"],
+      direction_hint: "negative",
+      data_needed: "Confirm shipping-route safety, insurance normalization, Brent/WTI reaction and whether physical supply flows changed.",
+      time_horizon: "immediate",
+      confidence: 76,
+    },
+    {
+      theme: "Airlines & Travel Relief",
+      sector_or_theme_type: "industry_group",
+      why_relevant: "Lower jet-fuel, route-risk and geopolitical travel uncertainty can support airlines, cruises and travel demand.",
+      sector_proxy_tickers: ["XLY"],
+      possible_tickers_to_check: ["XLY"],
+      direction_hint: "positive",
+      data_needed: "Check jet-fuel prices, route restrictions, bookings and travel-risk guidance.",
+      time_horizon: "near_term",
+      confidence: 72,
+    },
+    {
+      theme: "Tankers & Marine Insurance",
+      sector_or_theme_type: "industry_group",
+      why_relevant: "Lower war-risk insurance, rerouting and vessel-scarcity premia can pressure tanker-rate beneficiaries.",
+      sector_proxy_tickers: [],
+      possible_tickers_to_check: [],
+      direction_hint: "negative",
+      data_needed: "Check war-risk insurance quotes, tanker spot rates and rerouting behavior around Gulf transit.",
+      time_horizon: "near_term",
+      confidence: 70,
+    },
+    {
+      theme: "Defense Premium Unwind",
+      sector_or_theme_type: "industry_group",
+      why_relevant: "De-escalation can reduce the short-term emergency procurement and naval-security premium for selected defense names.",
+      sector_proxy_tickers: ["XLI"],
+      possible_tickers_to_check: ["XLI"],
+      direction_hint: "mixed",
+      data_needed: "Separate short-term geopolitical premium from long-term defense budget support.",
+      time_horizon: "near_term",
+      confidence: 68,
+    },
+    {
+      theme: "Europe Energy Import Relief",
+      sector_or_theme_type: "economic_area",
+      why_relevant: "Europe is exposed to imported energy and industrial input costs, so lower Gulf risk can support European cyclicals.",
+      sector_proxy_tickers: [],
+      possible_tickers_to_check: [],
+      direction_hint: "positive",
+      data_needed: "Verify Brent, LNG, EUR rates and European equity/index response.",
+      time_horizon: "near_term",
+      confidence: 66,
+    },
+    {
+      theme: "Rate-Sensitive Assets",
+      sector_or_theme_type: "theme",
+      why_relevant: "Lower energy and transport-risk premia can ease headline inflation pressure and support duration and rate-sensitive equities.",
+      sector_proxy_tickers: ["XLRE"],
+      possible_tickers_to_check: ["XLRE"],
+      direction_hint: "positive",
+      data_needed: "Check inflation breakevens, Treasury yields, central-bank pricing and real-rate moves.",
+      time_horizon: "near_term",
+      confidence: 64,
+    },
+    {
+      theme: "Luxury / Payments / Travel Sentiment",
+      sector_or_theme_type: "theme",
+      why_relevant: "Better cross-border travel, Middle East sentiment and risk appetite can help luxury, payments and travel-retail monitors.",
+      sector_proxy_tickers: ["XLY"],
+      possible_tickers_to_check: ["XLY"],
+      direction_hint: "positive",
+      data_needed: "Verify cross-border travel, regional luxury demand, payment volumes and company-specific exposure.",
+      time_horizon: "near_term",
+      confidence: 58,
+    },
+  ];
+}
+
 function getAssetsToResearch(validatedDraft: Record<string, unknown>, researchPlan: Record<string, unknown>, rawEventText = "") {
   const generated = Array.isArray(validatedDraft.assets_to_research)
     ? validatedDraft.assets_to_research as Record<string, unknown>[]
@@ -4786,6 +5146,7 @@ function getAssetsToResearch(validatedDraft: Record<string, unknown>, researchPl
     : [];
   const sectorEtfExposures = getSectorEtfExposuresFromAffectedAssets(validatedDraft);
   const eventSign = detectEventSign(rawEventText, researchPlan);
+  const deescalationExposureSeeds = getDeescalationExposureSeeds(rawEventText, researchPlan);
   const channelAssets = getTransmissionChannels(researchPlan).map((channel) => {
     const proxyTickers = Array.isArray(channel.possible_public_assets_to_check)
       ? cleanSectorProxyTickers(channel.possible_public_assets_to_check)
@@ -4806,6 +5167,7 @@ function getAssetsToResearch(validatedDraft: Record<string, unknown>, researchPl
   const fallbackNeeded = generated.length < 3;
   const normalized = [
     ...generated,
+    ...deescalationExposureSeeds,
     ...sectorEtfExposures,
     ...(fallbackNeeded ? planAssets.map((asset) => ({
       theme: String(asset.asset_or_ticker || "Exposure to research"),
@@ -4972,6 +5334,8 @@ function hasConcreteOilChannel(text: string) {
     "petroleum",
     "lng",
     "gas supply",
+    "oil risk premium",
+    "supply-risk premium",
   ]);
   const hasConcreteChannel = textIncludesAny(text, [
     "oil supply",
@@ -4987,10 +5351,15 @@ function hasConcreteOilChannel(text: string) {
     "embargo",
     "blockade",
     "tanker",
+    "tanker rate",
+    "tanker rates",
     "shipping route",
+    "shipping safety",
     "trade route",
     "chokepoint",
     "strait",
+    "hormuz",
+    "gulf shipping",
     "canal",
     "pipeline",
     "refinery",
@@ -5001,6 +5370,13 @@ function hasConcreteOilChannel(text: string) {
     "energy security",
     "energy infrastructure",
     "commodity channel",
+    "risk premium",
+    "supply-risk premium",
+    "war-risk insurance",
+    "war risk insurance",
+    "seaborne supply",
+    "shipping disruption",
+    "shipping-route disruption",
   ]);
   return hasOilTerm && hasConcreteChannel;
 }
@@ -5128,7 +5504,14 @@ function strictChannelGate(args: {
   const asset = canonicalizeAssetRecord(args.asset);
   const ticker = String(asset.ticker || asset.ticker_or_asset || "").trim().toUpperCase();
   const name = String(asset.name || "").trim().toUpperCase();
-  const rawAndFactText = `${args.rawEventText} ${getFactPackHeadlineText(args.researchFactPack)}`.toLowerCase();
+  const rawAndFactText = [
+    args.rawEventText,
+    getFactPackHeadlineText(args.researchFactPack),
+    getTransmissionText(args.researchPlan),
+    getDeescalationMarketContextText(args.rawEventText, args.researchPlan),
+    asset.reason,
+    asset.uncertainty,
+  ].join(" ").toLowerCase();
   const acceptedCanonicalEvidence = args.acceptedTickerEvidence.map((item) => canonicalTicker(item));
   const directEvidence = acceptedCanonicalEvidence.includes(ticker)
     || textIncludesAny(rawAndFactText, equivalentAssetKeys(ticker).map((key) => key.toLowerCase()))
@@ -5164,6 +5547,24 @@ function strictChannelGate(args: {
     "operating costs",
     "fuel cost",
     "fuel costs",
+    "jet fuel",
+    "travel sentiment",
+  ]);
+  const hasTankerChannel = textIncludesAny(rawAndFactText, [
+    "tanker",
+    "tankers",
+    "vessel",
+    "vessels",
+    "marine insurance",
+    "war-risk insurance",
+    "war risk insurance",
+    "rerouting",
+    "tanker-rate",
+    "tanker rate",
+    "tanker rates",
+    "shipping safety",
+    "gulf transit",
+    "hormuz transit",
   ]);
   const hasSafeHavenChannel = textIncludesAny(rawAndFactText, [
     "safe haven",
@@ -5235,6 +5636,11 @@ function strictChannelGate(args: {
     return { allowed: false, reason: "Airline stocks require a travel, route disruption, operating cost, or fuel-cost channel." };
   }
 
+  if (tankerAssets.has(ticker)) {
+    if (directEvidence || hasTankerChannel) return { allowed: true, reason: "" };
+    return { allowed: false, reason: "Tanker stocks require a tanker-rate, rerouting, marine-insurance, war-risk, Gulf transit, or shipping-safety channel." };
+  }
+
   if (safeHavenAssets.has(ticker)) {
     if (directEvidence || hasSafeHavenChannel) return { allowed: true, reason: "" };
     return { allowed: false, reason: "Safe-haven assets require a risk-off, geopolitical fear, or safe-haven channel." };
@@ -5274,6 +5680,7 @@ function assetChannelKey(asset: Record<string, unknown>) {
   if (defenseAssets.has(ticker)) return "defense_aerospace";
   if (cruiseAssets.has(ticker)) return "cruise_caribbean_travel";
   if (airlineAssets.has(ticker)) return "airlines_transport";
+  if (tankerAssets.has(ticker)) return "tankers_shipping";
   if (cyberWatchlistAssets.has(ticker)) return "cybersecurity_watchlist";
   if (semiconductorWatchlistAssets.has(ticker)) return "semiconductor_supply_chain";
   if (luxuryWatchlistAssets.has(ticker)) return "luxury_consumer_watchlist";
@@ -5291,6 +5698,7 @@ function assetGateLabel(channelKey: string) {
     defense_aerospace: "Defense / military security channel",
     cruise_caribbean_travel: "Travel / tourism / cruise channel",
     airlines_transport: "Airlines / transport channel",
+    tankers_shipping: "Tankers / shipping insurance channel",
     cybersecurity_watchlist: "Cybersecurity watchlist channel",
     semiconductor_supply_chain: "Semiconductor supply-chain watchlist channel",
     luxury_consumer_watchlist: "Luxury / consumer watchlist channel",
@@ -5404,6 +5812,70 @@ function getWatchlistOnlyAssetReason(args: {
   return `${ticker} is an indirect large-cap watchlist name and needs a concrete company-specific channel before affected_assets insertion.`;
 }
 
+function deescalationSecondOrderWatchlist(rawEventText: string, plan: Record<string, unknown>, finalAffected: Set<string>) {
+  if (!isMiddleEastDeescalationEvent(rawEventText, plan)) return [];
+  const items = [
+    {
+      symbol: "MC.PA",
+      company: "LVMH",
+      source_channel: "Luxury / travel retail",
+      reason: "Luxury can benefit indirectly if Middle East sentiment, cross-border travel and risk appetite improve after de-escalation.",
+      impact_direction: "positive",
+      strength: "medium",
+      evidence_required_to_upgrade: "Regional sales, travel-retail, store-traffic or management commentary showing that demand improved after the de-escalation.",
+    },
+    {
+      symbol: "RMS.PA",
+      company: "Hermes",
+      source_channel: "Luxury / travel retail",
+      reason: "Hermes is a watchlist name through high-end travel retail and regional wealth sentiment rather than a direct conflict asset.",
+      impact_direction: "positive",
+      strength: "weak",
+      evidence_required_to_upgrade: "Company-specific regional demand or travel-retail evidence.",
+    },
+    {
+      symbol: "RACE",
+      company: "Ferrari",
+      source_channel: "Luxury autos",
+      reason: "Ferrari can be monitored for Middle East wealth sentiment and risk-on luxury demand after regional risk falls.",
+      impact_direction: "positive",
+      strength: "weak",
+      evidence_required_to_upgrade: "Order-book, regional demand, margin or delivery data linking the event to Ferrari demand.",
+    },
+    {
+      symbol: "V",
+      company: "Visa",
+      source_channel: "Payments / cross-border travel",
+      reason: "Visa can benefit indirectly if cross-border travel and card volumes improve as travel risk normalizes.",
+      impact_direction: "positive",
+      strength: "medium",
+      evidence_required_to_upgrade: "Confirmed cross-border travel-volume or transaction-volume improvement.",
+    },
+    {
+      symbol: "BAS.DE",
+      company: "BASF",
+      source_channel: "European chemicals / energy inputs",
+      reason: "BASF can be monitored because lower imported energy and feedstock pressure would help European chemicals.",
+      impact_direction: "positive",
+      strength: "medium",
+      evidence_required_to_upgrade: "Energy/feedstock price relief, margin sensitivity, or company-specific commentary.",
+    },
+    {
+      symbol: "CRWD",
+      company: "CrowdStrike",
+      source_channel: "Cybersecurity premium",
+      reason: "Cybersecurity remains watchlist-only; a lower cyber-escalation probability can fade some conflict-risk premium, but verified incidents would reverse the channel.",
+      impact_direction: "mixed",
+      strength: "weak",
+      evidence_required_to_upgrade: "Verified cyber incident activity, security-budget commentary, or company-specific demand evidence.",
+    },
+  ];
+
+  return items
+    .map((item) => ({ ...item, symbol: canonicalTicker(item.symbol), canonical_asset: canonicalTicker(item.symbol), final_decision: "watchlist", app_facing: true }))
+    .filter((item) => item.symbol && !finalAffected.has(item.symbol));
+}
+
 function buildSecondOrderWatchlist(args: {
   rawEventText: string;
   researchPlan: Record<string, unknown>;
@@ -5435,7 +5907,8 @@ function buildSecondOrderWatchlist(args: {
     return 0;
   };
 
-  return Object.values(secondOrderWatchlistCatalog)
+  const deescalationWatchlist = deescalationSecondOrderWatchlist(args.rawEventText, args.researchPlan, finalAffected);
+  const catalogWatchlist = Object.values(secondOrderWatchlistCatalog)
     .map((entry) => {
       const symbol = canonicalTicker(entry.symbol);
       const savedWatchlist = watchlistByCanonical.get(symbol);
@@ -5458,11 +5931,20 @@ function buildSecondOrderWatchlist(args: {
     })
     .filter(Boolean)
     .sort((a: any, b: any) => b.score - a.score || String(a.symbol).localeCompare(String(b.symbol)))
-    .slice(0, 6)
     .map((item: any) => {
       const { score, ...clean } = item;
       return clean;
     });
+
+  const seen = new Set<string>();
+  return [...deescalationWatchlist, ...catalogWatchlist]
+    .filter((item) => {
+      const symbol = canonicalTicker(item.symbol || item.canonical_asset);
+      if (!symbol || seen.has(symbol) || finalAffected.has(symbol)) return false;
+      seen.add(symbol);
+      return true;
+    })
+    .slice(0, 6);
 }
 
 function normalizeIndirectImpactStrength(value: unknown) {
@@ -5539,6 +6021,75 @@ function buildIndirectImpactRows(args: {
   };
 }
 
+function textLooksGenericForPublish(value: unknown) {
+  const text = String(value || "").trim().toLowerCase();
+  if (!text) return true;
+  if (text.split(/\s+/).filter(Boolean).length < 16) return true;
+  return textIncludesAny(text, [
+    "could lead to reduced military tensions",
+    "potentially stabilizing the region",
+    "impacting various sectors",
+    "may influence policy",
+    "market impact",
+  ]);
+}
+
+function evaluateNodePublishingSafety(args: {
+  rawEventText: string;
+  researchPlan: Record<string, unknown>;
+  generatedNode: Record<string, unknown>;
+  affectedAssets: Record<string, unknown>[];
+  researchExposures: Record<string, unknown>[];
+}) {
+  const reasons: string[] = [];
+  const chains = Array.isArray(args.generatedNode.causal_chain) ? args.generatedNode.causal_chain as Record<string, unknown>[] : [];
+  const why = String(args.generatedNode.why_matters || "").trim();
+  const exposureGenericRows = args.researchExposures.filter((exposure) => isGenericExposureTheme(exposure.theme));
+  const deescalation = isMiddleEastDeescalationEvent(args.rawEventText, args.researchPlan);
+
+  if (!args.affectedAssets.length) {
+    reasons.push("Direct Impact is empty after validation.");
+  }
+  if (!args.researchExposures.length) {
+    reasons.push("No app-facing research exposures survived validation.");
+  }
+  if (exposureGenericRows.length) {
+    reasons.push(`Generic exposure labels survived validation: ${exposureGenericRows.map((row) => row.theme).join(", ")}.`);
+  }
+  if (textLooksGenericForPublish(why)) {
+    reasons.push("Why it matters is missing or generic.");
+  }
+  if (!chains.length) {
+    reasons.push("No causal chains survived generation.");
+  }
+
+  if (deescalation) {
+    const deescalationText = [
+      why,
+      JSON.stringify(chains),
+      JSON.stringify(args.affectedAssets),
+      JSON.stringify(args.researchExposures),
+    ].join(" ").toLowerCase();
+    const requiredChannels = [
+      { label: "oil/energy", terms: ["oil", "crude", "brent", "energy"] },
+      { label: "shipping/insurance", terms: ["shipping", "insurance", "war-risk", "tanker", "hormuz", "gulf"] },
+      { label: "inflation/rates", terms: ["inflation", "rates", "yield", "duration", "central bank"] },
+      { label: "defense or risk assets", terms: ["defense", "risk appetite", "risk assets", "equities", "gold"] },
+    ];
+    for (const channel of requiredChannels) {
+      if (!textIncludesAny(deescalationText, channel.terms)) {
+        reasons.push(`De-escalation node is missing the ${channel.label} market channel.`);
+      }
+    }
+  }
+
+  return {
+    passed: reasons.length === 0,
+    reasons,
+    status: reasons.length ? "failed_quality_gate" : "ready_for_review",
+  };
+}
+
 function buildAssetDecisionDiagnostics(args: {
   insertedAssets: Record<string, unknown>[];
   rejectedAssets: Record<string, unknown>[];
@@ -5583,6 +6134,8 @@ function assetPriority(asset: Record<string, unknown>) {
     DXY: 88,
     SPY: 90,
     QQQ: 84,
+    DAX: 78,
+    SX5E: 76,
     TLT: 86,
     BND: 78,
     US10Y: 82,
@@ -5602,6 +6155,8 @@ function assetPriority(asset: Record<string, unknown>) {
     UAL: 84,
     AAL: 80,
     LUV: 76,
+    FRO: 84,
+    STNG: 82,
   };
   const reason = String(asset.reason || "").trim();
   return (priority[ticker] || 50) + Math.min(20, reason.length / 20);
@@ -5639,6 +6194,7 @@ function assetCompressionPriority(asset: Record<string, unknown>) {
     bonds_duration_rates: 86,
     defense_aerospace: 82,
     airlines_transport: 80,
+    tankers_shipping: 78,
     cruise_caribbean_travel: 74,
     cybersecurity_watchlist: 50,
     semiconductor_supply_chain: 48,
@@ -5805,6 +6361,7 @@ function runAffectedAssetQualityGate(args: {
     defense_aerospace: 1,
     cruise_caribbean_travel: 1,
     airlines_transport: 1,
+    tankers_shipping: 1,
     cybersecurity_watchlist: 1,
     semiconductor_supply_chain: 1,
     luxury_consumer_watchlist: 1,
@@ -5922,7 +6479,7 @@ function validateResearchExposureForInsert(args: {
   rawEventText: string;
   researchFactPack?: Record<string, unknown>;
 }) {
-  const rawAndFactText = `${args.rawEventText} ${getFactPackHeadlineText(args.researchFactPack)}`.toLowerCase();
+  const rawAndFactText = `${args.rawEventText} ${getFactPackHeadlineText(args.researchFactPack)} ${exposureMechanismText(args.exposure)}`.toLowerCase();
   if (exposureLooksLikeOilExposure(args.exposure) && !hasConcreteOilChannel(rawAndFactText)) {
     return {
       allowed: false,
@@ -5954,6 +6511,8 @@ function isGenericExposureTheme(value: unknown) {
   const badLabels = new Set([
     "demand",
     "governance",
+    "policy",
+    "regional policy",
     "consumer",
     "consumer spending",
     "sector",
@@ -5964,6 +6523,8 @@ function isGenericExposureTheme(value: unknown) {
     "sentiment",
     "investor sentiment",
     "market dynamics",
+    "regional dynamics",
+    "regional security dynamics",
     "various sectors",
   ]);
   return badLabels.has(theme);
@@ -6057,23 +6618,32 @@ function canonicalExposureTitle(channelKey: string) {
 }
 
 function applyCanonicalExposureChannel(row: Record<string, unknown>, channelKey: string, rowText: string) {
+  const existingTheme = String(row.theme || "").trim();
+  const keepSpecificTheme = Boolean(existingTheme) && textIncludesAny(existingTheme.toLowerCase(), [
+    "risk premium unwind",
+    "relief",
+    "marine insurance",
+    "defense premium unwind",
+    "rate-sensitive assets",
+    "luxury / payments / travel sentiment",
+  ]);
   if (channelKey === "defense_aerospace") {
-    return withExposureSectorProxies({ ...row, theme: "Defense & Aerospace", sector_or_theme_type: "industry_group" }, ["XLI"]);
+    return withExposureSectorProxies({ ...row, theme: keepSpecificTheme ? existingTheme : "Defense & Aerospace", sector_or_theme_type: "industry_group" }, ["XLI"]);
   }
   if (channelKey === "airlines_travel") {
-    return withExposureSectorProxies({ ...row, theme: "Airlines, Travel & Luxury Demand", sector_or_theme_type: "industry_group" }, ["XLY"]);
+    return withExposureSectorProxies({ ...row, theme: keepSpecificTheme ? existingTheme : "Airlines, Travel & Luxury Demand", sector_or_theme_type: "industry_group" }, ["XLY"]);
   }
   if (channelKey === "tankers_shipping") {
-    return withoutExposureSectorProxies({ ...row, theme: "Tankers & Shipping", sector_or_theme_type: "industry_group" }, ["XLI", "XLY", "XLE"]);
+    return withoutExposureSectorProxies({ ...row, theme: keepSpecificTheme ? existingTheme : "Tankers & Shipping", sector_or_theme_type: "industry_group" }, ["XLI", "XLY", "XLE"]);
   }
   if (channelKey === "oil_energy") {
-    return withExposureSectorProxies({ ...row, theme: "Energy & Oil Supply Risk", sector_or_theme_type: "theme" }, ["XLE"]);
+    return withExposureSectorProxies({ ...row, theme: keepSpecificTheme ? existingTheme : "Energy & Oil Supply Risk", sector_or_theme_type: "theme" }, ["XLE"]);
   }
   if (channelKey === "inflation_sensitive") {
-    return { ...row, theme: "Inflation-Sensitive Sectors", sector_or_theme_type: "theme" };
+    return { ...row, theme: keepSpecificTheme ? existingTheme : "Inflation-Sensitive Sectors", sector_or_theme_type: "theme" };
   }
   if (channelKey === "rates_duration") {
-    return { ...row, theme: "Rate-Sensitive Sectors", sector_or_theme_type: "theme" };
+    return { ...row, theme: keepSpecificTheme ? existingTheme : "Rate-Sensitive Sectors", sector_or_theme_type: "theme" };
   }
   if (channelKey === "cybersecurity_watchlist") {
     const broadTechSecurity = textIncludesAny(rowText, ["technology", "software", "xlk", "security budget", "security budgets", "security spending", "cybersecurity spending"]);
@@ -6524,6 +7094,8 @@ async function evaluateMappedCandidateAssets(args: {
           "If the raw text explicitly names multiple separate exposure groups, evaluate each group separately. A cruise candidate does not cover an airline channel; a defense candidate does not cover a safe-haven channel.",
           "For an explicitly named group with a fitting mechanism, include at least one representative candidate unless the candidate is too indirect or the mechanism contradicts the event.",
           "Oil assets such as Brent, WTI, or USO require a concrete energy, oil-supply, sanctions, shipping-route, tanker, fuel-cost, or commodity-supply channel. A generic geopolitical escalation or a vague mention that oil prices could be affected is not enough.",
+          "For ceasefire, peace-deal, end-of-hostilities, termination-of-military-operations, or de-escalation events involving Iran, the Gulf, Hormuz, Lebanon, the U.S., or the Middle East, allow inverse exposure from previously valid escalation channels even if the headline does not explicitly mention oil, shipping, defense, gold, rates, or airlines.",
+          "For those de-escalation events, Brent can be accepted through geopolitical oil risk-premium unwind; tanker names through lower war-risk insurance and rerouting; airlines through jet-fuel and route-risk relief; defense through short-term premium unwind; broad equities through risk-on relief.",
           "For global seaborne oil, Strait of Hormuz, Middle East shipping disruption, tanker-risk, war-risk insurance, LNG/crude transit, or seaborne supply-risk channels, prefer Brent Crude over USO as the main representative. USO is a lower-priority tradable ETF proxy and should not replace Brent when Brent is available.",
           "If the event direction is clear but unconfirmed, choose the likely direction and explain uncertainty in the reason instead of defaulting to mixed.",
           "Use mixed only when the direction is genuinely unclear or opposing forces are central.",
@@ -6567,6 +7139,7 @@ function mergeMappedAffectedAssets(generatedNode: Record<string, unknown>, evalu
     defense_aerospace: 2,
     cruise_caribbean_travel: 2,
     airlines_transport: 2,
+    tankers_shipping: 1,
     safe_havens_gold: 1,
     oil_energy_prices: 1,
     bonds_duration_rates: 1,
@@ -6752,6 +7325,76 @@ function improveCausalChains(node: Record<string, unknown>, researchPlan: Record
   });
 }
 
+function applyDeescalationNodeQuality(node: Record<string, unknown>, rawEventText: string, researchPlan: Record<string, unknown>) {
+  if (!isMiddleEastDeescalationEvent(rawEventText, researchPlan)) return;
+
+  node.category = "Geopolitics";
+  node.event_type = "Geopolitical De-escalation";
+  node.impact = Math.max(normalizeScore(node.impact, 70), 70);
+  node.why_matters = [
+    "A credible U.S.-Iran de-escalation can unwind war-risk premiums across oil, shipping, gold, defense, inflation expectations and risk assets.",
+    "The key market question is not only whether fighting stops, but whether shipping routes, insurance markets, energy flows and proxy fronts normalize.",
+  ].join(" ");
+
+  node.causal_chain = [
+    {
+      title: "Oil risk premium unwind",
+      explanation: "A peace deal reduces the probability of Gulf shipping disruption. Brent geopolitical premium can fall, upstream oil and inflation hedges lose support, while airlines and consumers gain cost relief.",
+      direction: "negative",
+      time_horizon: "immediate",
+      event: "U.S.-Iran de-escalation / termination of military operations",
+      mechanism: "Lower probability of Hormuz and Gulf supply-risk disruption reduces the crude geopolitical risk premium.",
+      sector_impact: "Energy producers, airlines, fuel users and inflation-sensitive sectors.",
+      asset_impact: "Brent/WTI and gold can lose risk-premium support; airlines and broad risk assets can benefit.",
+      watch: "Confirm Brent/WTI reaction, shipping-route safety, OPEC response and whether the ceasefire holds.",
+    },
+    {
+      title: "War-risk insurance normalization",
+      explanation: "If insurers and shippers treat Hormuz and Gulf transit as safer, war-risk premiums and rerouting decline. The tanker-rate premium fades while importers, airlines and industrial users face lower delivered costs.",
+      direction: "mixed",
+      time_horizon: "near_term",
+      event: "Gulf transit risk falls after de-escalation",
+      mechanism: "Lower war-risk insurance and rerouting probability normalize shipping economics.",
+      sector_impact: "Tankers, marine insurance, energy importers, airlines and industrial users.",
+      asset_impact: "Tanker operators can lose premium support; importers and fuel users can gain relief.",
+      watch: "Check tanker spot rates, insurance quotes, vessel behavior and rerouting data.",
+    },
+    {
+      title: "Inflation and rates relief",
+      explanation: "Lower energy and transport risk reduces headline inflation pressure. Central banks have more room to look through prior shocks, supporting duration, rate-sensitive equities and growth assets if the move is credible.",
+      direction: "positive",
+      time_horizon: "near_term",
+      event: "Energy and transport risk premium eases",
+      mechanism: "Lower energy inflation pressure can reduce yields and discount-rate pressure.",
+      sector_impact: "Duration assets, rate-sensitive sectors, growth equities and central-bank expectations.",
+      asset_impact: "TLT can improve or trade mixed depending on risk appetite and real-yield moves.",
+      watch: "Track breakevens, Treasury yields, Fed/ECB pricing and oil-price follow-through.",
+    },
+    {
+      title: "Defense-premium compression",
+      explanation: "Lower immediate regional escalation risk reduces the short-term emergency procurement narrative. Selected defense names may lose some geopolitical premium even if long-term defense spending remains supported.",
+      direction: "mixed",
+      time_horizon: "near_term",
+      event: "Regional military risk de-escalates",
+      mechanism: "Emergency defense-premium narratives can fade when near-term escalation probability declines.",
+      sector_impact: "Defense contractors and aerospace/security suppliers.",
+      asset_impact: "LMT/RTX/NOC channels should be framed as short-term premium compression, not structural bearishness.",
+      watch: "Separate short-term market premium from actual budget, procurement and backlog data.",
+    },
+    {
+      title: "Europe and travel relief",
+      explanation: "Europe is more exposed to imported energy and industrial input costs. De-escalation can support European cyclicals, airlines, chemicals, travel and luxury sentiment if energy and cross-border risk normalize.",
+      direction: "positive",
+      time_horizon: "near_term",
+      event: "Middle East risk premium falls",
+      mechanism: "Lower imported-energy, travel-risk and industrial input pressure improves cyclicals and sentiment.",
+      sector_impact: "European equities, airlines, chemicals, travel, payments and luxury watchlist names.",
+      asset_impact: "DAX/Europe proxies, airlines and selected indirect luxury/payments names can improve, subject to confirmation.",
+      watch: "Check European index reaction, EUR rates, travel data, luxury commentary and energy-input costs.",
+    },
+  ];
+}
+
 function getRejectedAssets(validatedDraft: Record<string, unknown>, acceptedAssets: Record<string, unknown>[]) {
   const accepted = new Set(acceptedAssets.map((asset) => canonicalTicker(asset.ticker || asset.ticker_or_asset)));
   const validations = Array.isArray(validatedDraft.affected_asset_validation)
@@ -6867,6 +7510,7 @@ function applyConservativeGuardrails(args: {
 
   improveInvestorExplanation(node, args.researchPlan);
   improveCausalChains(node, args.researchPlan);
+  applyDeescalationNodeQuality(node, args.rawEventText, args.researchPlan);
   node.region = normalizeGeneratedRegion(node);
   node.timestamp = new Date().toISOString();
 }
@@ -7218,6 +7862,9 @@ Deno.serve(async (req) => {
     const rawEventText = String(body.raw_event_text || "").trim();
     const sourceUrls = cleanStringArray(body.source_urls);
     const tickers = cleanStringArray(body.tickers).map((ticker) => ticker.toUpperCase());
+    const dryRun = body.dry_run === true
+      || body.eval_mode === true
+      || String(body.mode || "").trim().toLowerCase() === "dry_run";
 
     if (!rawEventText) {
       return jsonResponse({ error: "raw_event_text is required." }, 400);
@@ -7238,6 +7885,7 @@ Deno.serve(async (req) => {
       model,
     });
     applyTaxonomyGuardrails(researchPlan, rawEventText);
+    enrichResearchPlanForDeescalation(researchPlan, rawEventText);
     const externalSourcesRouter = buildExternalSourcesRouter({
       researchPlan,
       rawEventText,
@@ -7423,6 +8071,7 @@ Deno.serve(async (req) => {
     generatedNode.affected_assets = canonicalizeAssetList(
       Array.isArray(generatedNode.affected_assets) ? generatedNode.affected_assets as Record<string, unknown>[] : [],
     );
+    const deescalationDirectSeedDiagnostics = seedDeescalationAffectedAssets(generatedNode, rawEventText, researchPlan);
     const debugAiProposedAssetsBeforeValidation = cloneForDebug(
       Array.isArray(generatedNode.affected_assets) ? generatedNode.affected_assets : [],
     );
@@ -7437,26 +8086,28 @@ Deno.serve(async (req) => {
     generatedNode.affected_assets = preGateBrentPreference.assets;
     brentOverUsoDiagnostics.push(...preGateBrentPreference.diagnostics);
 
-    const { data: node, error: nodeError } = await supabase
-      .from("nodes")
-      .insert({
-        title: generatedNode.title,
-        category: generatedNode.category,
-        event_type: generatedNode.event_type,
-        event_status: generatedNode.event_status,
-        short: generatedNode.short,
-        impact: generatedNode.impact,
-        confidence: generatedNode.confidence,
-        timestamp: new Date().toISOString(),
-        region: generatedNode.region,
-        status: "draft",
-      })
-      .select("id")
-      .single();
+    let nodeId = dryRun ? `dry-run-${crypto.randomUUID()}` : "";
+    if (!dryRun) {
+      const { data: node, error: nodeError } = await supabase
+        .from("nodes")
+        .insert({
+          title: generatedNode.title,
+          category: generatedNode.category,
+          event_type: generatedNode.event_type,
+          event_status: generatedNode.event_status,
+          short: generatedNode.short,
+          impact: generatedNode.impact,
+          confidence: generatedNode.confidence,
+          timestamp: new Date().toISOString(),
+          region: generatedNode.region,
+          status: "draft",
+        })
+        .select("id")
+        .single();
 
-    if (nodeError) throw new Error(`Could not insert node draft: ${nodeError.message}`);
-
-    const nodeId = node.id;
+      if (nodeError) throw new Error(`Could not insert node draft: ${nodeError.message}`);
+      nodeId = String(node.id);
+    }
     const acceptedMappedTickers = Array.isArray(mappedCandidateEvaluation.accepted_assets)
       ? (mappedCandidateEvaluation.accepted_assets as Record<string, unknown>[]).map((asset) => canonicalTicker(asset.candidate_asset)).filter(Boolean)
       : [];
@@ -7679,7 +8330,7 @@ Deno.serve(async (req) => {
       acceptedTickerEvidence: directAffectedEvidence,
     });
 
-    if (affectedAssets.length) {
+    if (!dryRun && affectedAssets.length) {
       const { error: assetsError } = await supabase.from("affected_assets").insert(affectedAssets);
       if (assetsError) throw new Error(`Could not insert affected assets: ${assetsError.message}`);
     }
@@ -7692,12 +8343,12 @@ Deno.serve(async (req) => {
       indirectImpact: secondOrderWatchlist,
       finalAffectedAssets: affectedAssets,
     });
-    let indirectImpactsInsertSucceeded = indirectImpactPersistence.rows.length === 0;
+    let indirectImpactsInsertSucceeded = dryRun || indirectImpactPersistence.rows.length === 0;
     let indirectImpactsInsertError = "";
     let indirectImpactsInsertWarning = "";
-    let indirectImpactsInserted: Record<string, unknown>[] = [];
+    let indirectImpactsInserted: Record<string, unknown>[] = dryRun ? indirectImpactPersistence.rows : [];
 
-    if (indirectImpactPersistence.rows.length) {
+    if (!dryRun && indirectImpactPersistence.rows.length) {
       const { error: indirectImpactError } = await supabase
         .from("node_indirect_impacts")
         .insert(indirectImpactPersistence.rows);
@@ -7728,6 +8379,22 @@ Deno.serve(async (req) => {
     const exposuresRepairedTitleExplanationMismatch = researchExposureValidation.repaired_title_explanation_mismatch || [];
     const exposuresRejectedWithReasons = researchExposureValidation.rejected_with_reasons || rejectedResearchExposures;
     generatedNode.assets_to_research = researchExposures;
+    const publishingSafety = evaluateNodePublishingSafety({
+      rawEventText,
+      researchPlan,
+      generatedNode,
+      affectedAssets,
+      researchExposures,
+    });
+    if (!publishingSafety.passed) {
+      const publishWarnings = publishingSafety.reasons.map((reason) => `failed_quality_gate: ${reason}`);
+      researchFactPack.research_warnings = uniqueStrings([
+        ...(Array.isArray(researchFactPack.research_warnings) ? researchFactPack.research_warnings : []),
+        ...publishWarnings,
+      ]);
+      appendMissingData(validatedDraft, publishWarnings);
+      warnings.push(...publishWarnings);
+    }
 
     if (rejectedResearchExposures.length || exposuresRemovedByCompression.length) {
       const exposureWarnings = uniqueStrings([
@@ -7742,48 +8409,60 @@ Deno.serve(async (req) => {
       warnings.push(...exposureWarnings);
     }
 
-    if (researchExposures.length) {
+    if (!dryRun && researchExposures.length) {
       const { error: exposureError } = await supabase.from("node_research_exposures").insert(researchExposures);
       if (exposureError) {
         warnings.push(`node_research_exposures was not saved: ${exposureError.message}`);
       }
     }
 
-    const { error: detailsError } = await supabase.from("node_details").insert({
-      node_id: nodeId,
-      why_matters: generatedNode.why_matters,
-      causal_chain: generatedNode.causal_chain,
-      scenarios: generatedNode.scenarios,
-      counterarguments: generatedNode.counterarguments,
-      sources: generatedNode.sources,
-    });
+    if (!dryRun) {
+      const { error: detailsError } = await supabase.from("node_details").insert({
+        node_id: nodeId,
+        why_matters: generatedNode.why_matters,
+        causal_chain: generatedNode.causal_chain,
+        scenarios: generatedNode.scenarios,
+        counterarguments: generatedNode.counterarguments,
+        sources: generatedNode.sources,
+      });
 
-    if (detailsError) throw new Error(`Could not insert node details: ${detailsError.message}`);
-
-    let researchRunId = "";
-    const { data: researchRun, error: researchRunError } = await supabase.from("research_runs").insert({
-      node_id: String(nodeId),
-      raw_event_text: rawEventText,
-      research_plan: researchPlan,
-      evidence_map: validatedDraft.evidence_map,
-      quality_gate: validatedDraft.quality_gate,
-      missing_data: validatedDraft.missing_data,
-      assets_to_research: assetsToResearch,
-    })
-      .select("id")
-      .single();
-
-    if (researchRunError) {
-      warnings.push(`research_runs was not saved: ${researchRunError.message}`);
-    } else {
-      researchRunId = String(researchRun?.id || "");
+      if (detailsError) throw new Error(`Could not insert node details: ${detailsError.message}`);
     }
 
-    const externalResearchSaveResults = await saveExternalResearchItems(supabase, externalResearchItems, {
-      nodeId: String(nodeId),
-      researchRunId,
-    });
-    const externalResearchSummary = summarizeExternalResearchItems(externalResearchItems, externalResearchSaveResults);
+    let researchRunId = "";
+    if (!dryRun) {
+      const { data: researchRun, error: researchRunError } = await supabase.from("research_runs").insert({
+        node_id: String(nodeId),
+        raw_event_text: rawEventText,
+        research_plan: researchPlan,
+        evidence_map: validatedDraft.evidence_map,
+        quality_gate: validatedDraft.quality_gate,
+        missing_data: validatedDraft.missing_data,
+        assets_to_research: assetsToResearch,
+      })
+        .select("id")
+        .single();
+
+      if (researchRunError) {
+        warnings.push(`research_runs was not saved: ${researchRunError.message}`);
+      } else {
+        researchRunId = String(researchRun?.id || "");
+      }
+    }
+
+    const externalResearchSummary = dryRun
+      ? {
+        ...summarizeExternalResearchItems(externalResearchItems, []),
+        external_research_items_created: 0,
+        external_research_items_not_saved_due_to_dry_run: externalResearchItems.length,
+      }
+      : summarizeExternalResearchItems(
+        externalResearchItems,
+        await saveExternalResearchItems(supabase, externalResearchItems, {
+          nodeId: String(nodeId),
+          researchRunId,
+        }),
+      );
     if (externalResearchSummary.warnings.length) {
       researchFactPack.research_warnings = uniqueStrings([
         ...(Array.isArray(researchFactPack.research_warnings) ? researchFactPack.research_warnings : []),
@@ -7792,23 +8471,25 @@ Deno.serve(async (req) => {
       warnings.push(...externalResearchSummary.warnings);
     }
 
-    const { error: factPackError } = await supabase.from("research_fact_packs").insert({
-      node_id: String(nodeId),
-      raw_event_text: rawEventText,
-      normalized_query: researchFactPack.normalized_query,
-      detected_entities: researchFactPack.detected_entities,
-      detected_regions: researchFactPack.detected_regions,
-      related_news_count: researchFactPack.related_news_count,
-      related_news: researchFactPack.related_news_headlines,
-      source_domains: researchFactPack.source_domains,
-      candidate_assets: researchFactPack.candidate_assets_from_exposure_map,
-      external_data_observations: researchFactPack.external_data_observations,
-      research_warnings: researchFactPack.research_warnings,
-      missing_data: researchFactPack.missing_data,
-    });
+    if (!dryRun) {
+      const { error: factPackError } = await supabase.from("research_fact_packs").insert({
+        node_id: String(nodeId),
+        raw_event_text: rawEventText,
+        normalized_query: researchFactPack.normalized_query,
+        detected_entities: researchFactPack.detected_entities,
+        detected_regions: researchFactPack.detected_regions,
+        related_news_count: researchFactPack.related_news_count,
+        related_news: researchFactPack.related_news_headlines,
+        source_domains: researchFactPack.source_domains,
+        candidate_assets: researchFactPack.candidate_assets_from_exposure_map,
+        external_data_observations: researchFactPack.external_data_observations,
+        research_warnings: researchFactPack.research_warnings,
+        missing_data: researchFactPack.missing_data,
+      });
 
-    if (factPackError) {
-      warnings.push(`research_fact_packs was not saved: ${factPackError.message}`);
+      if (factPackError) {
+        warnings.push(`research_fact_packs was not saved: ${factPackError.message}`);
+      }
     }
 
     const rejectedAssetsWithReasons = [
@@ -7889,6 +8570,7 @@ Deno.serve(async (req) => {
       exposure_naming_diagnostics: exposureNamingDiagnostics,
       brent_over_uso_diagnostics: brentOverUsoDiagnostics,
       asset_decision_diagnostics: assetDecisionDiagnostics,
+      deescalation_direct_seed_diagnostics: deescalationDirectSeedDiagnostics,
       direct_impact: finalGeneratedAffectedAssets,
       indirect_impact: secondOrderWatchlist,
       indirect_impacts_inserted_count: indirectImpactsInserted.length,
@@ -7901,8 +8583,12 @@ Deno.serve(async (req) => {
 
     return jsonResponse({
       ok: true,
+      dry_run: dryRun,
+      db_writes_skipped: dryRun,
       node_id: nodeId,
-      status: "draft",
+      status: dryRun ? publishingSafety.status : "draft",
+      publish_blocked: !publishingSafety.passed,
+      publishing_safety: publishingSafety,
       external_research_items_created: externalResearchSummary.external_research_items_created,
       sources_attempted: externalResearchSummary.sources_attempted,
       sources_successful: externalResearchSummary.sources_successful,
@@ -8038,7 +8724,10 @@ Deno.serve(async (req) => {
       candidate_assets_rejected: candidateAssetsRejected,
       rejected_assets_with_reasons: rejectedAssetsWithReasons,
       asset_decision_diagnostics: assetDecisionDiagnostics,
+      deescalation_direct_seed_diagnostics: deescalationDirectSeedDiagnostics,
       brent_over_uso_diagnostics: brentOverUsoDiagnostics,
+      publishing_safety: publishingSafety,
+      publish_blocked: !publishingSafety.passed,
       proposed_assets_before_compression: conciseAssetCompression.proposed_assets_before_compression,
       final_affected_assets_after_compression: affectedAssets,
       assets_moved_to_watchlist: watchlistCandidates,

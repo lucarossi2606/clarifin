@@ -1023,6 +1023,8 @@ function generatedNodeQuality(response: Record<string, unknown>, candidate: Reco
   const indirectWithinLimit = indirect.length <= 6;
   const hasSupportLayer = exposures.length >= 1 || indirect.length >= 1;
   const factPackExists = Boolean((response.research_fact_pack_summary as Record<string, unknown> | undefined)?.normalized_query || response.external_data_observations_in_fact_pack);
+  const publishingSafety = response.publishing_safety as Record<string, unknown> | undefined;
+  const publishSafetyPassed = !response.publish_blocked && (!publishingSafety || publishingSafety.passed !== false);
   const passed = totalScore >= 70
     && relevance >= 65
     && confidence >= 50
@@ -1035,6 +1037,7 @@ function generatedNodeQuality(response: Record<string, unknown>, candidate: Reco
     && noUnknownAssets
     && chains.length >= 1
     && factPackExists
+    && publishSafetyPassed
     && !hasFatalGenerationWarnings(response);
   const reasons = [
     totalScore >= 70 ? "" : "total_score below 70",
@@ -1046,6 +1049,7 @@ function generatedNodeQuality(response: Record<string, unknown>, candidate: Reco
     noUnknownAssets ? "" : "UNKNOWN asset detected",
     chains.length >= 1 ? "" : "No meaningful causal chain",
     factPackExists ? "" : "Research Fact Pack not confirmed",
+    publishSafetyPassed ? "" : `Generator publishing safety failed: ${Array.isArray(publishingSafety?.reasons) ? (publishingSafety?.reasons as unknown[]).join("; ") : "publish_blocked=true"}`,
     hasFatalGenerationWarnings(response) ? "Fatal/severe generation warning" : "",
   ].filter(Boolean);
   return {
@@ -1098,6 +1102,78 @@ async function autoPublishGeneratedNode(supabase: any, candidate: Record<string,
     return { ...quality, auto_published: false, reason: "Auto-publish skipped because the generated node was not in draft status." };
   }
   return { ...quality, auto_published: true, reason };
+}
+
+function isGenericExposureTheme(value: unknown) {
+  const theme = cleanString(value).toLowerCase().replace(/\s+/g, " ");
+  return new Set([
+    "demand",
+    "governance",
+    "policy",
+    "regional policy",
+    "consumer",
+    "consumer spending",
+    "sector",
+    "theme",
+    "market",
+    "market impact",
+    "markets",
+    "sentiment",
+    "investor sentiment",
+    "market dynamics",
+    "regional dynamics",
+    "regional security dynamics",
+    "various sectors",
+  ]).has(theme);
+}
+
+function textLooksGenericForPublish(value: unknown) {
+  const text = cleanString(value).toLowerCase();
+  if (!text) return true;
+  if (text.split(/\s+/).filter(Boolean).length < 16) return true;
+  return [
+    "could lead to reduced military tensions",
+    "potentially stabilizing the region",
+    "impacting various sectors",
+    "may influence policy",
+    "market impact",
+  ].some((term) => text.includes(term));
+}
+
+async function validateExistingNodePublishQuality(supabase: any, nodeId: string) {
+  const [
+    assetsResult,
+    exposuresResult,
+    detailsResult,
+  ] = await Promise.all([
+    supabase.from("affected_assets").select("*").eq("node_id", nodeId),
+    supabase.from("node_research_exposures").select("*").eq("node_id", nodeId),
+    supabase.from("node_details").select("*").eq("node_id", nodeId),
+  ]);
+  if (assetsResult.error) throw new Error(`affected_assets lookup failed: ${assetsResult.error.message}`);
+  if (exposuresResult.error) throw new Error(`node_research_exposures lookup failed: ${exposuresResult.error.message}`);
+  if (detailsResult.error) throw new Error(`node_details lookup failed: ${detailsResult.error.message}`);
+
+  const affectedAssets = assetsResult.data || [];
+  const exposures = exposuresResult.data || [];
+  const detail = (detailsResult.data || [])[0] || {};
+  const chains = Array.isArray(detail.causal_chain) ? detail.causal_chain : [];
+  const genericExposures = exposures.filter((exposure: Record<string, unknown>) => isGenericExposureTheme(exposure.theme));
+  const reasons = [
+    affectedAssets.length ? "" : "Direct Impact is empty after validation.",
+    exposures.length ? "" : "No app-facing research exposures survived validation.",
+    genericExposures.length ? `Generic exposure labels cannot be published: ${genericExposures.map((row: Record<string, unknown>) => cleanString(row.theme)).join(", ")}.` : "",
+    textLooksGenericForPublish(detail.why_matters) ? "Why it matters is missing or generic." : "",
+    chains.length ? "" : "No causal chains survived generation.",
+  ].filter(Boolean);
+
+  return {
+    passed: reasons.length === 0,
+    reasons,
+    direct_impact_count: affectedAssets.length,
+    exposure_count: exposures.length,
+    causal_chain_count: chains.length,
+  };
 }
 
 async function promoteCandidateToNode(supabase: any, candidate: Record<string, unknown>, serviceRoleKey: string, supabaseUrl: string, allowAutoPublish: boolean) {
@@ -1200,6 +1276,10 @@ async function publishCandidateNode(supabase: any, candidateId: string) {
   if (error) throw new Error(`Candidate lookup failed: ${error.message}`);
   const nodeId = cleanString(candidate.related_node_id);
   if (!nodeId) throw new Error("Candidate does not have a generated node yet.");
+  const quality = await validateExistingNodePublishQuality(supabase, nodeId);
+  if (!quality.passed) {
+    return { ok: false, candidate, node_id: nodeId, publish_blocked: true, reason: `Draft failed publish quality gate: ${quality.reasons.join("; ")}`, quality };
+  }
   const reason = "Manually published from Candidate Queue.";
   const { data: updatedNodes, error: nodeError } = await supabase
     .from("nodes")

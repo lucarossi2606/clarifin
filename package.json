@@ -1,0 +1,8 @@
+{
+  "name": "clarifin",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "eval:generator": "node supabase/functions/generate-node/evals/run-generator-evals.mjs"
+  }
+}

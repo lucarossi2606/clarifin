@@ -1,0 +1,41 @@
+{
+  "name": "us_iran_deescalation_ceasefire_quality_regression",
+  "mode": "dry_run_fixture_only",
+  "raw_event_text": "The U.S. and Iran have agreed on a deal to bring their nearly four-month war to an end, with both sides declaring the immediate and permanent termination of military operations on all fronts, including in Lebanon, Pakistan Prime Minister Shehbaz Sharif said on Sunday.",
+  "expected_minimum_output": {
+    "category": "Geopolitics",
+    "event_type": "Geopolitical De-escalation",
+    "event_status_examples": ["confirmed", "report", "mixed_reports"],
+    "direct_impact_count_min": 5,
+    "direct_impact_required_channels": [
+      "oil_or_energy_asset",
+      "safe_haven_rates_or_risk_asset",
+      "travel_airline_tanker_or_defense_channel"
+    ],
+    "indirect_impact_count_min": 3,
+    "exposures_count_min": 4,
+    "forbidden_exposure_labels": [
+      "Regional Security Dynamics",
+      "Governance",
+      "Policy",
+      "Market Impact",
+      "Sector",
+      "Demand",
+      "Consumer Spending",
+      "Regional Dynamics"
+    ],
+    "why_it_matters_must_mention_any": [
+      "oil",
+      "shipping",
+      "insurance",
+      "inflation",
+      "rates",
+      "defense",
+      "risk assets"
+    ],
+    "publish_safety": {
+      "must_not_publish_if_direct_impact_empty": true,
+      "expected_failed_status_when_empty": "failed_quality_gate"
+    }
+  }
+}
