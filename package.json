@@ -5,11 +5,18 @@
   "scripts": {
     "test:evidence-pack": "node --test supabase/functions/generate-node/evals/evidence-pack-validator.test.mjs",
     "test:evidence-bridge": "node --test supabase/functions/generate-node/evals/evidence-pack-bridge.test.mjs",
+    "test:evidence-comparison": "node --test supabase/functions/generate-node/evals/evidence-vs-generator-comparison.test.mjs",
     "test:research-event": "node --test supabase/functions/generate-node/evals/research-event-cpi.test.mjs supabase/functions/generate-node/evals/research-event-nvda.test.mjs",
+    "test:research-adapters": "node --test supabase/functions/generate-node/evals/research-adapters.test.mjs",
+    "test:cpi-adapter-comparison": "node --test supabase/functions/generate-node/evals/cpi-adapter-comparison.test.mjs",
+    "test:event-intelligence-contract": "node --test supabase/functions/generate-node/evals/event-intelligence-contract.test.mjs",
     "dryrun:evidence-pack": "node supabase/functions/generate-node/evals/run-evidence-pack-dry-run.mjs",
     "dryrun:evidence-bridge": "node supabase/functions/generate-node/evals/run-evidence-pack-bridge.mjs",
+    "compare:evidence-vs-generator": "node supabase/functions/generate-node/evals/run-evidence-vs-generator-comparison.mjs",
+    "compare:research-adapter-cpi": "node supabase/functions/generate-node/evals/run-cpi-adapter-comparison.mjs",
     "dryrun:research-cpi": "node supabase/functions/generate-node/evals/run-research-cpi-dry-run.mjs",
     "dryrun:research-nvda": "node supabase/functions/generate-node/evals/run-research-nvda-dry-run.mjs",
+    "dryrun:research-adapters": "node supabase/functions/generate-node/evals/run-research-adapters-dry-run.mjs",
     "eval:generator": "node supabase/functions/generate-node/evals/run-generator-evals.mjs",
     "dryrun:live": "node supabase/functions/generate-node/evals/run-live-dry-runs.mjs"
   }
