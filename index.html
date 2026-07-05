@@ -78,12 +78,12 @@ button { border: 0; font: inherit; background: none; padding: 0; cursor: pointer
 
 .top-nav {
   position: absolute; top: 16px; left: 16px; right: 16px; height: 56px;
-  border-radius: 99px; display: flex; align-items: center; justify-content: space-between; padding: 0 var(--sp-4) 0 var(--sp-5); z-index: 100;
+  border-radius: 99px; display: flex; align-items: center; gap: var(--sp-3); padding: 0 var(--sp-4) 0 var(--sp-5); z-index: 100;
 }
 
-.brand { font-weight: 700; font-size: 18px; letter-spacing: -0.5px; }
-.next-event { position: absolute; left: 50%; transform: translateX(-50%); color: var(--text-muted); font-size: 13px; font-weight: 700; white-space: nowrap; }
-.avatar { width: 32px; height: 32px; background: var(--text-main); color: #fff; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+.brand { flex: 0 0 auto; font-weight: 700; font-size: 18px; letter-spacing: -0.5px; }
+.next-event { flex: 1 1 auto; min-width: 0; color: var(--text-light); font-size: 13px; font-weight: 700; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.avatar { flex: 0 0 auto; width: 32px; height: 32px; background: var(--text-main); color: #fff; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 14px; }
 
 .greeting-section { margin-bottom: var(--sp-6); padding-top: var(--sp-2); }
 .date-label { font-size: 13px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 var(--sp-1) 0; }

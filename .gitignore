@@ -8,3 +8,4 @@ supabase/.branches/
 supabase/.temp/
 supabase/.env
 supabase/.env.*
+supabase/functions/generate-node/evals/live-events.local.json

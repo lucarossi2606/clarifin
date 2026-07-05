@@ -3,6 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "eval:generator": "node supabase/functions/generate-node/evals/run-generator-evals.mjs"
+    "test:evidence-pack": "node --test supabase/functions/generate-node/evals/evidence-pack-validator.test.mjs",
+    "test:evidence-bridge": "node --test supabase/functions/generate-node/evals/evidence-pack-bridge.test.mjs",
+    "test:research-event": "node --test supabase/functions/generate-node/evals/research-event-cpi.test.mjs supabase/functions/generate-node/evals/research-event-nvda.test.mjs",
+    "dryrun:evidence-pack": "node supabase/functions/generate-node/evals/run-evidence-pack-dry-run.mjs",
+    "dryrun:evidence-bridge": "node supabase/functions/generate-node/evals/run-evidence-pack-bridge.mjs",
+    "dryrun:research-cpi": "node supabase/functions/generate-node/evals/run-research-cpi-dry-run.mjs",
+    "dryrun:research-nvda": "node supabase/functions/generate-node/evals/run-research-nvda-dry-run.mjs",
+    "eval:generator": "node supabase/functions/generate-node/evals/run-generator-evals.mjs",
+    "dryrun:live": "node supabase/functions/generate-node/evals/run-live-dry-runs.mjs"
   }
 }
