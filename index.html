@@ -156,6 +156,26 @@ button { border: 0; font: inherit; background: none; padding: 0; cursor: pointer
 .candidate-fact { display: inline-flex; align-items: center; gap: 4px; border-radius: 10px; background: rgba(0, 0, 0, 0.035); padding: 5px 8px; color: var(--text-muted); font-size: 11px; font-weight: 700; }
 .candidate-fact strong { color: var(--text-main); font-weight: 700; }
 .pipeline-result { margin-top: var(--sp-3); color: var(--text-muted); font-size: 13px; line-height: 1.4; }
+.data-status-card { border-radius: 18px; padding: var(--sp-4); margin-bottom: var(--sp-4); text-align: left; }
+.data-status-card h2 { margin: 0 0 var(--sp-1) 0; font-size: 15px; line-height: 1.25; color: var(--text-main); }
+.data-status-card p { margin: 0; color: var(--text-muted); font-size: 13px; line-height: 1.4; }
+.data-status-card.status-fallback { background: var(--yellow-bg); color: var(--yellow-text); }
+.data-status-card.status-error { background: var(--red-bg); color: var(--red-text); }
+.data-status-card.status-loading { background: var(--gray-bg); color: var(--gray-text); }
+.data-status-card.status-fallback h2,
+.data-status-card.status-fallback p { color: var(--yellow-text); }
+.data-status-card.status-error h2,
+.data-status-card.status-error p { color: var(--red-text); }
+
+.watchlist-controls { display: flex; flex-direction: column; gap: var(--sp-3); margin-top: var(--sp-4); }
+.watchlist-symbols { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.watchlist-symbol { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 99px; background: var(--gray-bg); color: var(--gray-text); font-size: 12px; font-weight: 700; }
+.watchlist-remove { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; background: rgba(0, 0, 0, 0.08); color: var(--text-muted); font-size: 14px; line-height: 1; }
+.watchlist-form { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+.watchlist-input { min-width: 0; flex: 1 1 120px; height: 36px; border: 1px solid rgba(0, 0, 0, 0.08); border-radius: 99px; padding: 0 12px; background: rgba(255, 255, 255, 0.72); color: var(--text-main); font: inherit; font-size: 13px; outline: none; }
+.watchlist-input:focus { border-color: rgba(17, 24, 39, 0.22); box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.06); }
+.watchlist-message { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.4; }
+.watchlist-empty { display: flex; flex-direction: column; gap: var(--sp-2); }
 
 .detail-hero { border-radius: 24px; padding: var(--sp-5); margin-bottom: var(--sp-3); }
 .detail-hero h1 { font-size: 22px; font-weight: 700; line-height: 1.2; margin: 0 0 var(--sp-3) 0; letter-spacing: -0.5px; }
@@ -440,9 +460,10 @@ const fallbackUpcomingEvents = [
     importance: 5
   }
 ];
-let upcomingEvents = fallbackUpcomingEvents.slice();
+let upcomingEvents = [];
 
-const watchlist = ["TSMC", "Apple", "Rheinmetall", "LVMH", "Microsoft", "Vonovia"];
+const DEFAULT_WATCHLIST_SYMBOLS = ["TSMC", "Apple", "Rheinmetall", "LVMH", "Microsoft", "Vonovia"];
+const WATCHLIST_STORAGE_KEY = "clarifinWatchlistSymbols";
 const directionOrder = { positive: 0, negative: 1, mixed: 2, neutral: 2 };
 const reviewModeEnabled = new URLSearchParams(window.location.search).get("mode") === "review";
 let activeView = reviewModeEnabled ? "review" : "home";
@@ -450,6 +471,11 @@ let eventMode = "top";
 let reviewTab = "drafts";
 let selectedNodeId = null;
 let savedNodeIds = JSON.parse(localStorage.getItem("clarifinSavedNodes") || "[]");
+let watchlist = loadWatchlistSymbols();
+let watchlistInputVisible = false;
+let watchlistMessage = "";
+let nodeDataState = { status: "loading", title: "Loading latest nodes", message: "Loading latest nodes..." };
+let upcomingDataState = { status: "loading", title: "Loading upcoming events", message: "Loading upcoming events..." };
 let reviewLoadMessage = "";
 let pipelineResultMessage = "";
 const REVIEW_TOKEN_STORAGE_KEY = "clarifinReviewAdminToken";
@@ -494,6 +520,43 @@ function toArray(value) {
   }
   if (typeof parsed === "object") return Object.values(parsed);
   return [];
+}
+
+function normalizeWatchlistSymbol(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").toUpperCase();
+}
+
+function dedupeSymbols(symbols) {
+  const seen = new Set();
+  return (Array.isArray(symbols) ? symbols : [])
+    .map(normalizeWatchlistSymbol)
+    .filter((symbol) => {
+      if (!symbol || seen.has(symbol)) return false;
+      seen.add(symbol);
+      return true;
+    });
+}
+
+function saveWatchlistSymbols(symbols) {
+  watchlist = dedupeSymbols(symbols);
+  try {
+    localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(watchlist));
+  } catch (error) {
+    console.warn("Clarifin watchlist storage unavailable. Changes will be temporary.", error);
+  }
+}
+
+function loadWatchlistSymbols() {
+  try {
+    const stored = localStorage.getItem(WATCHLIST_STORAGE_KEY);
+    if (stored) return dedupeSymbols(JSON.parse(stored));
+    const defaults = dedupeSymbols(DEFAULT_WATCHLIST_SYMBOLS);
+    localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(defaults));
+    return defaults;
+  } catch (error) {
+    console.warn("Clarifin watchlist storage unavailable. Using default symbols.", error);
+    return dedupeSymbols(DEFAULT_WATCHLIST_SYMBOLS);
+  }
 }
 
 function toNumber(value, fallback = 0) {
@@ -1119,11 +1182,27 @@ function convertSupabaseUpcomingEvent(row) {
   };
 }
 
-function useFallbackUpcomingEvents() {
+function useFallbackUpcomingEvents(state = {
+  status: "fallback",
+  title: "Showing demo data",
+  message: "Showing demo data because live data is unavailable."
+}) {
   upcomingEvents = fallbackUpcomingEvents.slice();
+  upcomingDataState = state;
+}
+
+function useFallbackNodes(state = {
+  status: "fallback",
+  title: "Showing demo data",
+  message: "Showing demo data because live data is unavailable."
+}) {
+  nodes = sortNodesNewestFirst(fallbackNodes);
+  nodeDataState = state;
 }
 
 async function loadUpcomingEvents() {
+  upcomingDataState = { status: "loading", title: "Loading upcoming events", message: "Loading upcoming events..." };
+  renderList();
   try {
     const rows = await supabaseFetch("upcoming_events?select=*&status=eq.published&event_time=gte.now()&order=event_time.asc");
 
@@ -1131,12 +1210,17 @@ async function loadUpcomingEvents() {
       upcomingEvents = rows
         .map(convertSupabaseUpcomingEvent)
         .sort((a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime());
+      upcomingDataState = { status: "live", title: "", message: "" };
     } else {
       useFallbackUpcomingEvents();
     }
   } catch (error) {
     console.warn("Clarifin Supabase upcoming events load failed. Using fallback events.", error);
-    useFallbackUpcomingEvents();
+    useFallbackUpcomingEvents({
+      status: "error",
+      title: "Live data could not be loaded",
+      message: "Showing demo data because live data is unavailable."
+    });
   }
 
   renderList();
@@ -1286,15 +1370,18 @@ function normalizeCandidate(row) {
 }
 
 async function loadPublishedNodes() {
+  nodeDataState = { status: "loading", title: "Loading latest nodes", message: "Loading latest nodes..." };
+  renderList();
   try {
     const publishedRows = await supabaseFetch("nodes?select=*&status=eq.published");
     if (!Array.isArray(publishedRows) || !publishedRows.length) {
-      nodes = sortNodesNewestFirst(fallbackNodes);
+      useFallbackNodes();
       renderList();
       return;
     }
 
     nodes = await hydrateSupabaseNodes(publishedRows);
+    nodeDataState = { status: "live", title: "", message: "" };
 
     if (selectedNodeId) {
       const selectedNode = getNode(selectedNodeId);
@@ -1304,7 +1391,11 @@ async function loadPublishedNodes() {
     }
   } catch (error) {
     console.warn("Clarifin Supabase load failed. Using fallback demo data.", error);
-    nodes = sortNodesNewestFirst(fallbackNodes);
+    useFallbackNodes({
+      status: "error",
+      title: "Live data could not be loaded",
+      message: "Showing demo data because live data is unavailable."
+    });
     renderList();
   }
 }
@@ -1514,6 +1605,85 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function renderDataStatusNotice(state) {
+  if (!state || state.status === "live") return "";
+  const status = ["loading", "fallback", "error"].includes(state.status) ? state.status : "fallback";
+  return `
+    <article class="data-status-card liquid-glass status-${status}">
+      <h2>${escapeHtml(state.title || "Data status")}</h2>
+      <p>${escapeHtml(state.message || "Live data status is unavailable.")}</p>
+    </article>
+  `;
+}
+
+function showWatchlistInput() {
+  watchlistInputVisible = true;
+  renderList();
+  window.setTimeout(() => document.querySelector("#watchlist-symbol-input")?.focus(), 0);
+}
+
+function hideWatchlistInput() {
+  watchlistInputVisible = false;
+  watchlistMessage = "";
+  renderList();
+}
+
+function addWatchlistSymbol(value) {
+  const symbol = normalizeWatchlistSymbol(value);
+  if (!symbol) {
+    watchlistMessage = "Enter a symbol before adding it.";
+    watchlistInputVisible = true;
+    renderList();
+    return;
+  }
+  if (watchlist.some((item) => normalizeWatchlistSymbol(item) === symbol)) {
+    watchlistMessage = `${symbol} is already in your watchlist.`;
+    watchlistInputVisible = true;
+    renderList();
+    return;
+  }
+  saveWatchlistSymbols([...watchlist, symbol]);
+  watchlistMessage = `${symbol} added to your watchlist.`;
+  watchlistInputVisible = false;
+  renderList();
+}
+
+function removeWatchlistSymbol(symbol) {
+  const normalized = normalizeWatchlistSymbol(symbol);
+  if (!normalized) return;
+  saveWatchlistSymbols(watchlist.filter((item) => normalizeWatchlistSymbol(item) !== normalized));
+  watchlistMessage = `${normalized} removed.`;
+  renderList();
+}
+
+function renderWatchlistControls() {
+  const symbolsHTML = watchlist.length ? `
+    <div class="watchlist-symbols" aria-label="Watchlist symbols">
+      ${watchlist.map((symbol) => `
+        <span class="watchlist-symbol">
+          ${escapeHtml(symbol)}
+          <button class="watchlist-remove" data-watchlist-remove="${escapeHtml(symbol)}" type="button" aria-label="Remove ${escapeHtml(symbol)}">&times;</button>
+        </span>
+      `).join("")}
+    </div>
+  ` : "";
+  const addControl = watchlistInputVisible ? `
+    <form class="watchlist-form" id="watchlist-form">
+      <input class="watchlist-input" id="watchlist-symbol-input" name="symbol" type="text" placeholder="Symbol" autocomplete="off" />
+      <button class="action-btn liquid-glass" type="submit">Add</button>
+      <button class="action-btn liquid-glass" id="cancel-watchlist-add" type="button">Cancel</button>
+    </form>
+  ` : `<button class="action-btn liquid-glass" data-watchlist-add type="button">Add symbol</button>`;
+
+  return `
+    <div class="watchlist-controls">
+      ${symbolsHTML}
+      ${addControl}
+      ${watchlistMessage ? `<p class="watchlist-message">${escapeHtml(watchlistMessage)}</p>` : ""}
+    </div>
+  `;
+}
+
 function getCurrentDateLabel() {
   // The Home date uses the user's device date every time the app loads.
   const now = new Date();
@@ -1686,6 +1856,7 @@ function renderIntro() {
     screenIntro.innerHTML = `
       <p class="date-label">Watchlist</p>
       <h1>Relevant nodes</h1>
+      ${renderWatchlistControls()}
     `;
     eventTabs.hidden = true;
   } else {
@@ -1736,13 +1907,48 @@ function getUpcomingFlag(title) {
   return REGION_FLAGS.globe;
 }
 
-function renderNodeCards(list) {
+function renderWatchlistEmptyState(noticeHTML = "") {
+  eventList.innerHTML = `
+    ${noticeHTML}
+    <article class="event-card liquid-glass">
+      <div class="watchlist-empty">
+        <h2>No watchlist symbols yet</h2>
+        <p>Add your first symbol to start tracking relevant events</p>
+        <button class="action-btn liquid-glass" data-watchlist-add type="button">Add symbol</button>
+      </div>
+    </article>
+  `;
+}
+
+function renderWatchlistNoMatches(noticeHTML = "") {
+  eventList.innerHTML = `
+    ${noticeHTML}
+    <article class="event-card liquid-glass">
+      <div class="watchlist-empty">
+        <h2>No matching nodes yet</h2>
+        <p>Clarifin will show events that mention your watchlist symbols.</p>
+        <button class="action-btn liquid-glass" data-watchlist-add type="button">Add symbol</button>
+      </div>
+    </article>
+  `;
+}
+
+function renderNodeCards(list, options = {}) {
+  const noticeHTML = options.noticeHTML || "";
   if (!list.length) {
-    eventList.innerHTML = `<article class="event-card liquid-glass"><p>No nodes here yet.</p></article>`;
+    const emptyTitle = options.emptyTitle || "No nodes here yet.";
+    const emptyMessage = options.emptyMessage || "";
+    eventList.innerHTML = `
+      ${noticeHTML}
+      <article class="event-card liquid-glass">
+        <h2>${escapeHtml(emptyTitle)}</h2>
+        ${emptyMessage ? `<p>${escapeHtml(emptyMessage)}</p>` : ""}
+      </article>
+    `;
     return;
   }
 
-  eventList.innerHTML = list
+  eventList.innerHTML = noticeHTML + list
     .map(
       (node) => {
         const isDraft = String(node.status || "").toLowerCase() === "draft";
@@ -1895,8 +2101,20 @@ function getUpcomingImportance(event) {
   return Number.isFinite(score) && score > 0 ? Math.round(score) : null;
 }
 
-function renderUpcomingCards() {
-  eventList.innerHTML = getSortedUpcomingEvents()
+function renderUpcomingCards(noticeHTML = "") {
+  const events = getSortedUpcomingEvents();
+  if (!events.length) {
+    eventList.innerHTML = `
+      ${noticeHTML}
+      <article class="event-card liquid-glass">
+        <h2>No upcoming events yet</h2>
+        <p>Scheduled market events will appear here when available.</p>
+      </article>
+    `;
+    return;
+  }
+
+  eventList.innerHTML = noticeHTML + events
     .map((event, index) => {
       const earnings = isEarningsEvent(event);
       const importance = earnings ? null : getUpcomingImportance(event);
@@ -1952,18 +2170,49 @@ function renderList() {
   }
 
   const orderedNodes = sortNodesNewestFirst(getCurrentListNodes());
+  const nodeNoticeHTML = renderDataStatusNotice(nodeDataState);
+  const upcomingNoticeHTML = renderDataStatusNotice(upcomingDataState);
 
   if (activeView === "watchlist") {
-    renderNodeCards(orderedNodes.filter((node) => getWatchlistHits(node).length));
+    if (!watchlist.length) {
+      renderWatchlistEmptyState(nodeNoticeHTML);
+      return;
+    }
+    if (nodeDataState.status === "loading" && !orderedNodes.length) {
+      eventList.innerHTML = nodeNoticeHTML;
+      return;
+    }
+    const watchlistNodes = orderedNodes.filter((node) => getWatchlistHits(node).length);
+    if (!watchlistNodes.length) {
+      renderWatchlistNoMatches(nodeNoticeHTML);
+      return;
+    }
+    renderNodeCards(watchlistNodes, { noticeHTML: nodeNoticeHTML });
   } else if (activeView === "saved") {
-    renderNodeCards(orderedNodes.filter((node) => savedNodeIds.includes(node.id)));
+    if (nodeDataState.status === "loading" && !orderedNodes.length) {
+      eventList.innerHTML = nodeNoticeHTML;
+      return;
+    }
+    renderNodeCards(orderedNodes.filter((node) => savedNodeIds.includes(node.id)), {
+      noticeHTML: nodeNoticeHTML,
+      emptyTitle: "No saved nodes yet",
+      emptyMessage: "Saved nodes will appear here."
+    });
   } else if (activeView === "review") {
     if (reviewTab === "candidates") renderCandidateCards(eventCandidates);
     else renderNodeCards(orderedNodes);
   } else if (eventMode === "upcoming") {
-    renderUpcomingCards();
+    if (upcomingDataState.status === "loading" && !upcomingEvents.length) {
+      eventList.innerHTML = upcomingNoticeHTML;
+      return;
+    }
+    renderUpcomingCards(upcomingNoticeHTML);
   } else {
-    renderNodeCards(orderedNodes);
+    if (nodeDataState.status === "loading" && !orderedNodes.length) {
+      eventList.innerHTML = nodeNoticeHTML;
+      return;
+    }
+    renderNodeCards(orderedNodes, { noticeHTML: nodeNoticeHTML });
   }
 }
 
@@ -2074,6 +2323,34 @@ function renderMissingDataReview(evidence) {
       </li>
     </ul>
   `;
+}
+
+function renderSourceReviewStatus(node, researchEvidence) {
+  const sources = Array.isArray(node.sources)
+    ? node.sources.map(cleanSourceLabel).filter(Boolean)
+    : [];
+  const sourceHTML = sources.length ? `
+    <ul class="source-list">
+      ${sources.map((source) => `
+        <li class="asset-card evidence-source">
+          <div class="evidence-head">
+            <h3>${escapeHtml(source)}</h3>
+            <span class="status-pill">Source</span>
+          </div>
+        </li>
+      `).join("")}
+    </ul>
+  ` : `<p>${node.isSupabaseNode ? "Source details not available for this node yet." : "Source details not available in this demo node."}</p>`;
+  const statusHTML = detailRows([
+    { label: "Data status", value: node.isSupabaseNode ? "Live data loaded" : "Demo fallback data" },
+    { label: "Review status", value: hasValue(node.status) ? formatLabel(node.status) : "" },
+    { label: "Event status", value: hasValue(node.eventStatus) ? formatLabel(node.eventStatus) : "" }
+  ]);
+  const evidenceNote = hasResearchEvidence(researchEvidence)
+    ? `<p class="evidence-note">Additional research evidence is shown below.</p>`
+    : "";
+
+  return [statusHTML, sourceHTML, evidenceNote].filter(Boolean).join("");
 }
 
 function renderUpcomingDetail(event) {
@@ -2205,12 +2482,14 @@ function renderDetail(node) {
   const countersHTML = counterarguments.length
     ? `<ul class="counter-list">${counterarguments.map(c => `<li><p>${escapeHtml(c)}</p></li>`).join("")}</ul>`
     : "<p>No counterarguments available yet.</p>";
+  const sourceStatusHTML = renderSourceReviewStatus(node, researchEvidence);
 
   detailSections.innerHTML = [
     ...(isReviewNode ? [section("Review Status", detailRows([
       { label: "Node status", value: formatLabel(nodeStatus) },
       { label: "Review", value: isDraftNode ? "Review required before publishing." : "Already published or outside draft queue." }
     ]), true, "review-status-section")] : []),
+    section("Source / Review Status", sourceStatusHTML, true, "review-status-section"),
     section("Why it matters", `<p>${escapeHtml(node.whyMatters)}</p>`, true),
     section("Direct Impact", assetsHTML),
     ...(indirectHTML ? [section("Indirect Impact", indirectHTML)] : []),
@@ -2258,6 +2537,10 @@ function renderDetail(node) {
 }
 
 eventList.addEventListener("click", (event) => {
+  if (event.target.closest("[data-watchlist-add]")) {
+    showWatchlistInput();
+    return;
+  }
   const candidateAction = event.target.closest("[data-candidate-action]");
   if (candidateAction) {
     runCandidateAction(candidateAction.dataset.candidateAction, candidateAction.dataset.candidateId);
@@ -2299,6 +2582,19 @@ archiveButton?.addEventListener("click", () => {
 });
 
 screenIntro.addEventListener("click", (event) => {
+  const removeButton = event.target.closest("[data-watchlist-remove]");
+  if (removeButton) {
+    removeWatchlistSymbol(removeButton.dataset.watchlistRemove);
+    return;
+  }
+  if (event.target.closest("[data-watchlist-add]")) {
+    showWatchlistInput();
+    return;
+  }
+  if (event.target.closest("#cancel-watchlist-add")) {
+    hideWatchlistInput();
+    return;
+  }
   const tab = event.target.closest("[data-review-tab]");
   if (tab) {
     reviewTab = tab.dataset.reviewTab || "drafts";
@@ -2312,6 +2608,13 @@ screenIntro.addEventListener("click", (event) => {
   if (event.target.closest("#change-review-token")) {
     changeReviewAdminToken();
   }
+});
+
+screenIntro.addEventListener("submit", (event) => {
+  const form = event.target.closest("#watchlist-form");
+  if (!form) return;
+  event.preventDefault();
+  addWatchlistSymbol(new FormData(form).get("symbol"));
 });
 
 document.querySelectorAll(".event-tab").forEach((tab) => {
