@@ -179,8 +179,11 @@ button:focus-visible, input:focus-visible {
 
 .watchlist-controls { display: flex; flex-direction: column; gap: var(--sp-3); margin-top: var(--sp-4); }
 .watchlist-symbols { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
-.watchlist-symbol { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 99px; background: var(--gray-bg); color: var(--gray-text); font-size: 12px; font-weight: 700; }
-.watchlist-remove { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; background: rgba(0, 0, 0, 0.08); color: var(--text-muted); font-size: 14px; line-height: 1; }
+.watchlist-symbol-item { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.watchlist-symbol { min-height: 44px; min-width: 0; display: inline-flex; flex-direction: column; align-items: flex-start; justify-content: center; padding: 6px 12px; border-radius: 14px; background: var(--gray-bg); color: var(--gray-text); font-size: 12px; font-weight: 700; text-align: left; }
+.watchlist-symbol-code { color: var(--text-main); overflow-wrap: anywhere; }
+.watchlist-intelligence { margin-top: 2px; color: var(--text-muted); font-size: 10px; font-weight: 700; }
+.watchlist-remove { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; background: rgba(0, 0, 0, 0.08); color: var(--text-muted); font-size: 16px; line-height: 1; }
 .watchlist-form { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
 .watchlist-input { min-width: 0; flex: 1 1 120px; height: 36px; border: 1px solid rgba(0, 0, 0, 0.08); border-radius: 99px; padding: 0 12px; background: rgba(255, 255, 255, 0.72); color: var(--text-main); font: inherit; font-size: 13px; outline: none; }
 .watchlist-input:focus { border-color: rgba(17, 24, 39, 0.22); box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.06); }
@@ -254,6 +257,21 @@ details.detail-card[open] summary::after { content: "-"; }
 .asset-result-meta { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 #discover-results { display: flex; flex-direction: column; gap: var(--sp-4); }
 .asset-card-action { margin-top: var(--sp-3); }
+.asset-result-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
+.asset-result-actions .action-btn, .asset-detail-actions .action-btn, .asset-back-action { min-height: 44px; }
+.asset-screen-title { overflow-wrap: anywhere; }
+.asset-detail-section { display: flex; flex-direction: column; gap: var(--sp-3); }
+.asset-detail-section > h2 { margin: var(--sp-2) 0 0; font-size: 18px; line-height: 1.25; }
+.asset-meta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); margin-top: var(--sp-4); }
+.asset-meta-item { min-width: 0; padding: var(--sp-3); border-radius: 12px; background: rgba(0, 0, 0, 0.03); }
+.asset-meta-item span { display: block; color: var(--text-muted); font-size: 10px; text-transform: uppercase; }
+.asset-meta-item strong { display: block; margin-top: 4px; color: var(--text-main); font-size: 13px; overflow-wrap: anywhere; }
+.asset-detail-tags { margin-top: var(--sp-4); }
+.asset-detail-tags .field-label { margin-top: var(--sp-3); }
+.linked-event-card { transform: none; }
+.linked-event-card:hover { transform: none; }
+.linked-event-meta { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
+.linked-event-action { margin-top: var(--sp-3); min-height: 44px; }
 .preference-chips, .profile-stats, .option-grid { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .preference-chip, .profile-stat, .option-pill {
   border-radius: 12px;
@@ -293,7 +311,7 @@ details.detail-card[open] summary::after { content: "-"; }
 }
 .onboarding-dialog h2 { margin: 0 0 var(--sp-2) 0; font-size: 22px; line-height: 1.2; }
 .onboarding-dialog p { margin: 0 0 var(--sp-4) 0; color: var(--text-muted); font-size: 14px; line-height: 1.45; }
-.onboarding-dialog .onboarding-welcome-description { color: var(--text-light); }
+.onboarding-dialog .onboarding-description { color: var(--text-light); }
 .onboarding-progress { margin-bottom: var(--sp-3); color: var(--text-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; }
 .onboarding-actions { justify-content: space-between; margin-top: var(--sp-4); }
 
@@ -608,6 +626,8 @@ let onboardingPreviouslyFocusedElement = null;
 let previousView = activeView;
 let discoverQuery = "";
 let localScreenMessage = "";
+let selectedAssetReference = "";
+let assetReturnView = "discover";
 let nodeDataState = { status: "loading", title: "Loading latest nodes", message: "Loading latest nodes..." };
 let upcomingDataState = { status: "loading", title: "Loading upcoming events", message: "Loading upcoming events..." };
 let reviewLoadMessage = "";
@@ -1855,6 +1875,93 @@ function getAssetWatchlistTokens(asset) {
     .filter(Boolean);
 }
 
+function getAssetByReference(reference) {
+  const normalized = normalizeWatchlistSymbol(reference);
+  if (!normalized) return null;
+  return LOCAL_ASSET_CATALOG.find((asset) => getAssetWatchlistTokens(asset).includes(normalized)) || null;
+}
+
+function canonicalAssetKey(value) {
+  const normalized = normalizeWatchlistSymbol(value);
+  if (!normalized) return "";
+  const catalogAsset = getAssetByReference(normalized);
+  return catalogAsset ? normalizeWatchlistSymbol(catalogAsset.symbol) : normalized;
+}
+
+function getStructuredAssetReferenceTokens(reference) {
+  return [reference?.ticker, reference?.symbol, reference?.name, reference?.companyName]
+    .map(canonicalAssetKey)
+    .filter(Boolean);
+}
+
+function structuredReferenceMatchesAsset(reference, asset) {
+  if (!asset) return false;
+  const assetKey = canonicalAssetKey(asset.symbol);
+  return Boolean(assetKey && getStructuredAssetReferenceTokens(reference).includes(assetKey));
+}
+
+function getAssetNodeRelationship(asset, node) {
+  if (!asset || !node) return "";
+  const directAssets = Array.isArray(node.affectedAssets) ? node.affectedAssets : [];
+  if (directAssets.some((reference) => structuredReferenceMatchesAsset(reference, asset))) return "direct";
+
+  const indirectAssets = Array.isArray(node.indirectImpacts) ? node.indirectImpacts : [];
+  if (indirectAssets.some((reference) => structuredReferenceMatchesAsset(reference, asset))) return "indirect";
+
+  const exposures = [
+    ...(Array.isArray(node.researchExposures) ? node.researchExposures : []),
+    ...(Array.isArray(node.exposuresToWatch) ? node.exposuresToWatch : [])
+  ];
+  const referenced = exposures.some((exposure) => {
+    const explicitTickers = Array.isArray(exposure?.sectorProxyTickers)
+      ? exposure.sectorProxyTickers
+      : (Array.isArray(exposure?.possibleTickers) ? exposure.possibleTickers : []);
+    return explicitTickers.some((ticker) => canonicalAssetKey(ticker) === canonicalAssetKey(asset.symbol));
+  });
+  return referenced ? "referenced" : "";
+}
+
+function getLinkedEventsForAsset(assetOrReference, nodeList = nodes) {
+  const asset = typeof assetOrReference === "string" ? getAssetByReference(assetOrReference) : assetOrReference;
+  if (!asset) return [];
+  const relationshipPriority = { direct: 3, indirect: 2, referenced: 1 };
+  const linksByNode = new Map();
+
+  (Array.isArray(nodeList) ? nodeList : []).forEach((node) => {
+    const relationship = getAssetNodeRelationship(asset, node);
+    if (!relationship) return;
+    const key = String(node.id || "").trim();
+    if (!key) return;
+    const existing = linksByNode.get(key);
+    if (!existing || relationshipPriority[relationship] > relationshipPriority[existing.relationship]) {
+      linksByNode.set(key, { node, relationship });
+    }
+  });
+
+  return Array.from(linksByNode.values())
+    .sort((first, second) => getNodeTimeMs(second.node) - getNodeTimeMs(first.node));
+}
+
+function formatAssetRelationship(relationship) {
+  return {
+    direct: "Direct impact",
+    indirect: "Indirect impact",
+    referenced: "Referenced"
+  }[relationship] || "Referenced";
+}
+
+function getLinkedEventCountLabel(asset) {
+  if (!asset) return "No local event links";
+  const count = getLinkedEventsForAsset(asset).length;
+  if (!count) return "No linked events";
+  return count === 1 ? "1 linked event" : `${count} linked events`;
+}
+
+function isReferenceInWatchlist(reference) {
+  const normalized = normalizeWatchlistSymbol(reference);
+  return Boolean(normalized && watchlist.some((item) => normalizeWatchlistSymbol(item) === normalized));
+}
+
 function isAssetInWatchlist(asset) {
   const tokens = new Set(getAssetWatchlistTokens(asset));
   return watchlist.some((item) => tokens.has(normalizeWatchlistSymbol(item)));
@@ -1898,6 +2005,24 @@ function updateAvatar() {
   avatarButton.textContent = initial;
 }
 
+function openAssetDetail(reference) {
+  const normalized = normalizeWatchlistSymbol(reference);
+  if (!normalized) return;
+  assetReturnView = ["discover", "watchlist"].includes(activeView) ? activeView : "discover";
+  selectedAssetReference = normalized;
+  activeView = "asset";
+  selectedNodeId = null;
+  localScreenMessage = "";
+  renderList();
+}
+
+function returnFromAssetDetail() {
+  activeView = ["discover", "watchlist"].includes(assetReturnView) ? assetReturnView : "discover";
+  selectedNodeId = null;
+  localScreenMessage = "";
+  renderList();
+}
+
 function openLocalView(view, message = "") {
   if (!["discover", "profile", "settings", "help", "inbox"].includes(view)) return;
   if (!["discover", "profile", "settings", "help", "inbox"].includes(activeView)) previousView = activeView;
@@ -1908,7 +2033,7 @@ function openLocalView(view, message = "") {
 }
 
 function returnToPreviousView() {
-  activeView = ["home", "watchlist", "saved", "review"].includes(previousView) ? previousView : "home";
+  activeView = ["home", "watchlist", "saved", "review", "asset"].includes(previousView) ? previousView : "home";
   selectedNodeId = null;
   localScreenMessage = "";
   renderList();
@@ -1963,12 +2088,19 @@ function removeWatchlistSymbol(symbol) {
 function renderWatchlistControls() {
   const symbolsHTML = watchlist.length ? `
     <div class="watchlist-symbols" aria-label="Watchlist symbols">
-      ${watchlist.map((symbol) => `
-        <span class="watchlist-symbol">
-          ${escapeHtml(symbol)}
-          <button class="watchlist-remove" data-watchlist-remove="${escapeHtml(symbol)}" type="button" aria-label="Remove ${escapeHtml(symbol)}">&times;</button>
+      ${watchlist.map((symbol) => {
+        const asset = getAssetByReference(symbol);
+        const accessibleName = asset ? `${asset.symbol} ${asset.name}` : symbol;
+        return `
+        <span class="watchlist-symbol-item">
+          <button class="watchlist-symbol" data-open-asset="${escapeHtml(symbol)}" type="button" aria-label="Open asset details for ${escapeHtml(accessibleName)}">
+            <span class="watchlist-symbol-code">${escapeHtml(symbol)}</span>
+            <span class="watchlist-intelligence">${escapeHtml(getLinkedEventCountLabel(asset))}</span>
+          </button>
+          <button class="watchlist-remove" data-watchlist-remove="${escapeHtml(symbol)}" type="button" aria-label="Remove ${escapeHtml(symbol)} from Watchlist">&times;</button>
         </span>
-      `).join("")}
+      `;
+      }).join("")}
     </div>
   ` : "";
   return `
@@ -2142,8 +2274,7 @@ function getTickers(node) {
 }
 
 function getWatchlistHits(node) {
-  const text = JSON.stringify(node).toLowerCase();
-  return watchlist.filter((item) => text.includes(item.toLowerCase()));
+  return watchlist.filter((item) => getAssetNodeRelationship(getAssetByReference(item), node));
 }
 
 function renderIntro() {
@@ -2184,6 +2315,18 @@ function renderIntro() {
         <button class="action-btn liquid-glass" data-return-previous type="button">Back</button>
       </div>
       ${renderManualWatchlistControl()}
+    `;
+    eventTabs.hidden = true;
+  } else if (activeView === "asset") {
+    const asset = getAssetByReference(selectedAssetReference);
+    const title = asset ? formatNameWithSymbol(asset.symbol, asset.name, selectedAssetReference) : selectedAssetReference;
+    const backLabel = assetReturnView === "watchlist" ? "Watchlist" : "Discover";
+    screenIntro.innerHTML = `
+      <p class="date-label">Asset</p>
+      <h1 class="asset-screen-title">${escapeHtml(title)}</h1>
+      <div class="screen-actions">
+        <button class="action-btn asset-back-action liquid-glass" data-return-asset type="button" aria-label="Back to ${escapeHtml(backLabel)}">Back</button>
+      </div>
     `;
     eventTabs.hidden = true;
   } else if (activeView === "profile") {
@@ -2261,7 +2404,7 @@ function preferenceChipsHTML(items, emptyLabel = "None selected yet") {
 function renderAssetResultCard(asset) {
   const inWatchlist = isAssetInWatchlist(asset);
   return `
-    <article class="event-card liquid-glass" data-asset-symbol="${escapeHtml(asset.symbol)}">
+    <article class="event-card liquid-glass">
       <div class="card-header">
         <div>
           <span class="category-pill">${escapeHtml(asset.asset_type)}</span>
@@ -2273,9 +2416,12 @@ function renderAssetResultCard(asset) {
         <span class="ticker-chip neutral">${escapeHtml(asset.region)}</span>
         ${(asset.themes || []).slice(0, 3).map((theme) => `<span class="ticker-chip mixed">${escapeHtml(theme)}</span>`).join("")}
       </div>
-      <button class="action-btn liquid-glass asset-card-action" data-asset-watchlist-toggle="${escapeHtml(asset.symbol)}" type="button">
-        ${inWatchlist ? "Remove from Watchlist" : "Add to Watchlist"}
-      </button>
+      <div class="asset-result-actions">
+        <button class="action-btn liquid-glass" data-open-asset="${escapeHtml(asset.symbol)}" type="button">View asset</button>
+        <button class="action-btn liquid-glass" data-asset-watchlist-toggle="${escapeHtml(asset.symbol)}" type="button">
+          ${inWatchlist ? "Remove from Watchlist" : "Add to Watchlist"}
+        </button>
+      </div>
     </article>
   `;
 }
@@ -2318,6 +2464,99 @@ function renderDiscoverScreen({ focusSearch = true } = {}) {
     <div id="discover-results">${renderDiscoverResultsHTML()}</div>
   `;
   if (focusSearch) window.setTimeout(() => document.querySelector("#discover-search-input")?.focus(), 0);
+}
+
+function renderAssetTagGroup(label, items) {
+  const values = sanitizeStringArray(items).slice(0, 6);
+  if (!values.length) return "";
+  return `
+    <div class="asset-detail-tags">
+      <p class="field-label">${escapeHtml(label)}</p>
+      <div class="preference-chips">
+        ${values.map((value) => `<span class="preference-chip">${escapeHtml(value)}</span>`).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderLinkedEventCard(link) {
+  const node = link.node;
+  const timeLabel = getNodeTimeValue(node) ? getNodeTimeLabel(node) : "";
+  return `
+    <article class="event-card linked-event-card liquid-glass">
+      <span class="category-pill">${escapeHtml(node.category || node.eventType || "Clarifin event")}</span>
+      <h2>${escapeHtml(node.title)}</h2>
+      <div class="linked-event-meta">
+        <span class="status-pill">${escapeHtml(formatAssetRelationship(link.relationship))}</span>
+        ${timeLabel ? `<span class="status-pill">${escapeHtml(timeLabel)}</span>` : ""}
+      </div>
+      <button class="action-btn liquid-glass linked-event-action" data-linked-node="${escapeHtml(node.id)}" type="button" aria-label="Open Clarifin event ${escapeHtml(node.title)}">Open event</button>
+    </article>
+  `;
+}
+
+function renderAssetDetailScreen() {
+  const reference = normalizeWatchlistSymbol(selectedAssetReference);
+  const asset = getAssetByReference(reference);
+  const inWatchlist = asset ? isAssetInWatchlist(asset) : isReferenceInWatchlist(reference);
+  const linkedEvents = asset ? getLinkedEventsForAsset(asset) : [];
+  const messageHTML = localScreenMessage
+    ? `<article class="data-status-card liquid-glass status-fallback"><p>${escapeHtml(localScreenMessage)}</p></article>`
+    : "";
+
+  const overviewHTML = asset ? `
+    <article class="event-card liquid-glass">
+      <span class="category-pill">Local reference metadata</span>
+      <h2>${escapeHtml(formatNameWithSymbol(asset.symbol, asset.name, reference))}</h2>
+      <p>This screen uses local reference metadata. No live market price is currently displayed.</p>
+      <div class="asset-meta-grid">
+        <div class="asset-meta-item"><span>Asset type</span><strong>${escapeHtml(formatLabel(asset.asset_type))}</strong></div>
+        ${asset.sector ? `<div class="asset-meta-item"><span>Sector</span><strong>${escapeHtml(asset.sector)}</strong></div>` : ""}
+        ${asset.region ? `<div class="asset-meta-item"><span>Region</span><strong>${escapeHtml(asset.region)}</strong></div>` : ""}
+        <div class="asset-meta-item"><span>Watchlist</span><strong>${inWatchlist ? "Added" : "Not added"}</strong></div>
+      </div>
+      ${renderAssetTagGroup("Themes", asset.themes)}
+      ${renderAssetTagGroup("Event families", asset.event_families)}
+      <div class="screen-actions asset-detail-actions">
+        <button class="action-btn liquid-glass" data-asset-watchlist-toggle="${escapeHtml(asset.symbol)}" type="button" aria-label="${inWatchlist ? "Remove" : "Add"} ${escapeHtml(asset.symbol)} ${inWatchlist ? "from" : "to"} Watchlist">
+          ${inWatchlist ? "Remove from Watchlist" : "Add to Watchlist"}
+        </button>
+      </div>
+    </article>
+  ` : `
+    <article class="event-card liquid-glass">
+      <span class="category-pill">Manual watchlist symbol</span>
+      <h2>${escapeHtml(reference || "Unknown symbol")}</h2>
+      <p>No local reference metadata is available for this symbol.</p>
+      <div class="asset-meta-grid">
+        <div class="asset-meta-item"><span>Watchlist</span><strong>${inWatchlist ? "Added" : "Not added"}</strong></div>
+      </div>
+      ${inWatchlist ? `
+        <div class="screen-actions asset-detail-actions">
+          <button class="action-btn liquid-glass" data-asset-watchlist-toggle="${escapeHtml(reference)}" type="button" aria-label="Remove ${escapeHtml(reference)} from Watchlist">Remove from Watchlist</button>
+        </div>
+      ` : ""}
+    </article>
+  `;
+
+  const eventsHTML = linkedEvents.length
+    ? linkedEvents.map(renderLinkedEventCard).join("")
+    : `
+      <article class="event-card liquid-glass">
+        <h2>No linked events</h2>
+        <p>No linked Clarifin events are available in the current dataset.</p>
+        <p class="local-note">This only reflects the Clarifin nodes currently loaded in the app.</p>
+      </article>
+    `;
+
+  eventList.innerHTML = `
+    ${messageHTML}
+    ${overviewHTML}
+    <section class="asset-detail-section" aria-labelledby="asset-events-title">
+      <h2 id="asset-events-title">Relevant Clarifin events</h2>
+      ${eventsHTML}
+    </section>
+  `;
 }
 
 function renderProfileScreen() {
@@ -2526,16 +2765,16 @@ function renderOnboarding() {
   const stepBodies = [
     `
       <h2>Welcome to Clarifin</h2>
-      <p class="onboarding-welcome-description">Clarifin helps you understand market-moving events. It provides market intelligence, not investment advice, and it does not execute trades.</p>
+      <p class="onboarding-description">Clarifin helps you understand market-moving events. It provides market intelligence, not investment advice, and it does not execute trades.</p>
     `,
     `
       <h2>Interests</h2>
-      <p>Choose the event types you want Clarifin to emphasize. You can continue without selecting anything.</p>
+      <p class="onboarding-description">Choose the event types you want Clarifin to emphasize. You can continue without selecting anything.</p>
       ${optionButtonsHTML(INTEREST_OPTIONS, "selectedInterests")}
     `,
     `
       <h2>Markets and assets</h2>
-      <p>Select the regions and asset classes you care about. These are local preferences only.</p>
+      <p class="onboarding-description">Select the regions and asset classes you care about. These are local preferences only.</p>
       <p class="profile-muted">Regions</p>
       ${optionButtonsHTML(REGION_OPTIONS, "selectedRegions")}
       <p class="profile-muted">Asset classes</p>
@@ -2543,12 +2782,12 @@ function renderOnboarding() {
     `,
     `
       <h2>Starter Watchlist</h2>
-      <p>Pick local catalog assets to merge into your Watchlist. Existing symbols are preserved.</p>
+      <p class="onboarding-description">Pick local catalog assets to merge into your Watchlist. Existing symbols are preserved.</p>
       ${starterAssetsHTML()}
     `,
     `
       <h2>You're set</h2>
-      <p>Clarifin will keep your preferences locally on this device. You can restart onboarding from Profile.</p>
+      <p class="onboarding-description">Clarifin will keep your preferences locally on this device. You can restart onboarding from Profile.</p>
       <p class="profile-muted">Interests</p>
       ${preferenceChipsHTML(onboardingDraft.selectedInterests, "No interests selected")}
       <p class="profile-muted">Regions</p>
@@ -2630,17 +2869,25 @@ function handleProfileAction(action) {
   }
 }
 
-function handleAssetWatchlistToggle(symbol) {
-  const asset = getAssetBySymbol(symbol);
-  if (!asset) return;
-  if (isAssetInWatchlist(asset)) {
-    removeAssetFromWatchlist(asset);
-    localScreenMessage = `${asset.symbol} removed from your Watchlist.`;
+function handleAssetWatchlistToggle(reference) {
+  const asset = getAssetByReference(reference);
+  if (asset) {
+    if (isAssetInWatchlist(asset)) {
+      removeAssetFromWatchlist(asset);
+      localScreenMessage = `${asset.symbol} removed from your Watchlist.`;
+    } else {
+      addAssetToWatchlist(asset);
+      localScreenMessage = `${asset.symbol} added to your Watchlist.`;
+    }
   } else {
-    addAssetToWatchlist(asset);
-    localScreenMessage = `${asset.symbol} added to your Watchlist.`;
+    const normalized = normalizeWatchlistSymbol(reference);
+    if (!isReferenceInWatchlist(normalized)) return;
+    saveWatchlistSymbols(watchlist.filter((item) => normalizeWatchlistSymbol(item) !== normalized));
+    localScreenMessage = `${normalized} removed from your Watchlist.`;
   }
-  renderDiscoverResults();
+
+  if (activeView === "asset") renderAssetDetailScreen();
+  else renderDiscoverResults();
 }
 
 function renderWatchlistEmptyState(noticeHTML = "") {
@@ -2664,7 +2911,7 @@ function renderWatchlistNoMatches(noticeHTML = "") {
     <article class="event-card liquid-glass">
       <div class="watchlist-empty">
         <h2>No matching nodes yet</h2>
-        <p>Clarifin will show events that mention your watchlist symbols.</p>
+        <p>Clarifin will show events with structured links to your watchlist assets.</p>
         <div class="screen-actions">
           <button class="action-btn liquid-glass" data-open-discover type="button">Add assets</button>
         </div>
@@ -2915,6 +3162,8 @@ function renderList() {
 
   if (activeView === "discover") {
     renderDiscoverScreen();
+  } else if (activeView === "asset") {
+    renderAssetDetailScreen();
   } else if (activeView === "profile") {
     renderProfileScreen();
   } else if (activeView === "settings") {
@@ -3305,13 +3554,15 @@ eventList.addEventListener("click", (event) => {
     handleAssetWatchlistToggle(assetToggle.dataset.assetWatchlistToggle);
     return;
   }
-  const assetCard = event.target.closest("[data-asset-symbol]");
-  if (assetCard) {
-    const asset = getAssetBySymbol(assetCard.dataset.assetSymbol);
-    localScreenMessage = asset
-      ? `${asset.symbol} detail will be added in a later MVP phase. This card currently uses local reference metadata only.`
-      : "Asset detail will be added in a later MVP phase.";
-    renderDiscoverResults();
+  const assetAction = event.target.closest("[data-open-asset]");
+  if (assetAction) {
+    openAssetDetail(assetAction.dataset.openAsset);
+    return;
+  }
+  const linkedNodeAction = event.target.closest("[data-linked-node]");
+  if (linkedNodeAction) {
+    const linkedNode = getNode(linkedNodeAction.dataset.linkedNode);
+    if (linkedNode) renderDetail(linkedNode);
     return;
   }
   const candidateAction = event.target.closest("[data-candidate-action]");
@@ -3390,6 +3641,15 @@ screenIntro.addEventListener("click", (event) => {
   }
   if (event.target.closest("[data-return-previous]")) {
     returnToPreviousView();
+    return;
+  }
+  const assetAction = event.target.closest("[data-open-asset]");
+  if (assetAction) {
+    openAssetDetail(assetAction.dataset.openAsset);
+    return;
+  }
+  if (event.target.closest("[data-return-asset]")) {
+    returnFromAssetDetail();
     return;
   }
   const removeButton = event.target.closest("[data-watchlist-remove]");
