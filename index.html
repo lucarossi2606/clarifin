@@ -89,9 +89,11 @@ button:focus-visible, input:focus-visible {
 .brand { flex: 0 0 auto; font-weight: 700; font-size: 18px; letter-spacing: -0.5px; color: var(--text-main); }
 .next-event { flex: 1 1 auto; min-width: 0; color: var(--text-light); font-size: 13px; font-weight: 700; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 .top-actions { flex: 0 0 auto; display: flex; align-items: center; gap: var(--sp-2); }
-.top-action { min-width: 36px; min-height: 36px; padding: 0 10px; border-radius: 99px; background: rgba(17, 24, 39, 0.06); color: var(--text-main); display: grid; place-items: center; font-size: 12px; font-weight: 700; }
-.top-action svg { width: 17px; height: 17px; display: block; }
-.avatar { flex: 0 0 auto; width: 36px; height: 36px; min-height: 36px; background: var(--text-main); color: #fff; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+.top-action { width: 44px; height: 44px; min-width: 44px; min-height: 44px; padding: 0; border-radius: 50%; background: transparent; color: var(--text-main); display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+.top-action:hover, .top-action:focus-visible, .top-action:active { background: rgba(17, 24, 39, 0.06); }
+.top-action svg { width: 23px; height: 23px; display: block; }
+.avatar { flex: 0 0 auto; position: relative; z-index: 0; width: 44px; height: 44px; min-width: 44px; min-height: 44px; background: transparent; color: #fff; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+.avatar::before { content: ""; position: absolute; z-index: -1; width: 36px; height: 36px; border-radius: 50%; background: var(--text-main); }
 
 .greeting-section { margin-bottom: var(--sp-6); padding-top: var(--sp-2); }
 .date-label { font-size: 13px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 var(--sp-1) 0; }
@@ -235,6 +237,7 @@ details.detail-card[open] summary::after { content: "-"; }
 
 .screen-actions, .profile-actions, .onboarding-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
 .screen-actions { margin-top: var(--sp-3); }
+.manual-watchlist-action { min-height: 44px; padding: 0; border-color: transparent; color: var(--text-muted); text-align: left; }
 .field-label { display: block; margin: 0 0 var(--sp-2) 0; color: var(--text-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; }
 .search-input, .profile-input {
   width: 100%;
@@ -290,6 +293,7 @@ details.detail-card[open] summary::after { content: "-"; }
 }
 .onboarding-dialog h2 { margin: 0 0 var(--sp-2) 0; font-size: 22px; line-height: 1.2; }
 .onboarding-dialog p { margin: 0 0 var(--sp-4) 0; color: var(--text-muted); font-size: 14px; line-height: 1.45; }
+.onboarding-dialog .onboarding-welcome-description { color: var(--text-light); }
 .onboarding-progress { margin-bottom: var(--sp-3); color: var(--text-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; }
 .onboarding-actions { justify-content: space-between; margin-top: var(--sp-4); }
 
@@ -311,7 +315,7 @@ details.detail-card[open] summary::after { content: "-"; }
   visibility: visible;
 }
 .bottom-nav[hidden] { display: none; }
-.nav-item { flex: 1; min-height: 44px; text-align: center; padding: 12px 0; border-radius: 99px; font-size: 14px; font-weight: 700; color: var(--text-muted); transition: all 0.2s ease; }
+.nav-item { flex: 1; min-height: 44px; text-align: center; padding: 12px 0; border-radius: 99px; font-size: 14px; font-weight: 700; color: var(--text-main); transition: all 0.2s ease; }
 .nav-item.active { background: var(--text-main); color: #fff; }
 .disclaimer { text-align: center; font-size: 10px; font-weight: 400; color: var(--text-muted); margin-top: var(--sp-6); padding: 0 var(--sp-4); }
 
@@ -330,7 +334,7 @@ details.detail-card[open] summary::after { content: "-"; }
               <path d="m16 16 4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
             </svg>
           </button>
-          <button class="avatar" id="avatar-button" type="button" aria-label="Open profile and settings">L</button>
+          <button class="avatar" id="avatar-button" type="button" aria-label="Open profile and settings">G</button>
         </div>
       </header>
 
@@ -694,6 +698,10 @@ function normalizeUserProfile(value) {
   return { displayName };
 }
 
+function getDisplayName() {
+  return normalizeUserProfile(userProfile).displayName;
+}
+
 function saveUserProfile(nextProfile) {
   userProfile = normalizeUserProfile(nextProfile);
   safeWriteLocalJson(USER_PROFILE_STORAGE_KEY, userProfile);
@@ -729,6 +737,10 @@ function toArray(value) {
 
 function normalizeWatchlistSymbol(value) {
   return String(value || "").trim().replace(/\s+/g, " ").toUpperCase();
+}
+
+function isValidManualWatchlistSymbol(symbol) {
+  return /^[A-Z0-9][A-Z0-9 .&/_-]{0,23}$/.test(symbol);
 }
 
 function dedupeSymbols(symbols) {
@@ -1881,7 +1893,7 @@ function getDiscoverResults() {
 
 function updateAvatar() {
   if (!avatarButton) return;
-  const name = String(userProfile.displayName || "Guest").trim();
+  const name = getDisplayName();
   const initial = (name.match(/[A-Za-z0-9]/)?.[0] || "G").toUpperCase();
   avatarButton.textContent = initial;
 }
@@ -1922,6 +1934,12 @@ function addWatchlistSymbol(value) {
     renderList();
     return;
   }
+  if (!isValidManualWatchlistSymbol(symbol)) {
+    watchlistMessage = "Use 1-24 letters, numbers, spaces, dots, &, / or -.";
+    watchlistInputVisible = true;
+    renderList();
+    return;
+  }
   if (watchlist.some((item) => normalizeWatchlistSymbol(item) === symbol)) {
     watchlistMessage = `${symbol} is already in your watchlist.`;
     watchlistInputVisible = true;
@@ -1953,6 +1971,17 @@ function renderWatchlistControls() {
       `).join("")}
     </div>
   ` : "";
+  return `
+    <div class="watchlist-controls">
+      ${symbolsHTML}
+      <div class="screen-actions">
+        <button class="action-btn liquid-glass" data-open-discover type="button">Add assets</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderManualWatchlistControl() {
   const addControl = watchlistInputVisible ? `
     <form class="watchlist-form" id="watchlist-form">
       <label class="field-label" for="watchlist-symbol-input">Symbol</label>
@@ -1960,15 +1989,11 @@ function renderWatchlistControls() {
       <button class="action-btn liquid-glass" type="submit">Add</button>
       <button class="action-btn liquid-glass" id="cancel-watchlist-add" type="button">Cancel</button>
     </form>
-  ` : `<button class="action-btn liquid-glass" data-watchlist-add type="button">Add symbol</button>`;
+  ` : `<button class="action-btn manual-watchlist-action" data-watchlist-add type="button">Can&rsquo;t find the asset? Add a symbol manually</button>`;
 
   return `
     <div class="watchlist-controls">
-      ${symbolsHTML}
-      <div class="screen-actions">
-        ${addControl}
-        <button class="action-btn liquid-glass" data-open-discover type="button">Add assets</button>
-      </div>
+      ${addControl}
       ${watchlistMessage ? `<p class="watchlist-message">${escapeHtml(watchlistMessage)}</p>` : ""}
     </div>
   `;
@@ -1986,9 +2011,10 @@ function getCurrentDateLabel() {
 function getGreeting() {
   // The greeting follows the user's local device time.
   const hour = new Date().getHours();
-  if (hour >= 3 && hour <= 10) return "Good morning, Luca";
-  if (hour >= 17 && hour <= 21) return "Good evening, Luca";
-  return "Welcome, Luca";
+  const displayName = getDisplayName();
+  if (hour >= 3 && hour <= 10) return `Good morning, ${displayName}`;
+  if (hour >= 17 && hour <= 21) return `Good evening, ${displayName}`;
+  return `Welcome, ${displayName}`;
 }
 
 function getSortedUpcomingEvents() {
@@ -2124,7 +2150,7 @@ function renderIntro() {
   if (activeView === "home") {
     screenIntro.innerHTML = `
       <p class="date-label">${getCurrentDateLabel()}</p>
-      <h1>${getGreeting()}</h1>
+      <h1>${escapeHtml(getGreeting())}</h1>
     `;
     eventTabs.hidden = false;
   } else if (activeView === "review") {
@@ -2157,6 +2183,7 @@ function renderIntro() {
       <div class="screen-actions">
         <button class="action-btn liquid-glass" data-return-previous type="button">Back</button>
       </div>
+      ${renderManualWatchlistControl()}
     `;
     eventTabs.hidden = true;
   } else if (activeView === "profile") {
@@ -2294,7 +2321,7 @@ function renderDiscoverScreen({ focusSearch = true } = {}) {
 }
 
 function renderProfileScreen() {
-  const displayName = userProfile.displayName || "Guest";
+  const displayName = getDisplayName();
   eventList.innerHTML = `
     ${localScreenMessage ? `<article class="data-status-card liquid-glass status-fallback"><p>${escapeHtml(localScreenMessage)}</p></article>` : ""}
     <article class="event-card liquid-glass">
@@ -2499,7 +2526,7 @@ function renderOnboarding() {
   const stepBodies = [
     `
       <h2>Welcome to Clarifin</h2>
-      <p>Clarifin helps you understand market-moving events. It provides market intelligence, not investment advice, and it does not execute trades.</p>
+      <p class="onboarding-welcome-description">Clarifin helps you understand market-moving events. It provides market intelligence, not investment advice, and it does not execute trades.</p>
     `,
     `
       <h2>Interests</h2>
@@ -2624,7 +2651,6 @@ function renderWatchlistEmptyState(noticeHTML = "") {
         <h2>No watchlist symbols yet</h2>
         <p>Add your first symbol to start tracking relevant events</p>
         <div class="screen-actions">
-          <button class="action-btn liquid-glass" data-watchlist-add type="button">Add symbol</button>
           <button class="action-btn liquid-glass" data-open-discover type="button">Add your first assets</button>
         </div>
       </div>
@@ -2640,7 +2666,6 @@ function renderWatchlistNoMatches(noticeHTML = "") {
         <h2>No matching nodes yet</h2>
         <p>Clarifin will show events that mention your watchlist symbols.</p>
         <div class="screen-actions">
-          <button class="action-btn liquid-glass" data-watchlist-add type="button">Add symbol</button>
           <button class="action-btn liquid-glass" data-open-discover type="button">Add assets</button>
         </div>
       </div>
@@ -3287,10 +3312,6 @@ eventList.addEventListener("click", (event) => {
       ? `${asset.symbol} detail will be added in a later MVP phase. This card currently uses local reference metadata only.`
       : "Asset detail will be added in a later MVP phase.";
     renderDiscoverResults();
-    return;
-  }
-  if (event.target.closest("[data-watchlist-add]")) {
-    showWatchlistInput();
     return;
   }
   const candidateAction = event.target.closest("[data-candidate-action]");
