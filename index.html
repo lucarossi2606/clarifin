@@ -90,6 +90,7 @@ button:focus-visible, input:focus-visible {
 .next-event { flex: 1 1 auto; min-width: 0; color: var(--text-light); font-size: 13px; font-weight: 700; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 .top-actions { flex: 0 0 auto; display: flex; align-items: center; gap: var(--sp-2); }
 .top-action { min-width: 36px; min-height: 36px; padding: 0 10px; border-radius: 99px; background: rgba(17, 24, 39, 0.06); color: var(--text-main); display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+.top-action svg { width: 17px; height: 17px; display: block; }
 .avatar { flex: 0 0 auto; width: 36px; height: 36px; min-height: 36px; background: var(--text-main); color: #fff; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 14px; }
 
 .greeting-section { margin-bottom: var(--sp-6); padding-top: var(--sp-2); }
@@ -248,6 +249,7 @@ details.detail-card[open] summary::after { content: "-"; }
 .search-input:focus, .profile-input:focus { border-color: rgba(17, 24, 39, 0.22); box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.06); }
 .asset-result-meta, .profile-muted, .local-note { margin: var(--sp-2) 0 0 0; color: var(--text-muted); font-size: 13px; line-height: 1.4; }
 .asset-result-meta { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+#discover-results { display: flex; flex-direction: column; gap: var(--sp-4); }
 .asset-card-action { margin-top: var(--sp-3); }
 .preference-chips, .profile-stats, .option-grid { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .preference-chip, .profile-stat, .option-pill {
@@ -322,7 +324,12 @@ details.detail-card[open] summary::after { content: "-"; }
         <button class="brand" type="button">clarifin</button>
         <div class="next-event">NEXT: No major event</div>
         <div class="top-actions" aria-label="Header actions">
-          <button class="top-action" id="search-button" type="button" aria-label="Open Discover search">Search</button>
+          <button class="top-action" id="search-button" type="button" aria-label="Search assets" title="Search assets">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2"></circle>
+              <path d="m16 16 4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+            </svg>
+          </button>
           <button class="avatar" id="avatar-button" type="button" aria-label="Open profile and settings">L</button>
         </div>
       </header>
@@ -593,6 +600,7 @@ preferences.onboardingComplete = Boolean(safeReadLocalJson(ONBOARDING_STORAGE_KE
 let appearance = safeReadLocalJson(APPEARANCE_STORAGE_KEY, DEFAULT_APPEARANCE);
 let onboardingStep = 0;
 let onboardingDraft = createOnboardingDraft(preferences);
+let onboardingPreviouslyFocusedElement = null;
 let previousView = activeView;
 let discoverQuery = "";
 let localScreenMessage = "";
@@ -1959,7 +1967,7 @@ function renderWatchlistControls() {
       ${symbolsHTML}
       <div class="screen-actions">
         ${addControl}
-        <button class="action-btn liquid-glass" data-open-discover type="button">Discover assets</button>
+        <button class="action-btn liquid-glass" data-open-discover type="button">Add assets</button>
       </div>
       ${watchlistMessage ? `<p class="watchlist-message">${escapeHtml(watchlistMessage)}</p>` : ""}
     </div>
@@ -2117,9 +2125,6 @@ function renderIntro() {
     screenIntro.innerHTML = `
       <p class="date-label">${getCurrentDateLabel()}</p>
       <h1>${getGreeting()}</h1>
-      <div class="screen-actions">
-        <button class="action-btn liquid-glass" data-open-discover type="button">Discover assets</button>
-      </div>
     `;
     eventTabs.hidden = false;
   } else if (activeView === "review") {
@@ -2248,23 +2253,44 @@ function renderAssetResultCard(asset) {
   `;
 }
 
-function renderDiscoverScreen() {
+function renderDiscoverResultsHTML() {
   const results = getDiscoverResults();
+  return results.length ? results.map(renderAssetResultCard).join("") : `
+    <article class="event-card liquid-glass">
+      <h2>No local matches</h2>
+      <p>Try a symbol, company name or known alias.</p>
+    </article>
+  `;
+}
+
+function updateDiscoverMessage() {
+  const message = document.querySelector("#discover-message");
+  if (!message) return;
+  message.textContent = localScreenMessage;
+  message.hidden = !localScreenMessage;
+}
+
+function renderDiscoverResults() {
+  updateDiscoverMessage();
+  const resultsContainer = document.querySelector("#discover-results");
+  if (!resultsContainer) {
+    renderDiscoverScreen();
+    return;
+  }
+  resultsContainer.innerHTML = renderDiscoverResultsHTML();
+}
+
+function renderDiscoverScreen({ focusSearch = true } = {}) {
   eventList.innerHTML = `
     <article class="event-card liquid-glass">
       <label class="field-label" for="discover-search-input">Search local catalog</label>
       <input class="search-input" id="discover-search-input" type="search" value="${escapeHtml(discoverQuery)}" placeholder="Symbol, company, alias" autocomplete="off" />
       <p class="local-note">This catalog is local reference metadata. It does not contain live prices, price changes, ratings or performance data.</p>
-      ${localScreenMessage ? `<p class="watchlist-message">${escapeHtml(localScreenMessage)}</p>` : ""}
+      <p class="watchlist-message" id="discover-message" ${localScreenMessage ? "" : "hidden"}>${escapeHtml(localScreenMessage)}</p>
     </article>
-    ${results.length ? results.map(renderAssetResultCard).join("") : `
-      <article class="event-card liquid-glass">
-        <h2>No local matches</h2>
-        <p>Try a symbol, company name or known alias.</p>
-      </article>
-    `}
+    <div id="discover-results">${renderDiscoverResultsHTML()}</div>
   `;
-  window.setTimeout(() => document.querySelector("#discover-search-input")?.focus(), 0);
+  if (focusSearch) window.setTimeout(() => document.querySelector("#discover-search-input")?.focus(), 0);
 }
 
 function renderProfileScreen() {
@@ -2374,8 +2400,102 @@ function starterAssetsHTML() {
   `;
 }
 
+function isOnboardingVisible() {
+  return Boolean(onboardingOverlay && !onboardingOverlay.hidden);
+}
+
+function getOnboardingDialog() {
+  return onboardingOverlay?.querySelector(".onboarding-dialog") || null;
+}
+
+function isFocusableElementVisible(element) {
+  if (!element || element.disabled || element.tabIndex === -1) return false;
+  if (element.closest("[hidden]")) return false;
+  const style = window.getComputedStyle(element);
+  if (style.visibility === "hidden" || style.display === "none") return false;
+  return Boolean(element.offsetParent || element.getClientRects().length);
+}
+
+function getOnboardingFocusableElements() {
+  const dialog = getOnboardingDialog();
+  if (!dialog) return [];
+  return Array.from(dialog.querySelectorAll("button, input, select, textarea, a[href], [tabindex]"))
+    .filter(isFocusableElementVisible);
+}
+
+function setOnboardingBackgroundInert(enabled) {
+  [document.querySelector(".top-nav"), appScreen, bottomNav].forEach((element) => {
+    if (!element) return;
+    if (enabled) {
+      if (!element.hasAttribute("inert")) element.dataset.onboardingManagedInert = "true";
+      element.inert = true;
+    } else if (element.dataset.onboardingManagedInert === "true") {
+      element.inert = false;
+      delete element.dataset.onboardingManagedInert;
+    }
+  });
+}
+
+function rememberOnboardingFocus() {
+  const active = document.activeElement;
+  onboardingPreviouslyFocusedElement = active
+    && active !== document.body
+    && !onboardingOverlay?.contains(active)
+    ? active
+    : null;
+}
+
+function focusOnboardingStep() {
+  if (!isOnboardingVisible()) return;
+  const dialog = getOnboardingDialog();
+  if (!dialog) return;
+  const preferred = dialog.querySelector("[data-onboarding-toggle]")
+    || dialog.querySelector('[data-onboarding-action="next"], [data-onboarding-action="finish"]')
+    || getOnboardingFocusableElements()[0]
+    || dialog;
+  window.setTimeout(() => preferred.focus(), 0);
+}
+
+function restoreOnboardingFocus() {
+  const fallback = avatarButton || searchButton || brandButton;
+  const target = onboardingPreviouslyFocusedElement
+    && document.contains(onboardingPreviouslyFocusedElement)
+    && !onboardingPreviouslyFocusedElement.closest("[inert]")
+    ? onboardingPreviouslyFocusedElement
+    : fallback;
+  onboardingPreviouslyFocusedElement = null;
+  window.setTimeout(() => target?.focus?.(), 0);
+}
+
+function handleOnboardingKeydown(event) {
+  if (!isOnboardingVisible() || event.key !== "Tab") return;
+  const dialog = getOnboardingDialog();
+  if (!dialog) return;
+  const focusable = getOnboardingFocusableElements();
+  if (!focusable.length) {
+    event.preventDefault();
+    dialog.focus();
+    return;
+  }
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (!dialog.contains(document.activeElement)) {
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus();
+    return;
+  }
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
 function renderOnboarding() {
   if (!onboardingOverlay || reviewModeEnabled) return;
+  setOnboardingBackgroundInert(true);
   const stepBodies = [
     `
       <h2>Welcome to Clarifin</h2>
@@ -2414,7 +2534,7 @@ function renderOnboarding() {
   onboardingOverlay.hidden = false;
   onboardingOverlay.setAttribute("aria-hidden", "false");
   onboardingOverlay.innerHTML = `
-    <div class="onboarding-dialog liquid-glass" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
+    <div class="onboarding-dialog liquid-glass" role="dialog" aria-modal="true" aria-labelledby="onboarding-title" tabindex="-1">
       <div class="onboarding-progress">Step ${onboardingStep + 1} of ${stepBodies.length}</div>
       <div id="onboarding-title">${stepBodies[onboardingStep]}</div>
       <div class="onboarding-actions">
@@ -2426,14 +2546,21 @@ function renderOnboarding() {
       </div>
     </div>
   `;
-  window.setTimeout(() => onboardingOverlay.querySelector("button")?.focus(), 0);
+  focusOnboardingStep();
 }
 
 function hideOnboarding() {
   if (!onboardingOverlay) return;
+  setOnboardingBackgroundInert(false);
   onboardingOverlay.hidden = true;
   onboardingOverlay.setAttribute("aria-hidden", "true");
   onboardingOverlay.innerHTML = "";
+}
+
+function closeOnboarding() {
+  hideOnboarding();
+  renderList();
+  restoreOnboardingFocus();
 }
 
 function completeOnboarding() {
@@ -2444,18 +2571,17 @@ function completeOnboarding() {
     selectedAssetClasses: onboardingDraft.selectedAssetClasses,
     onboardingComplete: true
   });
-  hideOnboarding();
-  renderList();
+  closeOnboarding();
 }
 
 function skipOnboarding() {
   savePreferences({ ...preferences, onboardingComplete: true });
-  hideOnboarding();
-  renderList();
+  closeOnboarding();
 }
 
 function startOnboarding() {
   if (reviewModeEnabled) return;
+  rememberOnboardingFocus();
   onboardingStep = 0;
   onboardingDraft = createOnboardingDraft(preferences);
   renderOnboarding();
@@ -2487,7 +2613,7 @@ function handleAssetWatchlistToggle(symbol) {
     addAssetToWatchlist(asset);
     localScreenMessage = `${asset.symbol} added to your Watchlist.`;
   }
-  renderDiscoverScreen();
+  renderDiscoverResults();
 }
 
 function renderWatchlistEmptyState(noticeHTML = "") {
@@ -2499,7 +2625,7 @@ function renderWatchlistEmptyState(noticeHTML = "") {
         <p>Add your first symbol to start tracking relevant events</p>
         <div class="screen-actions">
           <button class="action-btn liquid-glass" data-watchlist-add type="button">Add symbol</button>
-          <button class="action-btn liquid-glass" data-open-discover type="button">Discover assets</button>
+          <button class="action-btn liquid-glass" data-open-discover type="button">Add your first assets</button>
         </div>
       </div>
     </article>
@@ -2515,7 +2641,7 @@ function renderWatchlistNoMatches(noticeHTML = "") {
         <p>Clarifin will show events that mention your watchlist symbols.</p>
         <div class="screen-actions">
           <button class="action-btn liquid-glass" data-watchlist-add type="button">Add symbol</button>
-          <button class="action-btn liquid-glass" data-open-discover type="button">Discover assets</button>
+          <button class="action-btn liquid-glass" data-open-discover type="button">Add assets</button>
         </div>
       </div>
     </article>
@@ -3160,7 +3286,7 @@ eventList.addEventListener("click", (event) => {
     localScreenMessage = asset
       ? `${asset.symbol} detail will be added in a later MVP phase. This card currently uses local reference metadata only.`
       : "Asset detail will be added in a later MVP phase.";
-    renderDiscoverScreen();
+    renderDiscoverResults();
     return;
   }
   if (event.target.closest("[data-watchlist-add]")) {
@@ -3187,8 +3313,16 @@ eventList.addEventListener("click", (event) => {
 eventList.addEventListener("input", (event) => {
   if (event.target.id !== "discover-search-input") return;
   discoverQuery = event.target.value || "";
+  if (event.isComposing) return;
   localScreenMessage = "";
-  renderDiscoverScreen();
+  renderDiscoverResults();
+});
+
+eventList.addEventListener("compositionend", (event) => {
+  if (event.target.id !== "discover-search-input") return;
+  discoverQuery = event.target.value || "";
+  localScreenMessage = "";
+  renderDiscoverResults();
 });
 
 eventList.addEventListener("submit", (event) => {
@@ -3293,6 +3427,8 @@ onboardingOverlay?.addEventListener("click", (event) => {
     completeOnboarding();
   }
 });
+
+document.addEventListener("keydown", handleOnboardingKeydown);
 
 document.querySelectorAll(".event-tab").forEach((tab) => {
   tab.addEventListener("click", () => {
