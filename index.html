@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>clarifin prototype</title>
     <style>
 :root {
@@ -45,6 +45,11 @@ body {
 }
 
 button { border: 0; font: inherit; background: none; padding: 0; cursor: pointer; }
+input { font: inherit; }
+button:focus-visible, input:focus-visible {
+  outline: 3px solid rgba(17, 24, 39, 0.22);
+  outline-offset: 2px;
+}
 
 .phone-shell {
   width: min(100%, 414px);
@@ -81,9 +86,11 @@ button { border: 0; font: inherit; background: none; padding: 0; cursor: pointer
   border-radius: 99px; display: flex; align-items: center; gap: var(--sp-3); padding: 0 var(--sp-4) 0 var(--sp-5); z-index: 100;
 }
 
-.brand { flex: 0 0 auto; font-weight: 700; font-size: 18px; letter-spacing: -0.5px; }
+.brand { flex: 0 0 auto; font-weight: 700; font-size: 18px; letter-spacing: -0.5px; color: var(--text-main); }
 .next-event { flex: 1 1 auto; min-width: 0; color: var(--text-light); font-size: 13px; font-weight: 700; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
-.avatar { flex: 0 0 auto; width: 32px; height: 32px; background: var(--text-main); color: #fff; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+.top-actions { flex: 0 0 auto; display: flex; align-items: center; gap: var(--sp-2); }
+.top-action { min-width: 36px; min-height: 36px; padding: 0 10px; border-radius: 99px; background: rgba(17, 24, 39, 0.06); color: var(--text-main); display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+.avatar { flex: 0 0 auto; width: 36px; height: 36px; min-height: 36px; background: var(--text-main); color: #fff; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 14px; }
 
 .greeting-section { margin-bottom: var(--sp-6); padding-top: var(--sp-2); }
 .date-label { font-size: 13px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 var(--sp-1) 0; }
@@ -134,7 +141,7 @@ button { border: 0; font: inherit; background: none; padding: 0; cursor: pointer
 .upcoming-card .timestamp { right: 20px; bottom: 18px; }
 
 .detail-controls { display: flex; justify-content: space-between; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-4); }
-.action-btn { padding: 8px 16px; border-radius: 99px; font-size: 14px; font-weight: 700; color: var(--text-main); border: 1px solid rgba(255, 255, 255, 0.8); }
+.action-btn { min-height: 40px; padding: 8px 16px; border-radius: 99px; font-size: 14px; font-weight: 700; color: var(--text-main); border: 1px solid rgba(255, 255, 255, 0.8); }
 .action-btn.saved { background: var(--yellow-bg); color: var(--yellow-text); border-color: transparent; }
 .action-btn.publish-action { background: var(--green-bg); color: var(--green-text); border-color: transparent; }
 .action-btn.archive-action { background: var(--gray-bg); color: var(--gray-text); border-color: transparent; }
@@ -170,7 +177,7 @@ button { border: 0; font: inherit; background: none; padding: 0; cursor: pointer
 .watchlist-controls { display: flex; flex-direction: column; gap: var(--sp-3); margin-top: var(--sp-4); }
 .watchlist-symbols { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .watchlist-symbol { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 99px; background: var(--gray-bg); color: var(--gray-text); font-size: 12px; font-weight: 700; }
-.watchlist-remove { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; background: rgba(0, 0, 0, 0.08); color: var(--text-muted); font-size: 14px; line-height: 1; }
+.watchlist-remove { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; background: rgba(0, 0, 0, 0.08); color: var(--text-muted); font-size: 14px; line-height: 1; }
 .watchlist-form { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
 .watchlist-input { min-width: 0; flex: 1 1 120px; height: 36px; border: 1px solid rgba(0, 0, 0, 0.08); border-radius: 99px; padding: 0 12px; background: rgba(255, 255, 255, 0.72); color: var(--text-main); font: inherit; font-size: 13px; outline: none; }
 .watchlist-input:focus { border-color: rgba(17, 24, 39, 0.22); box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.06); }
@@ -225,6 +232,65 @@ details.detail-card[open] summary::after { content: "-"; }
 .evidence-fact-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
 .evidence-fact-list li { color: var(--text-muted); font-size: 13px; font-weight: 400; line-height: 1.4; }
 
+.screen-actions, .profile-actions, .onboarding-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+.screen-actions { margin-top: var(--sp-3); }
+.field-label { display: block; margin: 0 0 var(--sp-2) 0; color: var(--text-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; }
+.search-input, .profile-input {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 14px;
+  padding: 0 12px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--text-main);
+  outline: none;
+}
+.search-input:focus, .profile-input:focus { border-color: rgba(17, 24, 39, 0.22); box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.06); }
+.asset-result-meta, .profile-muted, .local-note { margin: var(--sp-2) 0 0 0; color: var(--text-muted); font-size: 13px; line-height: 1.4; }
+.asset-result-meta { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.asset-card-action { margin-top: var(--sp-3); }
+.preference-chips, .profile-stats, .option-grid { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.preference-chip, .profile-stat, .option-pill {
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--text-muted);
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+.option-pill {
+  min-height: 40px;
+  border: 1px solid transparent;
+  text-align: left;
+}
+.option-pill.selected { background: var(--text-main); color: #fff; }
+.profile-stat strong { display: block; color: var(--text-main); font-size: 18px; line-height: 1.1; }
+.profile-form { display: grid; gap: var(--sp-3); margin-top: var(--sp-3); }
+.future-entry { width: 100%; justify-content: flex-start; text-align: left; }
+.onboarding-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 100000;
+  display: grid;
+  align-items: end;
+  padding: 88px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+  background: rgba(241, 243, 246, 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.onboarding-overlay[hidden] { display: none; }
+.onboarding-dialog {
+  width: 100%;
+  max-height: calc(100dvh - 112px);
+  overflow-y: auto;
+  border-radius: 24px;
+  padding: var(--sp-5);
+}
+.onboarding-dialog h2 { margin: 0 0 var(--sp-2) 0; font-size: 22px; line-height: 1.2; }
+.onboarding-dialog p { margin: 0 0 var(--sp-4) 0; color: var(--text-muted); font-size: 14px; line-height: 1.45; }
+.onboarding-progress { margin-bottom: var(--sp-3); color: var(--text-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; }
+.onboarding-actions { justify-content: space-between; margin-top: var(--sp-4); }
+
 .bottom-nav {
   position: fixed !important;
   left: 50% !important;
@@ -243,7 +309,7 @@ details.detail-card[open] summary::after { content: "-"; }
   visibility: visible;
 }
 .bottom-nav[hidden] { display: none; }
-.nav-item { flex: 1; text-align: center; padding: 12px 0; border-radius: 99px; font-size: 14px; font-weight: 700; color: var(--text-muted); transition: all 0.2s ease; }
+.nav-item { flex: 1; min-height: 44px; text-align: center; padding: 12px 0; border-radius: 99px; font-size: 14px; font-weight: 700; color: var(--text-muted); transition: all 0.2s ease; }
 .nav-item.active { background: var(--text-main); color: #fff; }
 .disclaimer { text-align: center; font-size: 10px; font-weight: 400; color: var(--text-muted); margin-top: var(--sp-6); padding: 0 var(--sp-4); }
 
@@ -253,9 +319,12 @@ details.detail-card[open] summary::after { content: "-"; }
     <div class="phone-shell">
       
       <header class="top-nav liquid-glass">
-        <div class="brand">clarifin</div>
+        <button class="brand" type="button">clarifin</button>
         <div class="next-event">NEXT: No major event</div>
-        <div class="avatar">L</div>
+        <div class="top-actions" aria-label="Header actions">
+          <button class="top-action" id="search-button" type="button" aria-label="Open Discover search">Search</button>
+          <button class="avatar" id="avatar-button" type="button" aria-label="Open profile and settings">L</button>
+        </div>
       </header>
 
       <main class="app-screen">
@@ -311,6 +380,8 @@ details.detail-card[open] summary::after { content: "-"; }
         <button class="nav-item" data-view="saved" type="button">Saved</button>
         <button class="nav-item" data-view="review" id="review-nav" type="button" hidden>Review</button>
       </nav>
+
+      <section class="onboarding-overlay" id="onboarding-overlay" hidden aria-hidden="true"></section>
       
     </div>
     <script>
@@ -464,16 +535,67 @@ let upcomingEvents = [];
 
 const DEFAULT_WATCHLIST_SYMBOLS = ["TSMC", "Apple", "Rheinmetall", "LVMH", "Microsoft", "Vonovia"];
 const WATCHLIST_STORAGE_KEY = "clarifinWatchlistSymbols";
+const SAVED_NODES_STORAGE_KEY = "clarifinSavedNodes";
+const ONBOARDING_STORAGE_KEY = "clarifinOnboardingComplete";
+const USER_PROFILE_STORAGE_KEY = "clarifinUserProfile";
+const PREFERENCES_STORAGE_KEY = "clarifinPreferences";
+const APPEARANCE_STORAGE_KEY = "clarifinAppearance";
+const DEFAULT_PREFERENCES = {
+  selectedInterests: [],
+  selectedRegions: [],
+  selectedAssetClasses: [],
+  onboardingComplete: false
+};
+const DEFAULT_USER_PROFILE = { displayName: "Guest" };
+const DEFAULT_APPEARANCE = { theme: "system" };
+const INTEREST_OPTIONS = ["Macro", "Earnings", "M&A", "Insider Transactions", "Regulation", "Geopolitics", "Cybersecurity", "Commodities", "Legal / Court"];
+const REGION_OPTIONS = ["United States", "Europe", "Global"];
+const ASSET_CLASS_OPTIONS = ["Stocks", "ETFs", "Crypto", "Macro / Indices"];
+const LOCAL_ASSET_CATALOG = [
+  { symbol: "AAPL", name: "Apple", asset_type: "stock", sector: "Technology", region: "United States", themes: ["AI", "Consumer Hardware"], event_families: ["Earnings", "Regulation"], aliases: ["Apple"] },
+  { symbol: "MSFT", name: "Microsoft", asset_type: "stock", sector: "Technology", region: "United States", themes: ["AI", "Cloud"], event_families: ["Earnings", "Regulation"], aliases: ["Microsoft"] },
+  { symbol: "NVDA", name: "Nvidia", asset_type: "stock", sector: "Semiconductors", region: "United States", themes: ["AI", "Semiconductors"], event_families: ["Earnings", "Supply Chain"], aliases: ["NVIDIA"] },
+  { symbol: "AMZN", name: "Amazon", asset_type: "stock", sector: "Consumer Discretionary", region: "United States", themes: ["Cloud", "Retail"], event_families: ["Earnings", "Regulation"], aliases: ["Amazon"] },
+  { symbol: "META", name: "Meta Platforms", asset_type: "stock", sector: "Communication Services", region: "United States", themes: ["Advertising", "AI"], event_families: ["Earnings", "Regulation"], aliases: ["Meta", "Facebook"] },
+  { symbol: "GOOGL", name: "Alphabet", asset_type: "stock", sector: "Communication Services", region: "United States", themes: ["Search", "AI", "Cloud"], event_families: ["Earnings", "Regulation"], aliases: ["Google", "Alphabet"] },
+  { symbol: "TSLA", name: "Tesla", asset_type: "stock", sector: "Consumer Discretionary", region: "United States", themes: ["EVs", "Autonomy"], event_families: ["Earnings", "Regulation"], aliases: ["Tesla"] },
+  { symbol: "TSM", name: "Taiwan Semiconductor", asset_type: "stock", sector: "Semiconductors", region: "Global", themes: ["Semiconductors", "Supply Chain"], event_families: ["Earnings", "Geopolitics"], aliases: ["TSMC", "Taiwan Semiconductor Manufacturing"] },
+  { symbol: "ASML", name: "ASML", asset_type: "stock", sector: "Semiconductors", region: "Europe", themes: ["Semiconductor Equipment"], event_families: ["Earnings", "Export Controls"], aliases: ["ASML Holding"] },
+  { symbol: "SAP", name: "SAP", asset_type: "stock", sector: "Software", region: "Europe", themes: ["Enterprise Software", "Cloud"], event_families: ["Earnings"], aliases: ["SAP SE"] },
+  { symbol: "RHM", name: "Rheinmetall", asset_type: "stock", sector: "Defense", region: "Europe", themes: ["Defense", "Geopolitics"], event_families: ["Geopolitics", "Earnings"], aliases: ["Rheinmetall"] },
+  { symbol: "MC", name: "LVMH", asset_type: "stock", sector: "Luxury", region: "Europe", themes: ["Luxury", "Consumer"], event_families: ["Earnings", "Macro"], aliases: ["LVMH", "Moet Hennessy Louis Vuitton"] },
+  { symbol: "VNA", name: "Vonovia", asset_type: "stock", sector: "Real Estate", region: "Europe", themes: ["Rates", "Real Estate"], event_families: ["Macro", "Earnings"], aliases: ["Vonovia"] },
+  { symbol: "SPY", name: "SPDR S&P 500 ETF", asset_type: "etf", sector: "Broad Market", region: "United States", themes: ["Equities"], event_families: ["Macro", "Earnings"], aliases: ["S&P 500", "S&P500"] },
+  { symbol: "QQQ", name: "Invesco QQQ ETF", asset_type: "etf", sector: "Technology", region: "United States", themes: ["Growth", "Technology"], event_families: ["Macro", "Earnings"], aliases: ["Nasdaq", "NASDAQ 100"] },
+  { symbol: "TLT", name: "iShares 20+ Year Treasury Bond ETF", asset_type: "etf", sector: "Rates", region: "United States", themes: ["Bonds", "Duration"], event_families: ["Macro", "Central Banks"], aliases: ["Treasuries", "Long Bonds"] },
+  { symbol: "GLD", name: "SPDR Gold Shares", asset_type: "etf", sector: "Commodities", region: "Global", themes: ["Gold", "Safe Havens"], event_families: ["Macro", "Geopolitics"], aliases: ["Gold"] },
+  { symbol: "USO", name: "United States Oil Fund", asset_type: "etf", sector: "Energy", region: "Global", themes: ["Oil", "Energy"], event_families: ["Commodities", "Geopolitics"], aliases: ["Oil", "Crude Oil"] },
+  { symbol: "XLE", name: "Energy Select Sector SPDR Fund", asset_type: "etf", sector: "Energy", region: "United States", themes: ["Energy"], event_families: ["Commodities", "Earnings"], aliases: ["Energy ETF"] },
+  { symbol: "BTC", name: "Bitcoin", asset_type: "crypto", sector: "Crypto", region: "Global", themes: ["Digital Assets"], event_families: ["Regulation", "Macro"], aliases: ["Bitcoin"] },
+  { symbol: "ETH", name: "Ethereum", asset_type: "crypto", sector: "Crypto", region: "Global", themes: ["Digital Assets"], event_families: ["Regulation", "Macro"], aliases: ["Ether", "Ethereum"] },
+  { symbol: "DXY", name: "US Dollar Index", asset_type: "macro", sector: "Currencies", region: "United States", themes: ["Dollar", "FX"], event_families: ["Macro", "Central Banks"], aliases: ["Dollar Index", "US Dollar"] },
+  { symbol: "VIX", name: "CBOE Volatility Index", asset_type: "macro", sector: "Volatility", region: "United States", themes: ["Volatility", "Risk"], event_families: ["Macro"], aliases: ["Volatility Index"] },
+  { symbol: "US10Y", name: "US 10-Year Treasury Yield", asset_type: "macro", sector: "Rates", region: "United States", themes: ["Rates", "Bonds"], event_families: ["Macro", "Central Banks"], aliases: ["10Y", "US10Y", "10-Year Treasury"] }
+];
 const directionOrder = { positive: 0, negative: 1, mixed: 2, neutral: 2 };
 const reviewModeEnabled = new URLSearchParams(window.location.search).get("mode") === "review";
 let activeView = reviewModeEnabled ? "review" : "home";
 let eventMode = "top";
 let reviewTab = "drafts";
 let selectedNodeId = null;
-let savedNodeIds = JSON.parse(localStorage.getItem("clarifinSavedNodes") || "[]");
+let savedNodeIds = sanitizeStringArray(safeReadLocalJson(SAVED_NODES_STORAGE_KEY, []));
 let watchlist = loadWatchlistSymbols();
 let watchlistInputVisible = false;
 let watchlistMessage = "";
+let userProfile = normalizeUserProfile(safeReadLocalJson(USER_PROFILE_STORAGE_KEY, DEFAULT_USER_PROFILE));
+let preferences = normalizePreferences(safeReadLocalJson(PREFERENCES_STORAGE_KEY, DEFAULT_PREFERENCES));
+preferences.onboardingComplete = Boolean(safeReadLocalJson(ONBOARDING_STORAGE_KEY, preferences.onboardingComplete) || preferences.onboardingComplete);
+let appearance = safeReadLocalJson(APPEARANCE_STORAGE_KEY, DEFAULT_APPEARANCE);
+let onboardingStep = 0;
+let onboardingDraft = createOnboardingDraft(preferences);
+let previousView = activeView;
+let discoverQuery = "";
+let localScreenMessage = "";
 let nodeDataState = { status: "loading", title: "Loading latest nodes", message: "Loading latest nodes..." };
 let upcomingDataState = { status: "loading", title: "Loading upcoming events", message: "Loading upcoming events..." };
 let reviewLoadMessage = "";
@@ -508,6 +630,81 @@ function parseJsonValue(value) {
   }
 }
 
+function cloneDefault(value) {
+  if (Array.isArray(value)) return value.slice();
+  if (value && typeof value === "object") return { ...value };
+  return value;
+}
+
+function safeReadLocalJson(key, fallback) {
+  try {
+    const stored = localStorage.getItem(key);
+    if (!stored) return cloneDefault(fallback);
+    return JSON.parse(stored);
+  } catch (error) {
+    console.warn(`Clarifin local storage read failed for ${key}.`, error);
+    return cloneDefault(fallback);
+  }
+}
+
+function safeWriteLocalJson(key, value) {
+  if (value === undefined) return false;
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch (error) {
+    console.warn(`Clarifin local storage write failed for ${key}.`, error);
+    return false;
+  }
+}
+
+function sanitizeStringArray(value) {
+  return (Array.isArray(value) ? value : [])
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+}
+
+function normalizePreferences(value) {
+  const source = value && typeof value === "object" ? value : {};
+  return {
+    selectedInterests: sanitizeStringArray(source.selectedInterests),
+    selectedRegions: sanitizeStringArray(source.selectedRegions),
+    selectedAssetClasses: sanitizeStringArray(source.selectedAssetClasses),
+    onboardingComplete: Boolean(source.onboardingComplete)
+  };
+}
+
+function savePreferences(nextPreferences) {
+  preferences = normalizePreferences(nextPreferences);
+  safeWriteLocalJson(PREFERENCES_STORAGE_KEY, preferences);
+  safeWriteLocalJson(ONBOARDING_STORAGE_KEY, Boolean(preferences.onboardingComplete));
+}
+
+function normalizeUserProfile(value) {
+  const source = value && typeof value === "object" ? value : {};
+  const displayName = String(source.displayName || "Guest").trim() || "Guest";
+  return { displayName };
+}
+
+function saveUserProfile(nextProfile) {
+  userProfile = normalizeUserProfile(nextProfile);
+  safeWriteLocalJson(USER_PROFILE_STORAGE_KEY, userProfile);
+  updateAvatar();
+}
+
+function createOnboardingDraft(sourcePreferences = preferences) {
+  return {
+    selectedInterests: sanitizeStringArray(sourcePreferences.selectedInterests),
+    selectedRegions: sanitizeStringArray(sourcePreferences.selectedRegions),
+    selectedAssetClasses: sanitizeStringArray(sourcePreferences.selectedAssetClasses),
+    starterSymbols: []
+  };
+}
+
+function isOnboardingComplete() {
+  return Boolean(safeReadLocalJson(ONBOARDING_STORAGE_KEY, preferences.onboardingComplete) || preferences.onboardingComplete);
+}
+
 function toArray(value) {
   const parsed = parseJsonValue(value);
   if (Array.isArray(parsed)) return parsed;
@@ -539,24 +736,15 @@ function dedupeSymbols(symbols) {
 
 function saveWatchlistSymbols(symbols) {
   watchlist = dedupeSymbols(symbols);
-  try {
-    localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(watchlist));
-  } catch (error) {
-    console.warn("Clarifin watchlist storage unavailable. Changes will be temporary.", error);
-  }
+  safeWriteLocalJson(WATCHLIST_STORAGE_KEY, watchlist);
 }
 
 function loadWatchlistSymbols() {
-  try {
-    const stored = localStorage.getItem(WATCHLIST_STORAGE_KEY);
-    if (stored) return dedupeSymbols(JSON.parse(stored));
-    const defaults = dedupeSymbols(DEFAULT_WATCHLIST_SYMBOLS);
-    localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(defaults));
-    return defaults;
-  } catch (error) {
-    console.warn("Clarifin watchlist storage unavailable. Using default symbols.", error);
-    return dedupeSymbols(DEFAULT_WATCHLIST_SYMBOLS);
-  }
+  const stored = safeReadLocalJson(WATCHLIST_STORAGE_KEY, null);
+  if (Array.isArray(stored)) return dedupeSymbols(stored);
+  const defaults = dedupeSymbols(DEFAULT_WATCHLIST_SYMBOLS);
+  safeWriteLocalJson(WATCHLIST_STORAGE_KEY, defaults);
+  return defaults;
 }
 
 function toNumber(value, fallback = 0) {
@@ -1585,6 +1773,9 @@ const reviewNav = document.querySelector("#review-nav");
 const bottomNav = document.querySelector(".bottom-nav");
 const appScreen = document.querySelector(".app-screen");
 const brandButton = document.querySelector(".brand");
+const searchButton = document.querySelector("#search-button");
+const avatarButton = document.querySelector("#avatar-button");
+const onboardingOverlay = document.querySelector("#onboarding-overlay");
 const nextEventLabel = document.querySelector(".next-event");
 
 if (reviewNav) reviewNav.hidden = !reviewModeEnabled;
@@ -1614,6 +1805,93 @@ function renderDataStatusNotice(state) {
       <p>${escapeHtml(state.message || "Live data status is unavailable.")}</p>
     </article>
   `;
+}
+
+function normalizeSearchToken(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function assetSearchText(asset) {
+  return [
+    asset.symbol,
+    asset.name,
+    asset.asset_type,
+    asset.sector,
+    asset.region,
+    ...(Array.isArray(asset.themes) ? asset.themes : []),
+    ...(Array.isArray(asset.event_families) ? asset.event_families : []),
+    ...(Array.isArray(asset.aliases) ? asset.aliases : [])
+  ].map(normalizeSearchToken).join(" ");
+}
+
+function getAssetBySymbol(symbol) {
+  const normalized = normalizeWatchlistSymbol(symbol);
+  return LOCAL_ASSET_CATALOG.find((asset) => normalizeWatchlistSymbol(asset.symbol) === normalized);
+}
+
+function getAssetWatchlistTokens(asset) {
+  return [asset?.symbol, asset?.name, ...(Array.isArray(asset?.aliases) ? asset.aliases : [])]
+    .map(normalizeWatchlistSymbol)
+    .filter(Boolean);
+}
+
+function isAssetInWatchlist(asset) {
+  const tokens = new Set(getAssetWatchlistTokens(asset));
+  return watchlist.some((item) => tokens.has(normalizeWatchlistSymbol(item)));
+}
+
+function addAssetToWatchlist(asset) {
+  if (!asset || isAssetInWatchlist(asset)) return;
+  saveWatchlistSymbols([...watchlist, asset.symbol]);
+}
+
+function removeAssetFromWatchlist(asset) {
+  if (!asset) return;
+  const tokens = new Set(getAssetWatchlistTokens(asset));
+  saveWatchlistSymbols(watchlist.filter((item) => !tokens.has(normalizeWatchlistSymbol(item))));
+}
+
+function mergeAssetSymbolsIntoWatchlist(symbols) {
+  const nextSymbols = watchlist.slice();
+  symbols.forEach((symbol) => {
+    const asset = getAssetBySymbol(symbol);
+    if (!asset) return;
+    const tokens = new Set(getAssetWatchlistTokens(asset));
+    const alreadyPresent = nextSymbols.some((item) => tokens.has(normalizeWatchlistSymbol(item)));
+    if (!alreadyPresent) nextSymbols.push(asset.symbol);
+  });
+  saveWatchlistSymbols(nextSymbols);
+}
+
+function getDiscoverResults() {
+  const query = normalizeSearchToken(discoverQuery);
+  const results = query
+    ? LOCAL_ASSET_CATALOG.filter((asset) => assetSearchText(asset).includes(query))
+    : LOCAL_ASSET_CATALOG.slice(0, 12);
+  return results;
+}
+
+function updateAvatar() {
+  if (!avatarButton) return;
+  const name = String(userProfile.displayName || "Guest").trim();
+  const initial = (name.match(/[A-Za-z0-9]/)?.[0] || "G").toUpperCase();
+  avatarButton.textContent = initial;
+}
+
+function openLocalView(view, message = "") {
+  if (!["discover", "profile", "settings", "help", "inbox"].includes(view)) return;
+  if (!["discover", "profile", "settings", "help", "inbox"].includes(activeView)) previousView = activeView;
+  activeView = view;
+  selectedNodeId = null;
+  localScreenMessage = message;
+  renderList();
+}
+
+function returnToPreviousView() {
+  activeView = ["home", "watchlist", "saved", "review"].includes(previousView) ? previousView : "home";
+  selectedNodeId = null;
+  localScreenMessage = "";
+  renderList();
 }
 
 function showWatchlistInput() {
@@ -1669,6 +1947,7 @@ function renderWatchlistControls() {
   ` : "";
   const addControl = watchlistInputVisible ? `
     <form class="watchlist-form" id="watchlist-form">
+      <label class="field-label" for="watchlist-symbol-input">Symbol</label>
       <input class="watchlist-input" id="watchlist-symbol-input" name="symbol" type="text" placeholder="Symbol" autocomplete="off" />
       <button class="action-btn liquid-glass" type="submit">Add</button>
       <button class="action-btn liquid-glass" id="cancel-watchlist-add" type="button">Cancel</button>
@@ -1678,7 +1957,10 @@ function renderWatchlistControls() {
   return `
     <div class="watchlist-controls">
       ${symbolsHTML}
-      ${addControl}
+      <div class="screen-actions">
+        ${addControl}
+        <button class="action-btn liquid-glass" data-open-discover type="button">Discover assets</button>
+      </div>
       ${watchlistMessage ? `<p class="watchlist-message">${escapeHtml(watchlistMessage)}</p>` : ""}
     </div>
   `;
@@ -1835,6 +2117,9 @@ function renderIntro() {
     screenIntro.innerHTML = `
       <p class="date-label">${getCurrentDateLabel()}</p>
       <h1>${getGreeting()}</h1>
+      <div class="screen-actions">
+        <button class="action-btn liquid-glass" data-open-discover type="button">Discover assets</button>
+      </div>
     `;
     eventTabs.hidden = false;
   } else if (activeView === "review") {
@@ -1857,6 +2142,34 @@ function renderIntro() {
       <p class="date-label">Watchlist</p>
       <h1>Relevant nodes</h1>
       ${renderWatchlistControls()}
+    `;
+    eventTabs.hidden = true;
+  } else if (activeView === "discover") {
+    screenIntro.innerHTML = `
+      <p class="date-label">Discover</p>
+      <h1>Local asset search</h1>
+      <p class="local-note">Search by symbol, name or alias.</p>
+      <div class="screen-actions">
+        <button class="action-btn liquid-glass" data-return-previous type="button">Back</button>
+      </div>
+    `;
+    eventTabs.hidden = true;
+  } else if (activeView === "profile") {
+    screenIntro.innerHTML = `
+      <p class="date-label">Account Hub</p>
+      <h1>Profile</h1>
+      <div class="screen-actions">
+        <button class="action-btn liquid-glass" data-return-previous type="button">Back</button>
+      </div>
+    `;
+    eventTabs.hidden = true;
+  } else if (["settings", "help", "inbox"].includes(activeView)) {
+    screenIntro.innerHTML = `
+      <p class="date-label">Profile</p>
+      <h1>${activeView === "settings" ? "Settings" : activeView === "help" ? "Help" : "Inbox"}</h1>
+      <div class="screen-actions">
+        <button class="action-btn liquid-glass" data-open-profile type="button">Back to Profile</button>
+      </div>
     `;
     eventTabs.hidden = true;
   } else {
@@ -1907,6 +2220,276 @@ function getUpcomingFlag(title) {
   return REGION_FLAGS.globe;
 }
 
+function preferenceChipsHTML(items, emptyLabel = "None selected yet") {
+  const values = sanitizeStringArray(items);
+  if (!values.length) return `<p class="profile-muted">${escapeHtml(emptyLabel)}</p>`;
+  return `<div class="preference-chips">${values.map((item) => `<span class="preference-chip">${escapeHtml(item)}</span>`).join("")}</div>`;
+}
+
+function renderAssetResultCard(asset) {
+  const inWatchlist = isAssetInWatchlist(asset);
+  return `
+    <article class="event-card liquid-glass" data-asset-symbol="${escapeHtml(asset.symbol)}">
+      <div class="card-header">
+        <div>
+          <span class="category-pill">${escapeHtml(asset.asset_type)}</span>
+          <h2>${escapeHtml(asset.symbol)} - ${escapeHtml(asset.name)}</h2>
+        </div>
+      </div>
+      <p>${escapeHtml(asset.sector)} reference asset for ${escapeHtml(asset.region)}. Local metadata only; no live market data.</p>
+      <div class="asset-result-meta">
+        <span class="ticker-chip neutral">${escapeHtml(asset.region)}</span>
+        ${(asset.themes || []).slice(0, 3).map((theme) => `<span class="ticker-chip mixed">${escapeHtml(theme)}</span>`).join("")}
+      </div>
+      <button class="action-btn liquid-glass asset-card-action" data-asset-watchlist-toggle="${escapeHtml(asset.symbol)}" type="button">
+        ${inWatchlist ? "Remove from Watchlist" : "Add to Watchlist"}
+      </button>
+    </article>
+  `;
+}
+
+function renderDiscoverScreen() {
+  const results = getDiscoverResults();
+  eventList.innerHTML = `
+    <article class="event-card liquid-glass">
+      <label class="field-label" for="discover-search-input">Search local catalog</label>
+      <input class="search-input" id="discover-search-input" type="search" value="${escapeHtml(discoverQuery)}" placeholder="Symbol, company, alias" autocomplete="off" />
+      <p class="local-note">This catalog is local reference metadata. It does not contain live prices, price changes, ratings or performance data.</p>
+      ${localScreenMessage ? `<p class="watchlist-message">${escapeHtml(localScreenMessage)}</p>` : ""}
+    </article>
+    ${results.length ? results.map(renderAssetResultCard).join("") : `
+      <article class="event-card liquid-glass">
+        <h2>No local matches</h2>
+        <p>Try a symbol, company name or known alias.</p>
+      </article>
+    `}
+  `;
+  window.setTimeout(() => document.querySelector("#discover-search-input")?.focus(), 0);
+}
+
+function renderProfileScreen() {
+  const displayName = userProfile.displayName || "Guest";
+  eventList.innerHTML = `
+    ${localScreenMessage ? `<article class="data-status-card liquid-glass status-fallback"><p>${escapeHtml(localScreenMessage)}</p></article>` : ""}
+    <article class="event-card liquid-glass">
+      <span class="category-pill">Local profile</span>
+      <h2>${escapeHtml(displayName)}</h2>
+      <p>No login, cloud sync or verified account is active in this local prototype.</p>
+      <div class="profile-stats">
+        <span class="profile-stat"><strong>${watchlist.length}</strong>Watchlist</span>
+        <span class="profile-stat"><strong>${savedNodeIds.length}</strong>Saved</span>
+      </div>
+      <form class="profile-form" id="profile-form">
+        <label class="field-label" for="profile-display-name">Display name</label>
+        <input class="profile-input" id="profile-display-name" name="displayName" value="${escapeHtml(displayName === "Guest" ? "" : displayName)}" placeholder="Guest" autocomplete="name" />
+        <button class="action-btn liquid-glass" type="submit">Save name</button>
+      </form>
+    </article>
+    <article class="event-card liquid-glass">
+      <h2>Preferences</h2>
+      <p class="profile-muted">Interests</p>
+      ${preferenceChipsHTML(preferences.selectedInterests)}
+      <p class="profile-muted">Regions</p>
+      ${preferenceChipsHTML(preferences.selectedRegions)}
+      <p class="profile-muted">Asset classes</p>
+      ${preferenceChipsHTML(preferences.selectedAssetClasses)}
+    </article>
+    <article class="event-card liquid-glass">
+      <h2>Account hub</h2>
+      <div class="profile-actions">
+        <button class="action-btn liquid-glass" data-profile-action="watchlist" type="button">Open Watchlist</button>
+        <button class="action-btn liquid-glass" data-profile-action="saved" type="button">Open Saved</button>
+        <button class="action-btn liquid-glass" data-profile-action="restart-onboarding" type="button">Restart onboarding</button>
+        <button class="action-btn liquid-glass future-entry" data-profile-action="settings" type="button">Settings</button>
+        <button class="action-btn liquid-glass future-entry" data-profile-action="help" type="button">Help / Methodology</button>
+        <button class="action-btn liquid-glass future-entry" data-profile-action="inbox" type="button">Intelligence Inbox</button>
+      </div>
+    </article>
+  `;
+}
+
+function renderSettingsScreen() {
+  eventList.innerHTML = `
+    <article class="event-card liquid-glass">
+      <h2>Local settings</h2>
+      <p>Available now: local profile name, onboarding preferences and Watchlist/Saved shortcuts. More settings will be added in a later MVP phase.</p>
+      <div class="profile-actions">
+        <button class="action-btn liquid-glass" data-open-profile type="button">Back to Profile</button>
+        <button class="action-btn liquid-glass" data-profile-action="restart-onboarding" type="button">Restart onboarding</button>
+      </div>
+    </article>
+  `;
+}
+
+function renderHelpScreen() {
+  eventList.innerHTML = `
+    <article class="event-card liquid-glass">
+      <h2>Help / Methodology</h2>
+      <p>This section will be added in a later MVP phase. Clarifin provides market intelligence, not investment advice, and does not execute trades.</p>
+      <button class="action-btn liquid-glass" data-open-profile type="button">Back to Profile</button>
+    </article>
+  `;
+}
+
+function renderInboxScreen() {
+  eventList.innerHTML = `
+    <article class="event-card liquid-glass">
+      <h2>Intelligence Inbox</h2>
+      <p>Intelligence Inbox will be added in a later MVP phase. No push notifications are currently active.</p>
+      <button class="action-btn liquid-glass" data-open-profile type="button">Back to Profile</button>
+    </article>
+  `;
+}
+
+function toggleDraftArray(field, value) {
+  const current = sanitizeStringArray(onboardingDraft[field]);
+  onboardingDraft[field] = current.includes(value)
+    ? current.filter((item) => item !== value)
+    : [...current, value];
+}
+
+function optionButtonsHTML(options, field) {
+  const selected = new Set(sanitizeStringArray(onboardingDraft[field]));
+  return `
+    <div class="option-grid">
+      ${options.map((option) => `
+        <button class="option-pill ${selected.has(option) ? "selected" : ""}" data-onboarding-toggle="${escapeHtml(field)}" data-onboarding-value="${escapeHtml(option)}" type="button" aria-pressed="${selected.has(option) ? "true" : "false"}">
+          ${escapeHtml(option)}
+        </button>
+      `).join("")}
+    </div>
+  `;
+}
+
+function starterAssetsHTML() {
+  const selected = new Set(sanitizeStringArray(onboardingDraft.starterSymbols));
+  return `
+    <div class="option-grid">
+      ${LOCAL_ASSET_CATALOG.map((asset) => `
+        <button class="option-pill ${selected.has(asset.symbol) ? "selected" : ""}" data-onboarding-toggle="starterSymbols" data-onboarding-value="${escapeHtml(asset.symbol)}" type="button" aria-pressed="${selected.has(asset.symbol) ? "true" : "false"}">
+          ${escapeHtml(asset.symbol)} - ${escapeHtml(asset.name)}
+        </button>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderOnboarding() {
+  if (!onboardingOverlay || reviewModeEnabled) return;
+  const stepBodies = [
+    `
+      <h2>Welcome to Clarifin</h2>
+      <p>Clarifin helps you understand market-moving events. It provides market intelligence, not investment advice, and it does not execute trades.</p>
+    `,
+    `
+      <h2>Interests</h2>
+      <p>Choose the event types you want Clarifin to emphasize. You can continue without selecting anything.</p>
+      ${optionButtonsHTML(INTEREST_OPTIONS, "selectedInterests")}
+    `,
+    `
+      <h2>Markets and assets</h2>
+      <p>Select the regions and asset classes you care about. These are local preferences only.</p>
+      <p class="profile-muted">Regions</p>
+      ${optionButtonsHTML(REGION_OPTIONS, "selectedRegions")}
+      <p class="profile-muted">Asset classes</p>
+      ${optionButtonsHTML(ASSET_CLASS_OPTIONS, "selectedAssetClasses")}
+    `,
+    `
+      <h2>Starter Watchlist</h2>
+      <p>Pick local catalog assets to merge into your Watchlist. Existing symbols are preserved.</p>
+      ${starterAssetsHTML()}
+    `,
+    `
+      <h2>You're set</h2>
+      <p>Clarifin will keep your preferences locally on this device. You can restart onboarding from Profile.</p>
+      <p class="profile-muted">Interests</p>
+      ${preferenceChipsHTML(onboardingDraft.selectedInterests, "No interests selected")}
+      <p class="profile-muted">Regions</p>
+      ${preferenceChipsHTML(onboardingDraft.selectedRegions, "No regions selected")}
+      <p class="profile-muted">Asset classes</p>
+      ${preferenceChipsHTML(onboardingDraft.selectedAssetClasses, "No asset classes selected")}
+    `
+  ];
+  const isFinalStep = onboardingStep === stepBodies.length - 1;
+  onboardingOverlay.hidden = false;
+  onboardingOverlay.setAttribute("aria-hidden", "false");
+  onboardingOverlay.innerHTML = `
+    <div class="onboarding-dialog liquid-glass" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
+      <div class="onboarding-progress">Step ${onboardingStep + 1} of ${stepBodies.length}</div>
+      <div id="onboarding-title">${stepBodies[onboardingStep]}</div>
+      <div class="onboarding-actions">
+        <div class="screen-actions">
+          ${onboardingStep > 0 ? `<button class="action-btn liquid-glass" data-onboarding-action="back" type="button">Back</button>` : ""}
+          <button class="action-btn liquid-glass" data-onboarding-action="skip" type="button">Skip</button>
+        </div>
+        <button class="action-btn liquid-glass" data-onboarding-action="${isFinalStep ? "finish" : "next"}" type="button">${isFinalStep ? "Open Clarifin" : "Continue"}</button>
+      </div>
+    </div>
+  `;
+  window.setTimeout(() => onboardingOverlay.querySelector("button")?.focus(), 0);
+}
+
+function hideOnboarding() {
+  if (!onboardingOverlay) return;
+  onboardingOverlay.hidden = true;
+  onboardingOverlay.setAttribute("aria-hidden", "true");
+  onboardingOverlay.innerHTML = "";
+}
+
+function completeOnboarding() {
+  mergeAssetSymbolsIntoWatchlist(onboardingDraft.starterSymbols);
+  savePreferences({
+    selectedInterests: onboardingDraft.selectedInterests,
+    selectedRegions: onboardingDraft.selectedRegions,
+    selectedAssetClasses: onboardingDraft.selectedAssetClasses,
+    onboardingComplete: true
+  });
+  hideOnboarding();
+  renderList();
+}
+
+function skipOnboarding() {
+  savePreferences({ ...preferences, onboardingComplete: true });
+  hideOnboarding();
+  renderList();
+}
+
+function startOnboarding() {
+  if (reviewModeEnabled) return;
+  onboardingStep = 0;
+  onboardingDraft = createOnboardingDraft(preferences);
+  renderOnboarding();
+}
+
+function handleProfileAction(action) {
+  if (action === "watchlist") {
+    activeView = "watchlist";
+    localScreenMessage = "";
+    renderList();
+  } else if (action === "saved") {
+    activeView = "saved";
+    localScreenMessage = "";
+    renderList();
+  } else if (action === "restart-onboarding") {
+    startOnboarding();
+  } else if (["settings", "help", "inbox"].includes(action)) {
+    openLocalView(action);
+  }
+}
+
+function handleAssetWatchlistToggle(symbol) {
+  const asset = getAssetBySymbol(symbol);
+  if (!asset) return;
+  if (isAssetInWatchlist(asset)) {
+    removeAssetFromWatchlist(asset);
+    localScreenMessage = `${asset.symbol} removed from your Watchlist.`;
+  } else {
+    addAssetToWatchlist(asset);
+    localScreenMessage = `${asset.symbol} added to your Watchlist.`;
+  }
+  renderDiscoverScreen();
+}
+
 function renderWatchlistEmptyState(noticeHTML = "") {
   eventList.innerHTML = `
     ${noticeHTML}
@@ -1914,7 +2497,10 @@ function renderWatchlistEmptyState(noticeHTML = "") {
       <div class="watchlist-empty">
         <h2>No watchlist symbols yet</h2>
         <p>Add your first symbol to start tracking relevant events</p>
-        <button class="action-btn liquid-glass" data-watchlist-add type="button">Add symbol</button>
+        <div class="screen-actions">
+          <button class="action-btn liquid-glass" data-watchlist-add type="button">Add symbol</button>
+          <button class="action-btn liquid-glass" data-open-discover type="button">Discover assets</button>
+        </div>
       </div>
     </article>
   `;
@@ -1927,7 +2513,10 @@ function renderWatchlistNoMatches(noticeHTML = "") {
       <div class="watchlist-empty">
         <h2>No matching nodes yet</h2>
         <p>Clarifin will show events that mention your watchlist symbols.</p>
-        <button class="action-btn liquid-glass" data-watchlist-add type="button">Add symbol</button>
+        <div class="screen-actions">
+          <button class="action-btn liquid-glass" data-watchlist-add type="button">Add symbol</button>
+          <button class="action-btn liquid-glass" data-open-discover type="button">Discover assets</button>
+        </div>
       </div>
     </article>
   `;
@@ -2173,7 +2762,17 @@ function renderList() {
   const nodeNoticeHTML = renderDataStatusNotice(nodeDataState);
   const upcomingNoticeHTML = renderDataStatusNotice(upcomingDataState);
 
-  if (activeView === "watchlist") {
+  if (activeView === "discover") {
+    renderDiscoverScreen();
+  } else if (activeView === "profile") {
+    renderProfileScreen();
+  } else if (activeView === "settings") {
+    renderSettingsScreen();
+  } else if (activeView === "help") {
+    renderHelpScreen();
+  } else if (activeView === "inbox") {
+    renderInboxScreen();
+  } else if (activeView === "watchlist") {
     if (!watchlist.length) {
       renderWatchlistEmptyState(nodeNoticeHTML);
       return;
@@ -2537,6 +3136,33 @@ function renderDetail(node) {
 }
 
 eventList.addEventListener("click", (event) => {
+  if (event.target.closest("[data-open-discover]")) {
+    openLocalView("discover");
+    return;
+  }
+  if (event.target.closest("[data-open-profile]")) {
+    openLocalView("profile");
+    return;
+  }
+  const profileAction = event.target.closest("[data-profile-action]");
+  if (profileAction) {
+    handleProfileAction(profileAction.dataset.profileAction);
+    return;
+  }
+  const assetToggle = event.target.closest("[data-asset-watchlist-toggle]");
+  if (assetToggle) {
+    handleAssetWatchlistToggle(assetToggle.dataset.assetWatchlistToggle);
+    return;
+  }
+  const assetCard = event.target.closest("[data-asset-symbol]");
+  if (assetCard) {
+    const asset = getAssetBySymbol(assetCard.dataset.assetSymbol);
+    localScreenMessage = asset
+      ? `${asset.symbol} detail will be added in a later MVP phase. This card currently uses local reference metadata only.`
+      : "Asset detail will be added in a later MVP phase.";
+    renderDiscoverScreen();
+    return;
+  }
   if (event.target.closest("[data-watchlist-add]")) {
     showWatchlistInput();
     return;
@@ -2558,6 +3184,23 @@ eventList.addEventListener("click", (event) => {
   }
 });
 
+eventList.addEventListener("input", (event) => {
+  if (event.target.id !== "discover-search-input") return;
+  discoverQuery = event.target.value || "";
+  localScreenMessage = "";
+  renderDiscoverScreen();
+});
+
+eventList.addEventListener("submit", (event) => {
+  const profileForm = event.target.closest("#profile-form");
+  if (!profileForm) return;
+  event.preventDefault();
+  const displayName = String(new FormData(profileForm).get("displayName") || "").trim() || "Guest";
+  saveUserProfile({ displayName });
+  localScreenMessage = "Local display name saved.";
+  renderProfileScreen();
+});
+
 document.querySelector("#back-button").addEventListener("click", renderList);
 
 saveButton.addEventListener("click", () => {
@@ -2565,7 +3208,7 @@ saveButton.addEventListener("click", () => {
   savedNodeIds = savedNodeIds.includes(selectedNodeId)
     ? savedNodeIds.filter((id) => id !== selectedNodeId)
     : [...savedNodeIds, selectedNodeId];
-  localStorage.setItem("clarifinSavedNodes", JSON.stringify(savedNodeIds));
+  safeWriteLocalJson(SAVED_NODES_STORAGE_KEY, savedNodeIds);
   renderDetail(getNode(selectedNodeId));
 });
 
@@ -2582,6 +3225,18 @@ archiveButton?.addEventListener("click", () => {
 });
 
 screenIntro.addEventListener("click", (event) => {
+  if (event.target.closest("[data-open-discover]")) {
+    openLocalView("discover");
+    return;
+  }
+  if (event.target.closest("[data-open-profile]")) {
+    openLocalView("profile");
+    return;
+  }
+  if (event.target.closest("[data-return-previous]")) {
+    returnToPreviousView();
+    return;
+  }
   const removeButton = event.target.closest("[data-watchlist-remove]");
   if (removeButton) {
     removeWatchlistSymbol(removeButton.dataset.watchlistRemove);
@@ -2617,6 +3272,28 @@ screenIntro.addEventListener("submit", (event) => {
   addWatchlistSymbol(new FormData(form).get("symbol"));
 });
 
+onboardingOverlay?.addEventListener("click", (event) => {
+  const toggle = event.target.closest("[data-onboarding-toggle]");
+  if (toggle) {
+    toggleDraftArray(toggle.dataset.onboardingToggle, toggle.dataset.onboardingValue);
+    renderOnboarding();
+    return;
+  }
+  const action = event.target.closest("[data-onboarding-action]")?.dataset.onboardingAction;
+  if (!action) return;
+  if (action === "skip") {
+    skipOnboarding();
+  } else if (action === "back") {
+    onboardingStep = Math.max(0, onboardingStep - 1);
+    renderOnboarding();
+  } else if (action === "next") {
+    onboardingStep = Math.min(4, onboardingStep + 1);
+    renderOnboarding();
+  } else if (action === "finish") {
+    completeOnboarding();
+  }
+});
+
 document.querySelectorAll(".event-tab").forEach((tab) => {
   tab.addEventListener("click", () => {
     eventMode = tab.dataset.eventMode;
@@ -2640,10 +3317,15 @@ brandButton.addEventListener("keydown", (event) => {
     goHome();
   }
 });
-brandButton.setAttribute("role", "button");
-brandButton.setAttribute("tabindex", "0");
+searchButton?.addEventListener("click", () => openLocalView("discover"));
+avatarButton?.addEventListener("click", () => openLocalView("profile"));
+
+safeWriteLocalJson(APPEARANCE_STORAGE_KEY, appearance);
+savePreferences(preferences);
+updateAvatar();
 
 renderList();
+if (!reviewModeEnabled && !isOnboardingComplete()) startOnboarding();
 loadPublishedNodes();
 loadDraftNodes();
 loadEventCandidates();
