@@ -100,6 +100,7 @@ button:focus-visible, input:focus-visible {
 .greeting-section h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; margin: 0 0 var(--sp-1) 0; }
 
 .tabs-container { display: inline-flex; background: rgba(0, 0, 0, 0.04); padding: 4px; border-radius: 99px; margin-bottom: var(--sp-4); }
+.tabs-container[hidden] { display: none; }
 .event-tab { padding: 8px 16px; border-radius: 99px; font-size: 14px; font-weight: 700; color: var(--text-muted); transition: all 0.2s ease; }
 .event-tab.active { background: #fff; color: var(--text-main); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); }
 .event-tab[data-event-mode="upcoming"] { color: var(--text-muted); }
@@ -179,11 +180,13 @@ button:focus-visible, input:focus-visible {
 
 .watchlist-controls { display: flex; flex-direction: column; gap: var(--sp-3); margin-top: var(--sp-4); }
 .watchlist-symbols { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
-.watchlist-symbol-item { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
-.watchlist-symbol { min-height: 44px; min-width: 0; display: inline-flex; flex-direction: column; align-items: flex-start; justify-content: center; padding: 6px 12px; border-radius: 14px; background: var(--gray-bg); color: var(--gray-text); font-size: 12px; font-weight: 700; text-align: left; }
-.watchlist-symbol-code { color: var(--text-main); overflow-wrap: anywhere; }
-.watchlist-intelligence { margin-top: 2px; color: var(--text-muted); font-size: 10px; font-weight: 700; }
-.watchlist-remove { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; background: rgba(0, 0, 0, 0.08); color: var(--text-muted); font-size: 16px; line-height: 1; }
+.watchlist-symbol-item { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; }
+.watchlist-symbol { min-height: 44px; min-width: 0; display: inline-flex; align-items: center; justify-content: flex-start; padding: 6px 12px; border-radius: 14px; background: var(--gray-bg); color: var(--gray-text); font-size: 12px; font-weight: 700; text-align: left; }
+.watchlist-symbol-line { min-width: 0; display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 4px; }
+.watchlist-symbol-code { color: var(--text-main); overflow-wrap: break-word; }
+.watchlist-intelligence { color: var(--text-muted); font-size: 10px; font-weight: 700; }
+.watchlist-remove { position: relative; z-index: 0; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; background: transparent; color: var(--text-muted); font-size: 13px; line-height: 1; }
+.watchlist-remove::before { content: ""; position: absolute; z-index: -1; width: 28px; height: 28px; border-radius: 50%; background: rgba(0, 0, 0, 0.08); }
 .watchlist-form { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
 .watchlist-input { min-width: 0; flex: 1 1 120px; height: 36px; border: 1px solid rgba(0, 0, 0, 0.08); border-radius: 99px; padding: 0 12px; background: rgba(255, 255, 255, 0.72); color: var(--text-main); font: inherit; font-size: 13px; outline: none; }
 .watchlist-input:focus { border-color: rgba(17, 24, 39, 0.22); box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.06); }
@@ -259,7 +262,9 @@ details.detail-card[open] summary::after { content: "-"; }
 .asset-card-action { margin-top: var(--sp-3); }
 .asset-result-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
 .asset-result-actions .action-btn, .asset-detail-actions .action-btn, .asset-back-action { min-height: 44px; }
-.asset-screen-title { overflow-wrap: anywhere; }
+.asset-screen-title { max-width: 100%; overflow-wrap: break-word; word-break: normal; }
+.discover-compact-actions { margin-top: 0; }
+.discover-search-card { padding: var(--sp-4); }
 .asset-detail-section { display: flex; flex-direction: column; gap: var(--sp-3); }
 .asset-detail-section > h2 { margin: var(--sp-2) 0 0; font-size: 18px; line-height: 1.25; }
 .asset-meta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); margin-top: var(--sp-4); }
@@ -2091,11 +2096,15 @@ function renderWatchlistControls() {
       ${watchlist.map((symbol) => {
         const asset = getAssetByReference(symbol);
         const accessibleName = asset ? `${asset.symbol} ${asset.name}` : symbol;
+        const matchingAlias = asset?.aliases?.find((alias) => normalizeWatchlistSymbol(alias) === normalizeWatchlistSymbol(symbol));
+        const displayName = asset ? (matchingAlias || asset.name || asset.symbol) : symbol;
         return `
         <span class="watchlist-symbol-item">
           <button class="watchlist-symbol" data-open-asset="${escapeHtml(symbol)}" type="button" aria-label="Open asset details for ${escapeHtml(accessibleName)}">
-            <span class="watchlist-symbol-code">${escapeHtml(symbol)}</span>
-            <span class="watchlist-intelligence">${escapeHtml(getLinkedEventCountLabel(asset))}</span>
+            <span class="watchlist-symbol-line">
+              <span class="watchlist-symbol-code">${escapeHtml(displayName)}</span>
+              <span class="watchlist-intelligence">(${escapeHtml(getLinkedEventCountLabel(asset))})</span>
+            </span>
           </button>
           <button class="watchlist-remove" data-watchlist-remove="${escapeHtml(symbol)}" type="button" aria-label="Remove ${escapeHtml(symbol)} from Watchlist">&times;</button>
         </span>
@@ -2305,13 +2314,10 @@ function renderIntro() {
       <h1>Relevant nodes</h1>
       ${renderWatchlistControls()}
     `;
-    eventTabs.hidden = true;
+    eventTabs.hidden = false;
   } else if (activeView === "discover") {
     screenIntro.innerHTML = `
-      <p class="date-label">Discover</p>
-      <h1>Local asset search</h1>
-      <p class="local-note">Search by symbol, name or alias.</p>
-      <div class="screen-actions">
+      <div class="screen-actions discover-compact-actions">
         <button class="action-btn liquid-glass" data-return-previous type="button">Back</button>
       </div>
       ${renderManualWatchlistControl()}
@@ -2319,7 +2325,7 @@ function renderIntro() {
     eventTabs.hidden = true;
   } else if (activeView === "asset") {
     const asset = getAssetByReference(selectedAssetReference);
-    const title = asset ? formatNameWithSymbol(asset.symbol, asset.name, selectedAssetReference) : selectedAssetReference;
+    const title = asset ? asset.name : selectedAssetReference;
     const backLabel = assetReturnView === "watchlist" ? "Watchlist" : "Discover";
     screenIntro.innerHTML = `
       <p class="date-label">Asset</p>
@@ -2352,7 +2358,7 @@ function renderIntro() {
       <p class="date-label">Saved</p>
       <h1>Saved nodes</h1>
     `;
-    eventTabs.hidden = true;
+    eventTabs.hidden = false;
   }
 }
 
@@ -2455,10 +2461,8 @@ function renderDiscoverResults() {
 
 function renderDiscoverScreen({ focusSearch = true } = {}) {
   eventList.innerHTML = `
-    <article class="event-card liquid-glass">
-      <label class="field-label" for="discover-search-input">Search local catalog</label>
-      <input class="search-input" id="discover-search-input" type="search" value="${escapeHtml(discoverQuery)}" placeholder="Symbol, company, alias" autocomplete="off" />
-      <p class="local-note">This catalog is local reference metadata. It does not contain live prices, price changes, ratings or performance data.</p>
+    <article class="event-card discover-search-card liquid-glass">
+      <input class="search-input" id="discover-search-input" type="search" value="${escapeHtml(discoverQuery)}" placeholder="Symbol, company, alias" aria-label="Search local asset catalog" autocomplete="off" />
       <p class="watchlist-message" id="discover-message" ${localScreenMessage ? "" : "hidden"}>${escapeHtml(localScreenMessage)}</p>
     </article>
     <div id="discover-results">${renderDiscoverResultsHTML()}</div>
@@ -2507,9 +2511,10 @@ function renderAssetDetailScreen() {
   const overviewHTML = asset ? `
     <article class="event-card liquid-glass">
       <span class="category-pill">Local reference metadata</span>
-      <h2>${escapeHtml(formatNameWithSymbol(asset.symbol, asset.name, reference))}</h2>
+      <h2>${escapeHtml(asset.name)}</h2>
       <p>This screen uses local reference metadata. No live market price is currently displayed.</p>
       <div class="asset-meta-grid">
+        <div class="asset-meta-item"><span>Ticker</span><strong>${escapeHtml(asset.symbol)}</strong></div>
         <div class="asset-meta-item"><span>Asset type</span><strong>${escapeHtml(formatLabel(asset.asset_type))}</strong></div>
         ${asset.sector ? `<div class="asset-meta-item"><span>Sector</span><strong>${escapeHtml(asset.sector)}</strong></div>` : ""}
         ${asset.region ? `<div class="asset-meta-item"><span>Region</span><strong>${escapeHtml(asset.region)}</strong></div>` : ""}
