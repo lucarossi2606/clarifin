@@ -97,11 +97,11 @@ button:focus-visible, input:focus-visible {
 
 .greeting-section { margin-bottom: var(--sp-6); padding-top: var(--sp-2); }
 .date-label { font-size: 13px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 var(--sp-1) 0; }
-.greeting-section h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; margin: 0 0 var(--sp-1) 0; }
+.greeting-section h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; margin: 0 0 var(--sp-1) 0; overflow-wrap: break-word; word-break: normal; }
 
 .tabs-container { display: inline-flex; background: rgba(0, 0, 0, 0.04); padding: 4px; border-radius: 99px; margin-bottom: var(--sp-4); }
 .tabs-container[hidden] { display: none; }
-.event-tab { padding: 8px 16px; border-radius: 99px; font-size: 14px; font-weight: 700; color: var(--text-muted); transition: all 0.2s ease; }
+.event-tab { min-height: 44px; padding: 8px 16px; border-radius: 99px; font-size: 14px; font-weight: 700; color: var(--text-muted); transition: all 0.2s ease; display: inline-flex; align-items: center; }
 .event-tab.active { background: #fff; color: var(--text-main); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); }
 .event-tab[data-event-mode="upcoming"] { color: var(--text-muted); }
 
@@ -145,7 +145,7 @@ button:focus-visible, input:focus-visible {
 .upcoming-card .timestamp { right: 20px; bottom: 18px; }
 
 .detail-controls { display: flex; justify-content: space-between; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-4); }
-.action-btn { min-height: 40px; padding: 8px 16px; border-radius: 99px; font-size: 14px; font-weight: 700; color: var(--text-main); border: 1px solid rgba(255, 255, 255, 0.8); }
+.action-btn { min-height: 44px; padding: 8px 16px; border-radius: 99px; font-size: 14px; font-weight: 700; color: var(--text-main); border: 1px solid rgba(255, 255, 255, 0.8); }
 .action-btn.saved { background: var(--yellow-bg); color: var(--yellow-text); border-color: transparent; }
 .action-btn.publish-action { background: var(--green-bg); color: var(--green-text); border-color: transparent; }
 .action-btn.archive-action { background: var(--gray-bg); color: var(--gray-text); border-color: transparent; }
@@ -293,7 +293,7 @@ details.detail-card[open] summary::after { content: "-"; }
   line-height: 1.2;
 }
 .option-pill {
-  min-height: 40px;
+  min-height: 44px;
   border: 1px solid transparent;
   text-align: left;
 }
@@ -348,6 +348,13 @@ details.detail-card[open] summary::after { content: "-"; }
 .nav-item.active { background: var(--text-main); color: #fff; }
 .disclaimer { text-align: center; font-size: 10px; font-weight: 400; color: var(--text-muted); margin-top: var(--sp-6); padding: 0 var(--sp-4); }
 
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .dot { animation: none; }
+  .event-card, .event-tab, .nav-item, .watchlist-assets-toggle::after { transition: none; }
+  .event-card:hover, .event-card:active { transform: none; }
+}
+
     </style>
   </head>
   <body>
@@ -376,10 +383,10 @@ details.detail-card[open] summary::after { content: "-"; }
 
           <section class="feed-section">
             <div class="tabs-container" id="event-tabs">
-              <button class="event-tab active" data-event-mode="top" type="button">
+              <button class="event-tab active" data-event-mode="top" type="button" aria-pressed="true">
                 Top Events <span class="dot"></span>
               </button>
-              <button class="event-tab" data-event-mode="upcoming" type="button">Upcoming</button>
+              <button class="event-tab" data-event-mode="upcoming" type="button" aria-pressed="false">Upcoming</button>
             </div>
             
             <div class="event-list" id="event-list"></div>
@@ -541,6 +548,7 @@ let eventCandidates = [];
 
 const fallbackUpcomingEvents = [
   {
+    isFallback: true,
     datetime: new Date(Date.now() + 14 * 60 * 60 * 1000).toISOString(),
     nextLabel: "US CPI",
     category: "Macro",
@@ -551,6 +559,7 @@ const fallbackUpcomingEvents = [
     importance: 4
   },
   {
+    isFallback: true,
     datetime: new Date(Date.now() + 36 * 60 * 60 * 1000).toISOString(),
     nextLabel: "NVIDIA earnings",
     category: "Earnings",
@@ -561,6 +570,7 @@ const fallbackUpcomingEvents = [
     importance: 4
   },
   {
+    isFallback: true,
     datetime: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
     nextLabel: "Fed decision",
     category: "Central Banks",
@@ -576,6 +586,7 @@ let upcomingEvents = [];
 const DEFAULT_WATCHLIST_SYMBOLS = ["TSMC", "Apple", "Rheinmetall", "LVMH", "Microsoft", "Vonovia"];
 const WATCHLIST_STORAGE_KEY = "clarifinWatchlistSymbols";
 const SAVED_NODES_STORAGE_KEY = "clarifinSavedNodes";
+const UPCOMING_SAVED_ID_PREFIX = "upcoming:";
 const ONBOARDING_STORAGE_KEY = "clarifinOnboardingComplete";
 const USER_PROFILE_STORAGE_KEY = "clarifinUserProfile";
 const PREFERENCES_STORAGE_KEY = "clarifinPreferences";
@@ -623,6 +634,7 @@ let activeView = reviewModeEnabled ? "review" : "home";
 let eventMode = "top";
 let reviewTab = "drafts";
 let selectedNodeId = null;
+let selectedUpcomingEventId = "";
 let savedNodeIds = sanitizeStringArray(safeReadLocalJson(SAVED_NODES_STORAGE_KEY, []));
 let watchlist = loadWatchlistSymbols();
 let watchlistInputVisible = false;
@@ -635,6 +647,7 @@ let appearance = safeReadLocalJson(APPEARANCE_STORAGE_KEY, DEFAULT_APPEARANCE);
 let onboardingStep = 0;
 let onboardingDraft = createOnboardingDraft(preferences);
 let onboardingPreviouslyFocusedElement = null;
+let onboardingOptionFocusTarget = null;
 let previousView = activeView;
 let discoverQuery = "";
 let localScreenMessage = "";
@@ -780,8 +793,9 @@ function dedupeSymbols(symbols) {
   return (Array.isArray(symbols) ? symbols : [])
     .map(normalizeWatchlistSymbol)
     .filter((symbol) => {
-      if (!symbol || seen.has(symbol)) return false;
-      seen.add(symbol);
+      const assetKey = canonicalAssetKey(symbol);
+      if (!symbol || !assetKey || seen.has(assetKey)) return false;
+      seen.add(assetKey);
       return true;
     });
 }
@@ -793,7 +807,13 @@ function saveWatchlistSymbols(symbols) {
 
 function loadWatchlistSymbols() {
   const stored = safeReadLocalJson(WATCHLIST_STORAGE_KEY, null);
-  if (Array.isArray(stored)) return dedupeSymbols(stored);
+  if (Array.isArray(stored)) {
+    const cleaned = dedupeSymbols(stored);
+    if (JSON.stringify(cleaned) !== JSON.stringify(stored)) {
+      safeWriteLocalJson(WATCHLIST_STORAGE_KEY, cleaned);
+    }
+    return cleaned;
+  }
   const defaults = dedupeSymbols(DEFAULT_WATCHLIST_SYMBOLS);
   safeWriteLocalJson(WATCHLIST_STORAGE_KEY, defaults);
   return defaults;
@@ -1893,6 +1913,13 @@ function getAssetByReference(reference) {
   return LOCAL_ASSET_CATALOG.find((asset) => getAssetWatchlistTokens(asset).includes(normalized)) || null;
 }
 
+function getAssetMatchingReference(reference) {
+  const asset = getAssetByReference(reference);
+  if (asset) return asset;
+  const symbol = normalizeWatchlistSymbol(reference);
+  return isValidManualWatchlistSymbol(symbol) ? { symbol } : null;
+}
+
 function canonicalAssetKey(value) {
   const normalized = normalizeWatchlistSymbol(value);
   if (!normalized) return "";
@@ -1909,7 +1936,10 @@ function getStructuredAssetReferenceTokens(reference) {
 function structuredReferenceMatchesAsset(reference, asset) {
   if (!asset) return false;
   const assetKey = canonicalAssetKey(asset.symbol);
-  return Boolean(assetKey && getStructuredAssetReferenceTokens(reference).includes(assetKey));
+  const referenceTokens = getAssetByReference(asset.symbol)
+    ? getStructuredAssetReferenceTokens(reference)
+    : [reference?.ticker, reference?.symbol].map(canonicalAssetKey).filter(Boolean);
+  return Boolean(assetKey && referenceTokens.includes(assetKey));
 }
 
 function getAssetNodeRelationship(asset, node) {
@@ -1934,7 +1964,7 @@ function getAssetNodeRelationship(asset, node) {
 }
 
 function getLinkedEventsForAsset(assetOrReference, nodeList = nodes) {
-  const asset = typeof assetOrReference === "string" ? getAssetByReference(assetOrReference) : assetOrReference;
+  const asset = typeof assetOrReference === "string" ? getAssetMatchingReference(assetOrReference) : assetOrReference;
   if (!asset) return [];
   const relationshipPriority = { direct: 3, indirect: 2, referenced: 1 };
   const linksByNode = new Map();
@@ -2077,7 +2107,8 @@ function addWatchlistSymbol(value) {
     renderList();
     return;
   }
-  if (watchlist.some((item) => normalizeWatchlistSymbol(item) === symbol)) {
+  const symbolAssetKey = canonicalAssetKey(symbol);
+  if (watchlist.some((item) => canonicalAssetKey(item) === symbolAssetKey)) {
     watchlistMessage = `${symbol} is already in your watchlist.`;
     watchlistInputVisible = true;
     renderList();
@@ -2108,7 +2139,7 @@ function renderWatchlistControls() {
         const accessibleName = asset ? `${asset.symbol} ${asset.name}` : symbol;
         const matchingAlias = asset?.aliases?.find((alias) => normalizeWatchlistSymbol(alias) === normalizeWatchlistSymbol(symbol));
         const displayName = asset ? (matchingAlias || asset.name || asset.symbol) : symbol;
-        const linkedEventCount = asset ? getLinkedEventsForAsset(asset).length : 0;
+        const linkedEventCount = getLinkedEventsForAsset(symbol).length;
         return `
         <span class="watchlist-symbol-item">
           <button class="watchlist-symbol" data-open-asset="${escapeHtml(symbol)}" type="button" aria-label="Open asset details for ${escapeHtml(accessibleName)}">
@@ -2146,7 +2177,7 @@ function renderManualWatchlistControl() {
   return `
     <div class="watchlist-controls">
       ${addControl}
-      ${watchlistMessage ? `<p class="watchlist-message">${escapeHtml(watchlistMessage)}</p>` : ""}
+      <p class="watchlist-message" role="status" aria-live="polite" aria-atomic="true" ${watchlistMessage ? "" : "hidden"}>${escapeHtml(watchlistMessage)}</p>
     </div>
   `;
 }
@@ -2173,6 +2204,46 @@ function getSortedUpcomingEvents() {
   return upcomingEvents
     .slice()
     .sort((a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime());
+}
+
+function getUpcomingSavedKey(event) {
+  if (event?.isFallback) return "";
+  const eventId = String(event?.id || "").trim();
+  return eventId ? `${UPCOMING_SAVED_ID_PREFIX}${eventId}` : "";
+}
+
+function getUpcomingEventById(eventId) {
+  const normalizedId = String(eventId || "").trim();
+  if (!normalizedId) return null;
+  return getSortedUpcomingEvents().find((event) => String(event?.id || "").trim() === normalizedId) || null;
+}
+
+function isUpcomingEventSaved(event) {
+  const savedKey = getUpcomingSavedKey(event);
+  return Boolean(savedKey && savedNodeIds.includes(savedKey));
+}
+
+function toggleUpcomingEventSaved(event) {
+  const savedKey = getUpcomingSavedKey(event);
+  if (!savedKey) return false;
+  savedNodeIds = savedNodeIds.includes(savedKey)
+    ? savedNodeIds.filter((id) => id !== savedKey)
+    : [...savedNodeIds, savedKey];
+  safeWriteLocalJson(SAVED_NODES_STORAGE_KEY, savedNodeIds);
+  return true;
+}
+
+function getSavedUpcomingEvents() {
+  return getSortedUpcomingEvents().filter(isUpcomingEventSaved);
+}
+
+function getWatchlistUpcomingEvents() {
+  const watchlistAssetKeys = new Set(watchlist.map(canonicalAssetKey).filter(Boolean));
+  if (!watchlistAssetKeys.size) return [];
+  return getSortedUpcomingEvents().filter((event) => {
+    const eventAssetKeys = sanitizeStringArray(event?.watch).map(canonicalAssetKey).filter(Boolean);
+    return eventAssetKeys.some((assetKey) => watchlistAssetKeys.has(assetKey));
+  });
 }
 
 function isSameCalendarDay(firstDate, secondDate) {
@@ -2294,7 +2365,7 @@ function getTickers(node) {
 }
 
 function getWatchlistHits(node) {
-  return watchlist.filter((item) => getAssetNodeRelationship(getAssetByReference(item), node));
+  return watchlist.filter((item) => getAssetNodeRelationship(getAssetMatchingReference(item), node));
 }
 
 function renderIntro() {
@@ -2474,7 +2545,7 @@ function renderDiscoverScreen({ focusSearch = true } = {}) {
   eventList.innerHTML = `
     <article class="event-card discover-search-card liquid-glass">
       <input class="search-input" id="discover-search-input" type="search" value="${escapeHtml(discoverQuery)}" placeholder="Symbol, company, alias" aria-label="Search local asset catalog" autocomplete="off" />
-      <p class="watchlist-message" id="discover-message" ${localScreenMessage ? "" : "hidden"}>${escapeHtml(localScreenMessage)}</p>
+      <p class="watchlist-message" id="discover-message" role="status" aria-live="polite" aria-atomic="true" ${localScreenMessage ? "" : "hidden"}>${escapeHtml(localScreenMessage)}</p>
     </article>
     <div id="discover-results">${renderDiscoverResultsHTML()}</div>
   `;
@@ -2514,7 +2585,7 @@ function renderAssetDetailScreen() {
   const reference = normalizeWatchlistSymbol(selectedAssetReference);
   const asset = getAssetByReference(reference);
   const inWatchlist = asset ? isAssetInWatchlist(asset) : isReferenceInWatchlist(reference);
-  const linkedEvents = asset ? getLinkedEventsForAsset(asset) : [];
+  const linkedEvents = getLinkedEventsForAsset(reference);
   const messageHTML = localScreenMessage
     ? `<article class="data-status-card liquid-glass status-fallback"><p>${escapeHtml(localScreenMessage)}</p></article>`
     : "";
@@ -2578,7 +2649,7 @@ function renderAssetDetailScreen() {
 function renderProfileScreen() {
   const displayName = getDisplayName();
   eventList.innerHTML = `
-    ${localScreenMessage ? `<article class="data-status-card liquid-glass status-fallback"><p>${escapeHtml(localScreenMessage)}</p></article>` : ""}
+    ${localScreenMessage ? `<article class="data-status-card liquid-glass status-fallback" role="status" aria-live="polite" aria-atomic="true"><p>${escapeHtml(localScreenMessage)}</p></article>` : ""}
     <article class="event-card liquid-glass">
       <span class="category-pill">Local profile</span>
       <h2>${escapeHtml(displayName)}</h2>
@@ -2589,7 +2660,7 @@ function renderProfileScreen() {
       </div>
       <form class="profile-form" id="profile-form">
         <label class="field-label" for="profile-display-name">Display name</label>
-        <input class="profile-input" id="profile-display-name" name="displayName" value="${escapeHtml(displayName === "Guest" ? "" : displayName)}" placeholder="Guest" autocomplete="name" />
+        <input class="profile-input" id="profile-display-name" name="displayName" value="${escapeHtml(displayName === "Guest" ? "" : displayName)}" placeholder="Guest" autocomplete="name" maxlength="40" />
         <button class="action-btn liquid-glass" type="submit">Save name</button>
       </form>
     </article>
@@ -2622,7 +2693,6 @@ function renderSettingsScreen() {
       <h2>Local settings</h2>
       <p>Available now: local profile name, onboarding preferences and Watchlist/Saved shortcuts. More settings will be added in a later MVP phase.</p>
       <div class="profile-actions">
-        <button class="action-btn liquid-glass" data-open-profile type="button">Back to Profile</button>
         <button class="action-btn liquid-glass" data-profile-action="restart-onboarding" type="button">Restart onboarding</button>
       </div>
     </article>
@@ -2634,7 +2704,6 @@ function renderHelpScreen() {
     <article class="event-card liquid-glass">
       <h2>Help / Methodology</h2>
       <p>This section will be added in a later MVP phase. Clarifin provides market intelligence, not investment advice, and does not execute trades.</p>
-      <button class="action-btn liquid-glass" data-open-profile type="button">Back to Profile</button>
     </article>
   `;
 }
@@ -2644,7 +2713,6 @@ function renderInboxScreen() {
     <article class="event-card liquid-glass">
       <h2>Intelligence Inbox</h2>
       <p>Intelligence Inbox will be added in a later MVP phase. No push notifications are currently active.</p>
-      <button class="action-btn liquid-glass" data-open-profile type="button">Back to Profile</button>
     </article>
   `;
 }
@@ -2731,11 +2799,22 @@ function focusOnboardingStep() {
   if (!isOnboardingVisible()) return;
   const dialog = getOnboardingDialog();
   if (!dialog) return;
-  const preferred = dialog.querySelector("[data-onboarding-toggle]")
+  const requestedOption = onboardingOptionFocusTarget
+    ? Array.from(dialog.querySelectorAll("[data-onboarding-toggle]")).find((option) => (
+        option.dataset.onboardingToggle === onboardingOptionFocusTarget.field
+        && option.dataset.onboardingValue === onboardingOptionFocusTarget.value
+      ))
+    : null;
+  onboardingOptionFocusTarget = null;
+  const preferred = requestedOption
+    || dialog.querySelector("[data-onboarding-toggle]")
     || dialog.querySelector('[data-onboarding-action="next"], [data-onboarding-action="finish"]')
     || getOnboardingFocusableElements()[0]
     || dialog;
-  window.setTimeout(() => preferred.focus(), 0);
+  window.setTimeout(() => {
+    if (requestedOption) preferred.focus({ preventScroll: true });
+    else preferred.focus();
+  }, 0);
 }
 
 function restoreOnboardingFocus() {
@@ -2780,30 +2859,30 @@ function renderOnboarding() {
   setOnboardingBackgroundInert(true);
   const stepBodies = [
     `
-      <h2>Welcome to Clarifin</h2>
-      <p class="onboarding-description">Clarifin helps you understand market-moving events. It provides market intelligence, not investment advice, and it does not execute trades.</p>
+      <h2 id="onboarding-step-1-title">Welcome to Clarifin</h2>
+      <p class="onboarding-description" id="onboarding-step-1-description">Clarifin helps you understand market-moving events. It provides market intelligence, not investment advice, and it does not execute trades.</p>
     `,
     `
-      <h2>Interests</h2>
-      <p class="onboarding-description">Choose the event types you want Clarifin to emphasize. You can continue without selecting anything.</p>
+      <h2 id="onboarding-step-2-title">Interests</h2>
+      <p class="onboarding-description" id="onboarding-step-2-description">Choose the event types you want Clarifin to emphasize. You can continue without selecting anything.</p>
       ${optionButtonsHTML(INTEREST_OPTIONS, "selectedInterests")}
     `,
     `
-      <h2>Markets and assets</h2>
-      <p class="onboarding-description">Select the regions and asset classes you care about. These are local preferences only.</p>
+      <h2 id="onboarding-step-3-title">Markets and assets</h2>
+      <p class="onboarding-description" id="onboarding-step-3-description">Select the regions and asset classes you care about. These are local preferences only.</p>
       <p class="profile-muted">Regions</p>
       ${optionButtonsHTML(REGION_OPTIONS, "selectedRegions")}
       <p class="profile-muted">Asset classes</p>
       ${optionButtonsHTML(ASSET_CLASS_OPTIONS, "selectedAssetClasses")}
     `,
     `
-      <h2>Starter Watchlist</h2>
-      <p class="onboarding-description">Pick local catalog assets to merge into your Watchlist. Existing symbols are preserved.</p>
+      <h2 id="onboarding-step-4-title">Starter Watchlist</h2>
+      <p class="onboarding-description" id="onboarding-step-4-description">Pick local catalog assets to merge into your Watchlist. Existing symbols are preserved.</p>
       ${starterAssetsHTML()}
     `,
     `
-      <h2>You're set</h2>
-      <p class="onboarding-description">Clarifin will keep your preferences locally on this device. You can restart onboarding from Profile.</p>
+      <h2 id="onboarding-step-5-title">You're set</h2>
+      <p class="onboarding-description" id="onboarding-step-5-description">Clarifin will keep your preferences locally on this device. You can restart onboarding from Profile.</p>
       <p class="profile-muted">Interests</p>
       ${preferenceChipsHTML(onboardingDraft.selectedInterests, "No interests selected")}
       <p class="profile-muted">Regions</p>
@@ -2813,16 +2892,19 @@ function renderOnboarding() {
     `
   ];
   const isFinalStep = onboardingStep === stepBodies.length - 1;
+  const stepNumber = onboardingStep + 1;
+  const titleId = `onboarding-step-${stepNumber}-title`;
+  const descriptionId = `onboarding-step-${stepNumber}-description`;
   onboardingOverlay.hidden = false;
   onboardingOverlay.setAttribute("aria-hidden", "false");
   onboardingOverlay.innerHTML = `
-    <div class="onboarding-dialog liquid-glass" role="dialog" aria-modal="true" aria-labelledby="onboarding-title" tabindex="-1">
+    <div class="onboarding-dialog liquid-glass" role="dialog" aria-modal="true" aria-labelledby="${titleId}" aria-describedby="${descriptionId}" tabindex="-1">
       <div class="onboarding-progress">Step ${onboardingStep + 1} of ${stepBodies.length}</div>
-      <div id="onboarding-title">${stepBodies[onboardingStep]}</div>
+      <div>${stepBodies[onboardingStep]}</div>
       <div class="onboarding-actions">
         <div class="screen-actions">
           ${onboardingStep > 0 ? `<button class="action-btn liquid-glass" data-onboarding-action="back" type="button">Back</button>` : ""}
-          <button class="action-btn liquid-glass" data-onboarding-action="skip" type="button">Skip</button>
+          ${isFinalStep ? "" : `<button class="action-btn liquid-glass" data-onboarding-action="skip" type="button">Skip</button>`}
         </div>
         <button class="action-btn liquid-glass" data-onboarding-action="${isFinalStep ? "finish" : "next"}" type="button">${isFinalStep ? "Open Clarifin" : "Continue"}</button>
       </div>
@@ -2866,6 +2948,7 @@ function startOnboarding() {
   rememberOnboardingFocus();
   onboardingStep = 0;
   onboardingDraft = createOnboardingDraft(preferences);
+  onboardingOptionFocusTarget = null;
   renderOnboarding();
 }
 
@@ -3104,27 +3187,34 @@ function getUpcomingImportance(event) {
   return Number.isFinite(score) && score > 0 ? Math.round(score) : null;
 }
 
-function renderUpcomingCards(noticeHTML = "") {
-  const events = getSortedUpcomingEvents();
-  if (!events.length) {
+function renderUpcomingCards(events = getSortedUpcomingEvents(), options = {}) {
+  const noticeHTML = options.noticeHTML || "";
+  const emptyTitle = options.emptyTitle || "No upcoming events yet";
+  const emptyMessage = options.emptyMessage || "Scheduled market events will appear here when available.";
+  const allEvents = getSortedUpcomingEvents();
+  const eventsToRender = (Array.isArray(events) ? events : [])
+    .slice()
+    .sort((a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime());
+  if (!eventsToRender.length) {
     eventList.innerHTML = `
       ${noticeHTML}
       <article class="event-card liquid-glass">
-        <h2>No upcoming events yet</h2>
-        <p>Scheduled market events will appear here when available.</p>
+        <h2>${escapeHtml(emptyTitle)}</h2>
+        <p>${escapeHtml(emptyMessage)}</p>
       </article>
     `;
     return;
   }
 
-  eventList.innerHTML = noticeHTML + events
-    .map((event, index) => {
+  eventList.innerHTML = noticeHTML + eventsToRender
+    .map((event) => {
+      const eventIndex = allEvents.indexOf(event);
       const earnings = isEarningsEvent(event);
       const importance = earnings ? null : getUpcomingImportance(event);
       const watchItems = Array.isArray(event.watch) ? event.watch : [];
 
       return `
-        <button class="event-card upcoming-card liquid-glass" data-upcoming-index="${index}" type="button">
+        <button class="event-card upcoming-card liquid-glass" data-upcoming-index="${eventIndex}" type="button">
           <div class="card-header">
             <span class="category-pill">${escapeHtml(event.category)}</span>
             <img src="${event.region ? getRegionFlag(event.region) : getUpcomingFlag(event.title)}" class="region-flag" alt="Region" onerror="this.style.display='none'" />
@@ -3148,18 +3238,21 @@ function renderUpcomingCards(noticeHTML = "") {
     .join("");
 }
 
-function renderList() {
+function renderList({ scrollToTop = true } = {}) {
   selectedNodeId = null;
+  selectedUpcomingEventId = "";
   listScreen.hidden = false;
   detailScreen.hidden = true;
   ensureBottomNavVisible();
-  scrollAppToTop();
+  if (scrollToTop) scrollAppToTop();
   setActiveNav(activeView);
   renderIntro();
   updateTopHeader();
 
   document.querySelectorAll(".event-tab").forEach((tab) => {
-    tab.classList.toggle("active", tab.dataset.eventMode === eventMode);
+    const isActiveMode = tab.dataset.eventMode === eventMode;
+    tab.classList.toggle("active", isActiveMode);
+    tab.setAttribute("aria-pressed", String(isActiveMode));
   });
 
   if (activeView === "review" && reviewLoadMessage) {
@@ -3198,7 +3291,7 @@ function renderList() {
         eventList.innerHTML = upcomingNoticeHTML;
         return;
       }
-      renderUpcomingCards(upcomingNoticeHTML);
+      renderUpcomingCards(getWatchlistUpcomingEvents(), { noticeHTML: upcomingNoticeHTML });
       return;
     }
     if (nodeDataState.status === "loading" && !orderedNodes.length) {
@@ -3212,6 +3305,18 @@ function renderList() {
     }
     renderNodeCards(watchlistNodes, { noticeHTML: nodeNoticeHTML });
   } else if (activeView === "saved") {
+    if (eventMode === "upcoming") {
+      if (upcomingDataState.status === "loading" && !upcomingEvents.length) {
+        eventList.innerHTML = upcomingNoticeHTML;
+        return;
+      }
+      renderUpcomingCards(getSavedUpcomingEvents(), {
+        noticeHTML: upcomingNoticeHTML,
+        emptyTitle: "No saved upcoming events yet",
+        emptyMessage: "Upcoming events you save will appear here."
+      });
+      return;
+    }
     if (nodeDataState.status === "loading" && !orderedNodes.length) {
       eventList.innerHTML = nodeNoticeHTML;
       return;
@@ -3229,7 +3334,7 @@ function renderList() {
       eventList.innerHTML = upcomingNoticeHTML;
       return;
     }
-    renderUpcomingCards(upcomingNoticeHTML);
+    renderUpcomingCards(getSortedUpcomingEvents(), { noticeHTML: upcomingNoticeHTML });
   } else {
     if (nodeDataState.status === "loading" && !orderedNodes.length) {
       eventList.innerHTML = nodeNoticeHTML;
@@ -3377,10 +3482,12 @@ function renderSourceReviewStatus(node, researchEvidence) {
 }
 
 function renderUpcomingDetail(event) {
+  const eventId = String(event?.id || "").trim();
   selectedNodeId = null;
-  activeView = "home";
+  selectedUpcomingEventId = eventId;
+  activeView = ["home", "watchlist", "saved"].includes(activeView) ? activeView : "home";
   eventMode = "upcoming";
-  setActiveNav("home");
+  setActiveNav(activeView);
   listScreen.hidden = true;
   detailScreen.hidden = false;
   ensureBottomNavVisible();
@@ -3400,8 +3507,11 @@ function renderUpcomingDetail(event) {
   document.querySelector("#event-status-label").hidden = true;
   document.querySelector("#event-status-label").textContent = "";
 
-  saveButton.hidden = true;
-  saveButton.classList.remove("saved");
+  const savedKey = getUpcomingSavedKey(event);
+  const isSaved = isUpcomingEventSaved(event);
+  saveButton.hidden = !savedKey;
+  saveButton.textContent = isSaved ? "Saved" : "Save";
+  saveButton.classList.toggle("saved", isSaved);
   if (reviewActions) reviewActions.hidden = true;
   if (publishButton) publishButton.hidden = true;
   if (archiveButton) archiveButton.hidden = true;
@@ -3420,13 +3530,16 @@ function renderUpcomingDetail(event) {
   ]);
 
   const factualData = isEarningsEvent(event) ? earningsFacts : macroFacts;
-  detailSections.innerHTML = factualData
+  const upcomingDetailHTML = factualData
     ? section("Factual data", factualData, true)
     : section("Factual data", "<p>No additional factual data available yet.</p>", true);
+  detailSections.innerHTML = `${upcomingDetailHTML}
+    <p class="disclaimer">Not investment advice. No buy/sell recommendations or performance promises.</p>`;
 }
 
 function renderDetail(node) {
   selectedNodeId = node.id;
+  selectedUpcomingEventId = "";
   const nodeStatus = String(node.status || "published").toLowerCase();
   const isReviewNode = reviewModeEnabled && (activeView === "review" || nodeStatus !== "published");
   const isDraftNode = nodeStatus === "draft";
@@ -3512,7 +3625,6 @@ function renderDetail(node) {
       { label: "Node status", value: formatLabel(nodeStatus) },
       { label: "Review", value: isDraftNode ? "Review required before publishing." : "Already published or outside draft queue." }
     ]), true, "review-status-section")] : []),
-    section("Source / Review Status", sourceStatusHTML, true, "review-status-section"),
     section("Why it matters", `<p>${escapeHtml(node.whyMatters)}</p>`, true),
     section("Direct Impact", assetsHTML),
     ...(indirectHTML ? [section("Indirect Impact", indirectHTML)] : []),
@@ -3520,8 +3632,10 @@ function renderDetail(node) {
     section("Causal Chains", chainsHTML),
     section("Scenarios", scenariosHTML),
     section("Counterarguments", countersHTML),
+    section("Source / Review Status", sourceStatusHTML, false, "review-status-section"),
     ...(missingDataHTML ? [section("Missing Data", missingDataHTML, false, "review-status-section")] : []),
-    ...(researchEvidenceHTML ? [section("Research Evidence", researchEvidenceHTML, false, "research-evidence-section")] : [])
+    ...(researchEvidenceHTML ? [section("Research Evidence", researchEvidenceHTML, false, "research-evidence-section")] : []),
+    `<p class="disclaimer">Not investment advice. No buy/sell recommendations or performance promises.</p>`
   ].join("");
 
   if (node.isSupabaseNode && !exposuresToWatch.length && !node.exposuresLoaded) {
@@ -3634,6 +3748,12 @@ eventList.addEventListener("submit", (event) => {
 document.querySelector("#back-button").addEventListener("click", renderList);
 
 saveButton.addEventListener("click", () => {
+  if (selectedUpcomingEventId) {
+    const upcomingEvent = getUpcomingEventById(selectedUpcomingEventId);
+    if (!upcomingEvent || !toggleUpcomingEventSaved(upcomingEvent)) return;
+    renderUpcomingDetail(upcomingEvent);
+    return;
+  }
   if (!selectedNodeId) return;
   savedNodeIds = savedNodeIds.includes(selectedNodeId)
     ? savedNodeIds.filter((id) => id !== selectedNodeId)
@@ -3655,9 +3775,16 @@ archiveButton?.addEventListener("click", () => {
 });
 
 screenIntro.addEventListener("click", (event) => {
-  if (event.target.closest("[data-watchlist-assets-toggle]")) {
+  const watchlistAssetsToggle = event.target.closest("[data-watchlist-assets-toggle]");
+  if (watchlistAssetsToggle) {
+    const restoreKeyboardFocus = event.detail === 0;
+    const previousScrollTop = appScreen.scrollTop;
     watchlistAssetsExpanded = !watchlistAssetsExpanded;
-    renderList();
+    renderList({ scrollToTop: false });
+    appScreen.scrollTop = previousScrollTop;
+    if (restoreKeyboardFocus) {
+      document.querySelector("[data-watchlist-assets-toggle]")?.focus({ preventScroll: true });
+    }
     return;
   }
   if (event.target.closest("[data-open-discover]")) {
@@ -3719,12 +3846,17 @@ screenIntro.addEventListener("submit", (event) => {
 onboardingOverlay?.addEventListener("click", (event) => {
   const toggle = event.target.closest("[data-onboarding-toggle]");
   if (toggle) {
+    onboardingOptionFocusTarget = {
+      field: toggle.dataset.onboardingToggle,
+      value: toggle.dataset.onboardingValue
+    };
     toggleDraftArray(toggle.dataset.onboardingToggle, toggle.dataset.onboardingValue);
     renderOnboarding();
     return;
   }
   const action = event.target.closest("[data-onboarding-action]")?.dataset.onboardingAction;
   if (!action) return;
+  onboardingOptionFocusTarget = null;
   if (action === "skip") {
     skipOnboarding();
   } else if (action === "back") {
