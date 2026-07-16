@@ -216,10 +216,10 @@ button:focus-visible, input:focus-visible {
 
 .detail-sections { display: flex; flex-direction: column; gap: var(--sp-3); }
 .detail-card { border-radius: 24px; }
-details.detail-card summary { padding: var(--sp-5); font-size: 16px; font-weight: 700; color: var(--text-main); list-style: none; display: flex; justify-content: space-between; align-items: center; }
-details.detail-card summary::-webkit-details-marker { display: none; }
-details.detail-card summary::after { content: "+"; font-size: 18px; font-weight: 700; color: var(--text-muted); }
-details.detail-card[open] summary::after { content: "-"; }
+details.detail-card > summary { padding: var(--sp-5); font-size: 16px; font-weight: 700; color: var(--text-main); list-style: none; display: flex; justify-content: space-between; align-items: center; }
+details.detail-card > summary::-webkit-details-marker { display: none; }
+details.detail-card > summary::after { content: "+"; font-size: 18px; font-weight: 700; color: var(--text-muted); }
+details.detail-card[open] > summary::after { content: "-"; }
 
 .detail-body { padding: 0 var(--sp-5) var(--sp-5) var(--sp-5); font-size: 14px; line-height: 1.5; color: var(--text-muted); font-weight: 400; }
 .detail-body p, .detail-body li { font-family: inherit; font-size: 14px; line-height: 1.5; color: var(--text-muted); font-weight: 400; }
@@ -244,6 +244,76 @@ details.detail-card[open] summary::after { content: "-"; }
 .research-evidence-section summary { color: var(--text-muted); font-size: 14px; }
 .research-evidence-section .detail-body { color: var(--text-light); }
 .research-evidence-section .asset-card { background: rgba(0, 0, 0, 0.02); }
+.fixture-facts[hidden] { display: none; }
+.fixture-facts { display: flex; flex-direction: column; gap: var(--sp-2); margin: 0 0 var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid rgba(17, 24, 39, 0.07); }
+.fixture-fact-row { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: var(--sp-2) var(--sp-3); border-radius: 12px; background: rgba(0, 0, 0, 0.03); }
+.fixture-fact-row strong { color: var(--text-main); font-size: 13px; }
+.fixture-fact-row span { color: var(--text-muted); font-size: 12px; font-weight: 400; line-height: 1.45; overflow-wrap: anywhere; }
+.fixture-note { margin: var(--sp-1) 0 0; color: var(--text-light); font-size: 11px; font-weight: 700; }
+.fixture-mode .signal-row { flex-wrap: wrap; }
+.fixture-intro { margin: 0 0 var(--sp-3); }
+.fixture-chains { display: flex; flex-direction: column; border-top: 1px solid rgba(17, 24, 39, 0.07); }
+.fixture-chain { border-bottom: 1px solid rgba(17, 24, 39, 0.07); }
+.fixture-chain > summary,
+.fixture-subdetail > summary {
+  min-height: 44px;
+  padding: var(--sp-3) 0;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  cursor: pointer;
+}
+.fixture-chain > summary::-webkit-details-marker,
+.fixture-subdetail > summary::-webkit-details-marker { display: none; }
+.fixture-chain > summary::after,
+.fixture-subdetail > summary::after { content: "+"; flex: 0 0 auto; color: var(--text-muted); font-size: 18px; font-weight: 700; }
+.fixture-chain[open] > summary::after,
+.fixture-subdetail[open] > summary::after { content: "-"; }
+.fixture-chain-summary { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.fixture-chain-title { color: var(--text-main); font-size: 14px; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
+.fixture-chain-key { color: var(--text-muted); font-size: 12px; font-weight: 400; line-height: 1.4; overflow-wrap: anywhere; }
+.fixture-chain-assets { color: var(--text-light); font-size: 11px; font-weight: 700; letter-spacing: 0.2px; }
+.fixture-chain-body { padding: 0 0 var(--sp-4); }
+.fixture-chain-body > p { margin: 0 0 var(--sp-3); }
+.fixture-chain-body h3 { margin: 0 0 var(--sp-2); color: var(--text-main); font-size: 14px; }
+.fixture-steps { margin: 0 0 var(--sp-3); padding-left: var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-2); }
+.fixture-effects { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: 0 0 var(--sp-2); }
+.fixture-effect-chip { display: inline-flex; align-items: center; gap: 5px; padding: 6px 9px; border-radius: 10px; background: rgba(0, 0, 0, 0.03); color: var(--text-main); font-size: 12px; }
+.fixture-subdetail { margin-top: var(--sp-1); border-top: 1px solid rgba(17, 24, 39, 0.06); }
+.fixture-subdetail > summary { color: var(--text-main); font-size: 13px; }
+.fixture-subdetail ul { margin: 0; padding: 0 0 var(--sp-3) var(--sp-5); }
+.fixture-more-paths { opacity: 0.86; }
+.fixture-market-list,
+.fixture-watch-list,
+.fixture-exposure-list,
+.fixture-simple-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.fixture-market-row,
+.fixture-watch-item,
+.fixture-exposure-item { min-width: 0; padding: var(--sp-3); border-radius: 12px; background: rgba(0, 0, 0, 0.03); }
+.fixture-market-head,
+.fixture-exposure-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--sp-3); }
+.fixture-market-head strong,
+.fixture-exposure-head strong { min-width: 0; color: var(--text-main); font-size: 14px; overflow-wrap: anywhere; }
+.fixture-market-head span,
+.fixture-exposure-head span { flex: 0 0 auto; font-size: 12px; text-align: right; }
+.fixture-market-row p,
+.fixture-watch-item p,
+.fixture-exposure-item p { margin: 4px 0 0; font-size: 12px; }
+.fixture-market-from { color: var(--text-light); }
+.fixture-reaction { margin-left: 4px; }
+.fixture-watch-item strong { display: block; margin-bottom: 5px; color: var(--text-main); font-size: 14px; }
+.fixture-watch-label { color: var(--text-main); font-weight: 700; }
+.fixture-simple-list { padding-left: var(--sp-5); list-style: disc; }
+.fixture-simple-list li { padding-left: 2px; }
+
+@media (max-width: 370px) {
+  .fixture-market-head,
+  .fixture-exposure-head { flex-direction: column; gap: 4px; }
+  .fixture-market-head span,
+  .fixture-exposure-head span { text-align: left; }
+}
 .evidence-source { display: flex; flex-direction: column; gap: 6px; }
 .evidence-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--sp-2); }
 .evidence-head h3 { margin: 0; font-size: 14px; font-weight: 700; color: var(--text-main); }
@@ -423,6 +493,7 @@ details.detail-card[open] summary::after { content: "-"; }
             <p class="category-pill" id="node-category">Node</p>
             <h1 id="node-title">Select a node</h1>
             <p class="detail-summary" id="node-summary"></p>
+            <div class="fixture-facts" id="fixture-facts" hidden></div>
             <div class="signal-row">
               <span class="score-pill yellow" id="impact-label"></span>
               <span class="score-pill gray" id="confidence-label"></span>
@@ -643,7 +714,8 @@ const LOCAL_ASSET_CATALOG = [
   { symbol: "US10Y", name: "US 10-Year Treasury Yield", asset_type: "macro", sector: "Rates", region: "United States", themes: ["Rates", "Bonds"], event_families: ["Macro", "Central Banks"], aliases: ["10Y", "US10Y", "10-Year Treasury"] }
 ];
 const directionOrder = { positive: 0, negative: 1, mixed: 2, neutral: 2 };
-const reviewModeEnabled = new URLSearchParams(window.location.search).get("mode") === "review";
+const cpiV2FixtureMode = new URLSearchParams(location.search).get("fixture") === "cpi-v2";
+const reviewModeEnabled = !cpiV2FixtureMode && new URLSearchParams(window.location.search).get("mode") === "review";
 let activeView = reviewModeEnabled ? "review" : "home";
 let eventMode = "top";
 let reviewTab = "drafts";
@@ -711,6 +783,7 @@ function cloneDefault(value) {
 }
 
 function safeReadLocalJson(key, fallback) {
+  if (cpiV2FixtureMode) return cloneDefault(fallback);
   try {
     const stored = localStorage.getItem(key);
     if (!stored) return cloneDefault(fallback);
@@ -722,7 +795,7 @@ function safeReadLocalJson(key, fallback) {
 }
 
 function safeWriteLocalJson(key, value) {
-  if (value === undefined) return false;
+  if (cpiV2FixtureMode || value === undefined) return false;
   try {
     localStorage.setItem(key, JSON.stringify(value));
     return true;
@@ -3437,7 +3510,35 @@ function restoreManualWatchlistInputInteraction(interaction) {
   }
 }
 
+function prepareCpiV2FixtureLocalNavigation() {
+  if (!cpiV2FixtureMode) return;
+  if (!nodes.length && nodeDataState.status === "loading") {
+    useFallbackNodes({
+      status: "fallback",
+      title: "Showing local demo data",
+      message: "Live data is not loaded in this controlled view."
+    });
+  }
+  if (!upcomingEvents.length && upcomingDataState.status === "loading") {
+    useFallbackUpcomingEvents({
+      status: "fallback",
+      title: "Showing local demo data",
+      message: "Live data is not loaded in this controlled view."
+    });
+  }
+}
+
+function clearCpiV2FixturePresentation() {
+  if (!cpiV2FixtureMode) return;
+  detailScreen.classList.remove("fixture-mode");
+  const fixtureFacts = document.querySelector("#fixture-facts");
+  fixtureFacts.hidden = true;
+  fixtureFacts.innerHTML = "";
+}
+
 function renderList({ scrollToTop = true } = {}) {
+  prepareCpiV2FixtureLocalNavigation();
+  clearCpiV2FixturePresentation();
   const manualWatchlistInteraction = captureManualWatchlistInputInteraction();
   selectedNodeId = null;
   selectedUpcomingEventId = "";
@@ -3683,6 +3784,7 @@ function renderSourceReviewStatus(node, researchEvidence) {
 }
 
 function renderUpcomingDetail(event) {
+  clearCpiV2FixturePresentation();
   const eventId = String(event?.id || "").trim();
   selectedNodeId = null;
   selectedUpcomingEventId = eventId;
@@ -3710,7 +3812,7 @@ function renderUpcomingDetail(event) {
 
   const savedKey = getUpcomingSavedKey(event);
   const isSaved = isUpcomingEventSaved(event);
-  saveButton.hidden = !savedKey;
+  saveButton.hidden = cpiV2FixtureMode || !savedKey;
   saveButton.textContent = isSaved ? "Saved" : "Save";
   saveButton.classList.toggle("saved", isSaved);
   if (reviewActions) reviewActions.hidden = true;
@@ -3738,7 +3840,253 @@ function renderUpcomingDetail(event) {
     <p class="disclaimer">Not investment advice. No buy/sell recommendations or performance promises.</p>`;
 }
 
+function cpiV2ChainSummary(title, keyStatement, assets) {
+  return `
+    <span class="fixture-chain-summary">
+      <span class="fixture-chain-title">${escapeHtml(title)}</span>
+      <span class="fixture-chain-key">${escapeHtml(keyStatement)}</span>
+      <span class="fixture-chain-assets">${escapeHtml(assets)}</span>
+    </span>
+  `;
+}
+
+function cpiV2Effects(items) {
+  return `
+    <div class="fixture-effects" aria-label="Key effects">
+      ${items.map((item) => `<span class="fixture-effect-chip"><strong>${escapeHtml(item.asset)}</strong><span class="direction-${escapeHtml(item.directionClass)}">${escapeHtml(item.direction)}</span></span>`).join("")}
+    </div>
+  `;
+}
+
+function cpiV2Subdetail(title, items) {
+  return `
+    <details class="fixture-subdetail">
+      <summary>${escapeHtml(title)}</summary>
+      <ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+    </details>
+  `;
+}
+
+function cpiV2WhyItMattersHTML() {
+  return `
+    <p class="fixture-intro">The hotter release can push expected rate cuts further into the future. Treasury yields are usually the first transmission point, but the repricing can also affect the dollar, equity valuations and financing conditions.</p>
+    <div class="fixture-chains">
+      <details class="fixture-chain" open>
+        <summary>${cpiV2ChainSummary("Hot CPI → Later Rate Cuts → Higher Yields", "Higher inflation can delay expected rate cuts, pressuring long-duration bonds.", "US10Y · TLT")}</summary>
+        <div class="fixture-chain-body">
+          <p>Both headline and core CPI exceeded expectations. One release does not automatically cause a Fed hike, but it can reduce confidence that inflation is cooling quickly enough for near-term cuts.</p>
+          <ol class="fixture-steps">
+            <li>Headline and core CPI exceed consensus.</li>
+            <li>Investors price fewer or later rate cuts.</li>
+            <li>Expected policy rates remain higher for longer.</li>
+            <li>Treasury and real yields face upward pressure.</li>
+            <li>Long-duration bond prices face downward pressure.</li>
+          </ol>
+          ${cpiV2Effects([
+            { asset: "US10Y", direction: "Upward pressure", directionClass: "positive" },
+            { asset: "TLT", direction: "Negative", directionClass: "negative" }
+          ])}
+          ${cpiV2Subdetail("What could weaken this chain", ["Weaker labor data", "Dovish Federal Reserve communication", "Transitory inflation components", "A fast reversal in yields"])}
+          ${cpiV2Subdetail("What to watch", ["Rate-cut probabilities", "US10Y and real yields", "Next inflation composition"])}
+        </div>
+      </details>
+
+      <details class="fixture-chain">
+        <summary>${cpiV2ChainSummary("Higher Yields → Lower Growth Valuations", "Higher discount rates reduce the present value of distant earnings.", "QQQ · SPY")}</summary>
+        <div class="fixture-chain-body">
+          <ol class="fixture-steps">
+            <li>Treasury yields rise.</li>
+            <li>The risk-free return becomes more attractive.</li>
+            <li>Future cash flows are discounted at a higher rate.</li>
+            <li>Long-duration and high-multiple equities face pressure.</li>
+          </ol>
+          ${cpiV2Effects([
+            { asset: "QQQ", direction: "Negative", directionClass: "negative" },
+            { asset: "SPY", direction: "Negative / Mixed", directionClass: "mixed" }
+          ])}
+          ${cpiV2Subdetail("What could weaken this chain", ["Strong earnings revisions", "Falling equity risk premiums", "A quick yield reversal"])}
+        </div>
+      </details>
+
+      <details class="fixture-chain">
+        <summary>${cpiV2ChainSummary("Relative Rates → Dollar Support", "Higher relative U.S. rates can make dollar assets more attractive.", "DXY")}</summary>
+        <div class="fixture-chain-body">
+          <ol class="fixture-steps">
+            <li>Expected U.S. rate cuts move later.</li>
+            <li>U.S. rates stay higher relative to other economies.</li>
+            <li>Dollar-denominated assets become more attractive.</li>
+            <li>A stronger dollar tightens global financial conditions.</li>
+          </ol>
+          ${cpiV2Effects([{ asset: "DXY", direction: "Positive", directionClass: "positive" }])}
+        </div>
+      </details>
+
+      <details class="fixture-chain">
+        <summary>${cpiV2ChainSummary("Inflation Hedge vs. Real Yields → Gold", "Inflation can support gold, while real yields and the dollar work in the opposite direction.", "GLD")}</summary>
+        <div class="fixture-chain-body">
+          <ol class="fixture-steps">
+            <li>Inflation concerns can increase demand for inflation hedges.</li>
+            <li>Higher real yields raise the opportunity cost of holding gold.</li>
+            <li>A stronger dollar can pressure dollar-priced gold.</li>
+            <li>The dominant force determines the final market reaction.</li>
+          </ol>
+          ${cpiV2Effects([{ asset: "GLD", direction: "Mixed", directionClass: "mixed" }])}
+        </div>
+      </details>
+
+      <details class="fixture-chain fixture-more-paths">
+        <summary>${cpiV2ChainSummary("More transmission paths", "Higher-for-Longer → Financing Conditions", "XLRE · XLU · XLY")}</summary>
+        <div class="fixture-chain-body">
+          <h3>Higher-for-Longer → Financing Conditions</h3>
+          <p>Persistently higher rates can pressure borrowing, housing and leveraged business models over time.</p>
+          <ol class="fixture-steps">
+            <li>Borrowing and refinancing costs remain elevated.</li>
+            <li>Households and companies reduce spending or investment.</li>
+            <li>Housing and other rate-sensitive areas face pressure.</li>
+            <li>Growth effects can appear with a delay.</li>
+          </ol>
+        </div>
+      </details>
+    </div>
+  `;
+}
+
+function cpiV2MarketEffectsHTML() {
+  return `
+    <ul class="fixture-market-list">
+      <li class="fixture-market-row">
+        <div class="fixture-market-head"><strong>US10Y</strong><span class="direction-positive">Upward pressure <span class="fixture-reaction">+7 bp</span></span></div>
+        <p>Rate-cut repricing can lift Treasury and real yields.</p><p class="fixture-market-from">From Rate expectations → yields</p>
+      </li>
+      <li class="fixture-market-row">
+        <div class="fixture-market-head"><strong>TLT</strong><span class="direction-negative">Negative <span class="fixture-reaction">-1.1%</span></span></div>
+        <p>Higher long-term yields pressure long-duration bond prices.</p><p class="fixture-market-from">From Rate expectations → yields</p>
+      </li>
+      <li class="fixture-market-row">
+        <div class="fixture-market-head"><strong>DXY</strong><span class="direction-positive">Positive <span class="fixture-reaction">+0.4%</span></span></div>
+        <p>Higher relative U.S. rates can support demand for dollar assets.</p><p class="fixture-market-from">From Relative rates → dollar</p>
+      </li>
+      <li class="fixture-market-row">
+        <div class="fixture-market-head"><strong>QQQ</strong><span class="direction-negative">Negative <span class="fixture-reaction">-0.8%</span></span></div>
+        <p>Higher discount rates can pressure long-duration growth valuations.</p><p class="fixture-market-from">From Yields → equity valuations</p>
+      </li>
+      <li class="fixture-market-row">
+        <div class="fixture-market-head"><strong>SPY</strong><span class="direction-mixed">Negative / Mixed <span class="fixture-reaction direction-negative">-0.5%</span></span></div>
+        <p>Broad equities face valuation pressure, partly offset by other earnings and risk drivers.</p><p class="fixture-market-from">From Yields → equity valuations</p>
+      </li>
+      <li class="fixture-market-row">
+        <div class="fixture-market-head"><strong>GLD</strong><span class="direction-mixed">Mixed <span class="fixture-reaction">+0.1%</span></span></div>
+        <p>Inflation-hedge demand competes with higher real yields and a stronger dollar.</p><p class="fixture-market-from">From Inflation hedge vs. real yields</p>
+      </li>
+    </ul>
+    <p class="fixture-note">Controlled fixture reactions · Not live</p>
+  `;
+}
+
+function cpiV2WhatToWatchHTML() {
+  return `
+    <ol class="fixture-watch-list">
+      <li class="fixture-watch-item"><strong>1. Rate-cut expectations</strong><p><span class="fixture-watch-label">Confirms:</span> Investors price fewer or later cuts.</p><p><span class="fixture-watch-label">Challenges:</span> Pricing returns to pre-release levels.</p></li>
+      <li class="fixture-watch-item"><strong>2. Treasury and real yields</strong><p><span class="fixture-watch-label">Confirms:</span> The rise persists.</p><p><span class="fixture-watch-label">Challenges:</span> Yields reverse.</p></li>
+      <li class="fixture-watch-item"><strong>3. Inflation composition</strong><p><span class="fixture-watch-label">Confirms:</span> Inflation is broad and persistent.</p><p><span class="fixture-watch-label">Challenges:</span> Volatile components drive the surprise.</p></li>
+      <li class="fixture-watch-item"><strong>4. Labor-market data</strong><p><span class="fixture-watch-label">Confirms:</span> Resilience supports higher-for-longer rates.</p><p><span class="fixture-watch-label">Challenges:</span> Rapid weakness shifts attention to growth risk.</p></li>
+    </ol>
+  `;
+}
+
+function cpiV2BroaderExposuresHTML() {
+  return `
+    <ul class="fixture-exposure-list">
+      <li class="fixture-exposure-item"><div class="fixture-exposure-head"><strong>Growth technology</strong><span class="direction-negative">Negative</span></div><p>Higher discount rates can pressure valuations built on distant earnings. ETF: QQQ / XLK.</p></li>
+      <li class="fixture-exposure-item"><div class="fixture-exposure-head"><strong>Real estate</strong><span class="direction-negative">Negative</span></div><p>Elevated financing and refinancing costs can weigh on property activity. ETF: XLRE.</p></li>
+      <li class="fixture-exposure-item"><div class="fixture-exposure-head"><strong>Utilities</strong><span class="direction-negative">Negative</span></div><p>Higher yields can pressure capital-intensive companies and dividend-relative valuations. ETF: XLU.</p></li>
+      <li class="fixture-exposure-item"><div class="fixture-exposure-head"><strong>Rate-sensitive consumer demand</strong><span class="direction-negative">Negative</span></div><p>Higher borrowing costs can slow financed household spending. ETF: XLY.</p></li>
+      <li class="fixture-exposure-item"><div class="fixture-exposure-head"><strong>Regional banks</strong><span class="direction-mixed">Mixed</span></div><p>Higher yields may support margins, while funding and credit risks can offset the benefit. ETF: KRE.</p></li>
+    </ul>
+  `;
+}
+
+function cpiV2RisksHTML() {
+  return `
+    <ul class="fixture-simple-list">
+      <li>The inflation surprise may already be priced.</li>
+      <li>Volatile components may overstate persistence.</li>
+      <li>Weaker labor data may outweigh CPI.</li>
+      <li>Federal Reserve communication may soften the repricing.</li>
+      <li>Strong earnings may offset valuation pressure.</li>
+    </ul>
+  `;
+}
+
+function cpiV2SourcesHTML() {
+  return `
+    <ul class="fixture-simple-list">
+      <li>Controlled local benchmark</li>
+      <li>CPI values are fixture data</li>
+      <li>Market reactions are synthetic</li>
+      <li>Manual review required</li>
+      <li>Not live and not publishable</li>
+    </ul>
+  `;
+}
+
+function renderCpiV2FixtureDetail() {
+  activeView = "home";
+  eventMode = "top";
+  selectedNodeId = null;
+  selectedUpcomingEventId = "";
+  listScreen.hidden = true;
+  detailScreen.hidden = false;
+  detailScreen.classList.add("fixture-mode");
+  ensureBottomNavVisible();
+  setActiveNav("home");
+  scrollAppToTop();
+  nextEventLabel.textContent = "CPI NODE DETAIL";
+
+  document.querySelector("#node-category").textContent = "MACRO";
+  document.querySelector("#node-title").textContent = "Hotter-than-Expected U.S. CPI Reprices Rate-Cut Expectations";
+  document.querySelector("#node-summary").textContent = "Headline and core monthly CPI exceeded expectations, potentially delaying rate cuts.";
+
+  const fixtureFacts = document.querySelector("#fixture-facts");
+  fixtureFacts.hidden = false;
+  fixtureFacts.innerHTML = `
+    <div class="fixture-fact-row"><strong>Headline CPI</strong><span>0.40% actual · 0.30% expected · 0.20% previous</span></div>
+    <div class="fixture-fact-row"><strong>Core CPI</strong><span>0.35% actual · 0.25% expected</span></div>
+    <p class="fixture-note">Controlled fixture · Not live</p>
+  `;
+
+  document.querySelector("#impact-label").textContent = "Impact Medium";
+  document.querySelector("#confidence-label").textContent = "Confidence High";
+  document.querySelector("#impact-label").hidden = false;
+  document.querySelector("#confidence-label").hidden = false;
+  document.querySelector("#event-type-label").hidden = true;
+  document.querySelector("#event-status-label").hidden = true;
+  saveButton.hidden = true;
+  if (reviewActions) reviewActions.hidden = true;
+  if (publishButton) publishButton.hidden = true;
+  if (archiveButton) archiveButton.hidden = true;
+
+  detailSections.innerHTML = [
+    section("Why It Matters", cpiV2WhyItMattersHTML(), true),
+    section("Market Effects", cpiV2MarketEffectsHTML(), true),
+    section("What To Watch Next", cpiV2WhatToWatchHTML(), true),
+    section("Broader Market Exposures", cpiV2BroaderExposuresHTML()),
+    section("Risks & Scenarios", cpiV2RisksHTML()),
+    section("Sources & Review", cpiV2SourcesHTML()),
+    `<p class="disclaimer">Not investment advice. Controlled local fixture data only.</p>`
+  ].join("");
+}
+
+function exitCpiV2Fixture() {
+  const normalHomeUrl = new URL(window.location.href);
+  normalHomeUrl.searchParams.delete("fixture");
+  normalHomeUrl.searchParams.delete("mode");
+  normalHomeUrl.hash = "";
+  window.location.assign(normalHomeUrl.toString());
+}
+
 function renderDetail(node) {
+  clearCpiV2FixturePresentation();
   selectedNodeId = node.id;
   selectedUpcomingEventId = "";
   const nodeStatus = String(node.status || "published").toLowerCase();
@@ -3764,7 +4112,7 @@ function renderDetail(node) {
   document.querySelector("#event-status-label").textContent = isReviewNode ? `${formatLabel(nodeStatus)} - review required` : "";
 
   const isSaved = savedNodeIds.includes(node.id);
-  saveButton.hidden = isReviewNode;
+  saveButton.hidden = cpiV2FixtureMode || isReviewNode;
   saveButton.textContent = isSaved ? "Saved" : "Save";
   saveButton.classList.toggle("saved", isSaved);
   if (reviewActions) reviewActions.hidden = !(reviewModeEnabled && isDraftNode);
@@ -3958,7 +4306,13 @@ eventList.addEventListener("submit", (event) => {
   announceStatus(localScreenMessage);
 });
 
-document.querySelector("#back-button").addEventListener("click", renderList);
+document.querySelector("#back-button").addEventListener("click", () => {
+  if (cpiV2FixtureMode) {
+    exitCpiV2Fixture();
+    return;
+  }
+  renderList();
+});
 
 saveButton.addEventListener("click", () => {
   if (selectedUpcomingEventId) {
@@ -4117,16 +4471,19 @@ brandButton.addEventListener("keydown", (event) => {
 searchButton?.addEventListener("click", () => openLocalView("discover"));
 avatarButton?.addEventListener("click", () => openLocalView("profile"));
 
-safeWriteLocalJson(APPEARANCE_STORAGE_KEY, appearance);
-savePreferences(preferences);
-updateAvatar();
-
-renderList();
-if (!reviewModeEnabled && !isOnboardingComplete()) startOnboarding();
-loadPublishedNodes();
-loadDraftNodes();
-loadEventCandidates();
-loadUpcomingEvents();
+if (cpiV2FixtureMode) {
+  renderCpiV2FixtureDetail();
+} else {
+  safeWriteLocalJson(APPEARANCE_STORAGE_KEY, appearance);
+  savePreferences(preferences);
+  updateAvatar();
+  renderList();
+  if (!reviewModeEnabled && !isOnboardingComplete()) startOnboarding();
+  loadPublishedNodes();
+  loadDraftNodes();
+  loadEventCandidates();
+  loadUpcomingEvents();
+}
 
     </script>
   </body>
