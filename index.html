@@ -62,6 +62,18 @@ button:focus-visible, input:focus-visible {
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.12);
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .app-screen {
   padding: 96px 16px calc(170px + env(safe-area-inset-bottom, 0px)) 16px;
   height: 100%;
@@ -86,7 +98,7 @@ button:focus-visible, input:focus-visible {
   border-radius: 99px; display: flex; align-items: center; gap: var(--sp-3); padding: 0 var(--sp-4) 0 var(--sp-5); z-index: 100;
 }
 
-.brand { flex: 0 0 auto; font-weight: 700; font-size: 18px; letter-spacing: -0.5px; color: var(--text-main); }
+.brand { flex: 0 0 auto; min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: flex-start; font-weight: 700; font-size: 18px; letter-spacing: -0.5px; color: var(--text-main); }
 .next-event { flex: 1 1 auto; min-width: 0; color: var(--text-light); font-size: 13px; font-weight: 700; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 .top-actions { flex: 0 0 auto; display: flex; align-items: center; gap: var(--sp-2); }
 .top-action { width: 44px; height: 44px; min-width: 44px; min-height: 44px; padding: 0; border-radius: 50%; background: transparent; color: var(--text-main); display: grid; place-items: center; font-size: 12px; font-weight: 700; }
@@ -192,7 +204,7 @@ button:focus-visible, input:focus-visible {
 .watchlist-remove { position: relative; z-index: 0; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; background: transparent; color: var(--text-muted); font-size: 13px; line-height: 1; }
 .watchlist-remove::before { content: ""; position: absolute; z-index: -1; width: 28px; height: 28px; border-radius: 50%; background: rgba(0, 0, 0, 0.08); }
 .watchlist-form { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
-.watchlist-input { min-width: 0; flex: 1 1 120px; height: 36px; border: 1px solid rgba(0, 0, 0, 0.08); border-radius: 99px; padding: 0 12px; background: rgba(255, 255, 255, 0.72); color: var(--text-main); font: inherit; font-size: 13px; outline: none; }
+.watchlist-input { min-width: 0; flex: 1 1 120px; height: 44px; border: 1px solid rgba(0, 0, 0, 0.08); border-radius: 99px; padding: 0 12px; background: rgba(255, 255, 255, 0.72); color: var(--text-main); font: inherit; font-size: 13px; outline: none; }
 .watchlist-input:focus { border-color: rgba(17, 24, 39, 0.22); box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.06); }
 .watchlist-message { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.4; }
 .watchlist-empty { display: flex; flex-direction: column; gap: var(--sp-2); }
@@ -373,6 +385,8 @@ details.detail-card[open] summary::after { content: "-"; }
           <button class="avatar" id="avatar-button" type="button" aria-label="Open profile and settings">G</button>
         </div>
       </header>
+
+      <div class="visually-hidden" id="app-status-region" role="status" aria-live="polite" aria-atomic="true"></div>
 
       <main class="app-screen">
         <section class="screen list-screen" id="list-screen">
@@ -639,6 +653,8 @@ let savedNodeIds = sanitizeStringArray(safeReadLocalJson(SAVED_NODES_STORAGE_KEY
 let watchlist = loadWatchlistSymbols();
 let watchlistInputVisible = false;
 let watchlistMessage = "";
+let watchlistInputValue = "";
+let watchlistInputInvalid = false;
 let watchlistAssetsExpanded = false;
 let userProfile = normalizeUserProfile(safeReadLocalJson(USER_PROFILE_STORAGE_KEY, DEFAULT_USER_PROFILE));
 let preferences = normalizePreferences(safeReadLocalJson(PREFERENCES_STORAGE_KEY, DEFAULT_PREFERENCES));
@@ -648,11 +664,12 @@ let onboardingStep = 0;
 let onboardingDraft = createOnboardingDraft(preferences);
 let onboardingPreviouslyFocusedElement = null;
 let onboardingOptionFocusTarget = null;
-let previousView = activeView;
+let previousLocation = { type: "view", view: activeView, eventMode };
 let discoverQuery = "";
 let localScreenMessage = "";
 let selectedAssetReference = "";
 let assetReturnView = "discover";
+let assetFocusOrigin = null;
 let nodeDataState = { status: "loading", title: "Loading latest nodes", message: "Loading latest nodes..." };
 let upcomingDataState = { status: "loading", title: "Loading upcoming events", message: "Loading upcoming events..." };
 let reviewLoadMessage = "";
@@ -1849,8 +1866,25 @@ const searchButton = document.querySelector("#search-button");
 const avatarButton = document.querySelector("#avatar-button");
 const onboardingOverlay = document.querySelector("#onboarding-overlay");
 const nextEventLabel = document.querySelector(".next-event");
+const appStatusRegion = document.querySelector("#app-status-region");
+let statusAnnouncementFrame = null;
 
 if (reviewNav) reviewNav.hidden = !reviewModeEnabled;
+
+function announceStatus(message) {
+  if (!appStatusRegion) return;
+  if (statusAnnouncementFrame !== null) {
+    window.cancelAnimationFrame(statusAnnouncementFrame);
+    statusAnnouncementFrame = null;
+  }
+  appStatusRegion.textContent = "";
+  const nextMessage = String(message || "");
+  if (!nextMessage) return;
+  statusAnnouncementFrame = window.requestAnimationFrame(() => {
+    appStatusRegion.textContent = nextMessage;
+    statusAnnouncementFrame = null;
+  });
+}
 
 function ensureBottomNavVisible() {
   if (!bottomNav) return;
@@ -2047,85 +2081,213 @@ function updateAvatar() {
   avatarButton.textContent = initial;
 }
 
-function openAssetDetail(reference) {
+function findDataButton(attribute, value) {
+  const expected = normalizeWatchlistSymbol(value);
+  return Array.from(document.querySelectorAll(`button[${attribute}]`)).find((button) => (
+    normalizeWatchlistSymbol(button.getAttribute(attribute)) === expected
+  )) || null;
+}
+
+function focusAfterRender(resolveTarget, { scrollTop } = {}) {
+  const preserveScroll = Number.isFinite(scrollTop);
+  if (preserveScroll) appScreen.scrollTop = scrollTop;
+  window.setTimeout(() => {
+    if (preserveScroll) appScreen.scrollTop = scrollTop;
+    resolveTarget()?.focus?.({ preventScroll: true });
+  }, 0);
+}
+
+function getAssetReturnFocusTarget(origin) {
+  const assetButton = findDataButton("data-open-asset", origin?.reference);
+  if (assetButton) return assetButton;
+  if (origin?.view === "watchlist") {
+    return document.querySelector("[data-watchlist-assets-toggle]")
+      || document.querySelector("[data-open-discover]");
+  }
+  return document.querySelector("#discover-search-input")
+    || document.querySelector("[data-return-previous]");
+}
+
+function openAssetDetail(reference, { keyboardActivated = false, scrollTop = appScreen.scrollTop } = {}) {
   const normalized = normalizeWatchlistSymbol(reference);
   if (!normalized) return;
   assetReturnView = ["discover", "watchlist"].includes(activeView) ? activeView : "discover";
+  assetFocusOrigin = keyboardActivated
+    ? { view: assetReturnView, reference: normalized, scrollTop }
+    : null;
   selectedAssetReference = normalized;
   activeView = "asset";
   selectedNodeId = null;
   localScreenMessage = "";
   renderList();
+  if (keyboardActivated) {
+    focusAfterRender(() => document.querySelector("[data-return-asset]"));
+  }
 }
 
-function returnFromAssetDetail() {
+function returnFromAssetDetail({ keyboardActivated = false } = {}) {
+  const origin = keyboardActivated ? assetFocusOrigin : null;
   activeView = ["discover", "watchlist"].includes(assetReturnView) ? assetReturnView : "discover";
   selectedNodeId = null;
   localScreenMessage = "";
-  renderList();
+  if (origin && origin.view === activeView) {
+    renderList({ scrollToTop: false });
+    focusAfterRender(() => getAssetReturnFocusTarget(origin), { scrollTop: origin.scrollTop });
+  } else {
+    renderList();
+  }
+  assetFocusOrigin = null;
+}
+
+function captureCurrentLocation() {
+  if (selectedNodeId) {
+    return { type: "node", id: selectedNodeId, originView: activeView, eventMode };
+  }
+  if (selectedUpcomingEventId) {
+    return { type: "upcoming", id: selectedUpcomingEventId, originView: activeView, eventMode };
+  }
+  if (activeView === "asset") {
+    return {
+      type: "asset",
+      reference: selectedAssetReference,
+      returnView: assetReturnView,
+      eventMode
+    };
+  }
+  return { type: "view", view: activeView, eventMode };
 }
 
 function openLocalView(view, message = "") {
   if (!["discover", "profile", "settings", "help", "inbox"].includes(view)) return;
-  if (!["discover", "profile", "settings", "help", "inbox"].includes(activeView)) previousView = activeView;
+  if (!["discover", "profile", "settings", "help", "inbox"].includes(activeView)) {
+    previousLocation = captureCurrentLocation();
+  }
   activeView = view;
   selectedNodeId = null;
+  selectedUpcomingEventId = "";
   localScreenMessage = message;
   renderList();
 }
 
 function returnToPreviousView() {
-  activeView = ["home", "watchlist", "saved", "review", "asset"].includes(previousView) ? previousView : "home";
+  const location = previousLocation || { type: "view", view: "home", eventMode: "top" };
+  eventMode = location.eventMode || "top";
   selectedNodeId = null;
+  selectedUpcomingEventId = "";
   localScreenMessage = "";
+
+  if (location.type === "node") {
+    activeView = ["home", "watchlist", "saved", "review", "asset"].includes(location.originView)
+      ? location.originView
+      : "home";
+    const node = getNode(location.id);
+    if (node) {
+      renderDetail(node);
+      return;
+    }
+  } else if (location.type === "upcoming") {
+    activeView = ["home", "watchlist", "saved"].includes(location.originView) ? location.originView : "home";
+    const upcomingEvent = getUpcomingEventById(location.id);
+    if (upcomingEvent) {
+      renderUpcomingDetail(upcomingEvent);
+      return;
+    }
+  } else if (location.type === "asset") {
+    activeView = "asset";
+    selectedAssetReference = normalizeWatchlistSymbol(location.reference);
+    assetReturnView = ["discover", "watchlist"].includes(location.returnView) ? location.returnView : "discover";
+    renderList();
+    return;
+  } else {
+    activeView = ["home", "watchlist", "saved", "review"].includes(location.view) ? location.view : "home";
+  }
+
   renderList();
 }
 
 function showWatchlistInput() {
   watchlistInputVisible = true;
+  watchlistInputValue = "";
+  watchlistInputInvalid = false;
+  watchlistMessage = "";
   renderList();
   window.setTimeout(() => document.querySelector("#watchlist-symbol-input")?.focus(), 0);
 }
 
 function hideWatchlistInput() {
   watchlistInputVisible = false;
+  watchlistInputValue = "";
+  watchlistInputInvalid = false;
   watchlistMessage = "";
   renderList();
 }
 
+function focusInvalidWatchlistInput() {
+  window.setTimeout(() => {
+    const input = document.querySelector("#watchlist-symbol-input");
+    input?.focus({ preventScroll: true });
+  }, 0);
+}
+
 function addWatchlistSymbol(value) {
+  watchlistInputValue = String(value ?? "");
   const symbol = normalizeWatchlistSymbol(value);
   if (!symbol) {
     watchlistMessage = "Enter a symbol before adding it.";
     watchlistInputVisible = true;
+    watchlistInputInvalid = true;
     renderList();
+    announceStatus(watchlistMessage);
+    focusInvalidWatchlistInput();
     return;
   }
   if (!isValidManualWatchlistSymbol(symbol)) {
     watchlistMessage = "Use 1-24 letters, numbers, spaces, dots, &, / or -.";
     watchlistInputVisible = true;
+    watchlistInputInvalid = true;
     renderList();
+    announceStatus(watchlistMessage);
+    focusInvalidWatchlistInput();
     return;
   }
   const symbolAssetKey = canonicalAssetKey(symbol);
   if (watchlist.some((item) => canonicalAssetKey(item) === symbolAssetKey)) {
     watchlistMessage = `${symbol} is already in your watchlist.`;
     watchlistInputVisible = true;
+    watchlistInputInvalid = true;
     renderList();
+    announceStatus(watchlistMessage);
+    focusInvalidWatchlistInput();
     return;
   }
   saveWatchlistSymbols([...watchlist, symbol]);
   watchlistMessage = `${symbol} added to your watchlist.`;
   watchlistInputVisible = false;
+  watchlistInputValue = "";
+  watchlistInputInvalid = false;
   renderList();
+  announceStatus(watchlistMessage);
 }
 
-function removeWatchlistSymbol(symbol) {
+function getWatchlistRemovalFocusTarget(removedIndex) {
+  const removeButtons = Array.from(document.querySelectorAll("button[data-watchlist-remove]"));
+  if (removeButtons.length) return removeButtons[Math.min(removedIndex, removeButtons.length - 1)];
+  return document.querySelector("[data-watchlist-assets-toggle]")
+    || document.querySelector("[data-open-discover]");
+}
+
+function removeWatchlistSymbol(symbol, { restoreFocus = false, scrollTop = appScreen.scrollTop } = {}) {
   const normalized = normalizeWatchlistSymbol(symbol);
   if (!normalized) return;
+  const removedIndex = watchlist.findIndex((item) => normalizeWatchlistSymbol(item) === normalized);
   saveWatchlistSymbols(watchlist.filter((item) => normalizeWatchlistSymbol(item) !== normalized));
   watchlistMessage = `${normalized} removed.`;
-  renderList();
+  renderList({ scrollToTop: false });
+  appScreen.scrollTop = scrollTop;
+  if (restoreFocus) {
+    focusAfterRender(() => getWatchlistRemovalFocusTarget(Math.max(0, removedIndex)), { scrollTop });
+  }
+  announceStatus(watchlistMessage);
 }
 
 function renderWatchlistControls() {
@@ -2168,7 +2330,7 @@ function renderManualWatchlistControl() {
   const addControl = watchlistInputVisible ? `
     <form class="watchlist-form" id="watchlist-form">
       <label class="field-label" for="watchlist-symbol-input">Symbol</label>
-      <input class="watchlist-input" id="watchlist-symbol-input" name="symbol" type="text" placeholder="Symbol" autocomplete="off" />
+      <input class="watchlist-input" id="watchlist-symbol-input" name="symbol" type="text" placeholder="Symbol" autocomplete="off" value="${escapeHtml(watchlistInputValue)}" aria-invalid="${watchlistInputInvalid}" ${watchlistInputInvalid ? 'aria-describedby="watchlist-symbol-error"' : ""} />
       <button class="action-btn liquid-glass" type="submit">Add</button>
       <button class="action-btn liquid-glass" id="cancel-watchlist-add" type="button">Cancel</button>
     </form>
@@ -2177,7 +2339,7 @@ function renderManualWatchlistControl() {
   return `
     <div class="watchlist-controls">
       ${addControl}
-      <p class="watchlist-message" role="status" aria-live="polite" aria-atomic="true" ${watchlistMessage ? "" : "hidden"}>${escapeHtml(watchlistMessage)}</p>
+      <p class="watchlist-message" id="watchlist-symbol-error" ${watchlistMessage ? "" : "hidden"}>${escapeHtml(watchlistMessage)}</p>
     </div>
   `;
 }
@@ -2649,7 +2811,7 @@ function renderAssetDetailScreen() {
 function renderProfileScreen() {
   const displayName = getDisplayName();
   eventList.innerHTML = `
-    ${localScreenMessage ? `<article class="data-status-card liquid-glass status-fallback" role="status" aria-live="polite" aria-atomic="true"><p>${escapeHtml(localScreenMessage)}</p></article>` : ""}
+    ${localScreenMessage ? `<article class="data-status-card liquid-glass status-fallback"><p>${escapeHtml(localScreenMessage)}</p></article>` : ""}
     <article class="event-card liquid-glass">
       <span class="category-pill">Local profile</span>
       <h2>${escapeHtml(displayName)}</h2>
@@ -2968,7 +3130,7 @@ function handleProfileAction(action) {
   }
 }
 
-function handleAssetWatchlistToggle(reference) {
+function handleAssetWatchlistToggle(reference, { restoreFocus = false, scrollTop = 0 } = {}) {
   const asset = getAssetByReference(reference);
   if (asset) {
     if (isAssetInWatchlist(asset)) {
@@ -2985,8 +3147,20 @@ function handleAssetWatchlistToggle(reference) {
     localScreenMessage = `${normalized} removed from your Watchlist.`;
   }
 
-  if (activeView === "asset") renderAssetDetailScreen();
-  else renderDiscoverResults();
+  if (activeView === "asset") {
+    renderAssetDetailScreen();
+    announceStatus(localScreenMessage);
+    appScreen.scrollTop = scrollTop;
+    if (restoreFocus) {
+      focusAfterRender(() => document.querySelector("[data-asset-watchlist-toggle]"), { scrollTop });
+    }
+  } else {
+    renderDiscoverResults();
+    appScreen.scrollTop = scrollTop;
+    if (restoreFocus) {
+      focusAfterRender(() => findDataButton("data-asset-watchlist-toggle", reference), { scrollTop });
+    }
+  }
 }
 
 function renderWatchlistEmptyState(noticeHTML = "") {
@@ -3238,7 +3412,33 @@ function renderUpcomingCards(events = getSortedUpcomingEvents(), options = {}) {
     .join("");
 }
 
+function captureManualWatchlistInputInteraction() {
+  const input = document.activeElement;
+  if (input?.id !== "watchlist-symbol-input") return null;
+  return {
+    scrollTop: appScreen.scrollTop,
+    selectionStart: input.selectionStart,
+    selectionEnd: input.selectionEnd,
+    selectionDirection: input.selectionDirection
+  };
+}
+
+function restoreManualWatchlistInputInteraction(interaction) {
+  if (!interaction || !watchlistInputVisible) return;
+  const input = document.querySelector("#watchlist-symbol-input");
+  if (!input) return;
+  appScreen.scrollTop = interaction.scrollTop;
+  input.focus({ preventScroll: true });
+  if (Number.isInteger(interaction.selectionStart) && Number.isInteger(interaction.selectionEnd)) {
+    const valueLength = input.value.length;
+    const selectionStart = Math.min(interaction.selectionStart, valueLength);
+    const selectionEnd = Math.min(interaction.selectionEnd, valueLength);
+    input.setSelectionRange(selectionStart, selectionEnd, interaction.selectionDirection || "none");
+  }
+}
+
 function renderList({ scrollToTop = true } = {}) {
+  const manualWatchlistInteraction = captureManualWatchlistInputInteraction();
   selectedNodeId = null;
   selectedUpcomingEventId = "";
   listScreen.hidden = false;
@@ -3270,7 +3470,7 @@ function renderList({ scrollToTop = true } = {}) {
   const upcomingNoticeHTML = renderDataStatusNotice(upcomingDataState);
 
   if (activeView === "discover") {
-    renderDiscoverScreen();
+    renderDiscoverScreen({ focusSearch: !manualWatchlistInteraction });
   } else if (activeView === "asset") {
     renderAssetDetailScreen();
   } else if (activeView === "profile") {
@@ -3342,6 +3542,7 @@ function renderList({ scrollToTop = true } = {}) {
     }
     renderNodeCards(orderedNodes, { noticeHTML: nodeNoticeHTML });
   }
+  restoreManualWatchlistInputInteraction(manualWatchlistInteraction);
 }
 
 function section(title, body, open = false, extraClass = "") {
@@ -3689,12 +3890,18 @@ eventList.addEventListener("click", (event) => {
   }
   const assetToggle = event.target.closest("[data-asset-watchlist-toggle]");
   if (assetToggle) {
-    handleAssetWatchlistToggle(assetToggle.dataset.assetWatchlistToggle);
+    handleAssetWatchlistToggle(assetToggle.dataset.assetWatchlistToggle, {
+      restoreFocus: event.detail === 0,
+      scrollTop: appScreen.scrollTop
+    });
     return;
   }
   const assetAction = event.target.closest("[data-open-asset]");
   if (assetAction) {
-    openAssetDetail(assetAction.dataset.openAsset);
+    openAssetDetail(assetAction.dataset.openAsset, {
+      keyboardActivated: event.detail === 0,
+      scrollTop: appScreen.scrollTop
+    });
     return;
   }
   const linkedNodeAction = event.target.closest("[data-linked-node]");
@@ -3735,6 +3942,11 @@ eventList.addEventListener("compositionend", (event) => {
   renderDiscoverResults();
 });
 
+screenIntro.addEventListener("input", (event) => {
+  if (event.target.id !== "watchlist-symbol-input") return;
+  watchlistInputValue = event.target.value;
+});
+
 eventList.addEventListener("submit", (event) => {
   const profileForm = event.target.closest("#profile-form");
   if (!profileForm) return;
@@ -3743,6 +3955,7 @@ eventList.addEventListener("submit", (event) => {
   saveUserProfile({ displayName });
   localScreenMessage = "Local display name saved.";
   renderProfileScreen();
+  announceStatus(localScreenMessage);
 });
 
 document.querySelector("#back-button").addEventListener("click", renderList);
@@ -3801,16 +4014,22 @@ screenIntro.addEventListener("click", (event) => {
   }
   const assetAction = event.target.closest("[data-open-asset]");
   if (assetAction) {
-    openAssetDetail(assetAction.dataset.openAsset);
+    openAssetDetail(assetAction.dataset.openAsset, {
+      keyboardActivated: event.detail === 0,
+      scrollTop: appScreen.scrollTop
+    });
     return;
   }
   if (event.target.closest("[data-return-asset]")) {
-    returnFromAssetDetail();
+    returnFromAssetDetail({ keyboardActivated: event.detail === 0 });
     return;
   }
   const removeButton = event.target.closest("[data-watchlist-remove]");
   if (removeButton) {
-    removeWatchlistSymbol(removeButton.dataset.watchlistRemove);
+    removeWatchlistSymbol(removeButton.dataset.watchlistRemove, {
+      restoreFocus: event.detail === 0,
+      scrollTop: appScreen.scrollTop
+    });
     return;
   }
   if (event.target.closest("[data-watchlist-add]")) {
