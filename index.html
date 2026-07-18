@@ -4,16 +4,34 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>clarifin prototype</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" />
     <style>
+@font-face {
+  font-family: "Silka";
+  src: url("fonts/silka-regular.woff2") format("woff2"), url("fonts/silka-regular.woff") format("woff");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Silka";
+  src: url("fonts/silka-semibold.otf") format("opentype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Silka";
+  src: url("fonts/silka-bold.otf") format("opentype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
 :root {
   color-scheme: light;
   --bg-app: #fafbfc;
-  --text-main: #111827;
-  --text-muted: #7D828A;
-  --text-light: #BCC2CA;
+  --text-main: #2d3133;
+  --text-muted: #5d646a;
+  --text-light: #9ea5aa;
   --green-bg: rgba(16, 185, 129, 0.12);
   --green-text: #059669;
   --red-bg: rgba(239, 68, 68, 0.12);
@@ -31,10 +49,13 @@
   --sp-6: 24px;
   --sp-8: 32px;
 
-  font-family: "Montserrat", -apple-system, BlinkMacSystemFont, "Inter", "SF Pro Text", "Segoe UI", sans-serif;
+  font-family: "Silka", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; font-weight: 700; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; font-weight: 600; }
+
+h1, h2, h3 { font-weight: 700; color: var(--text-main); }
+strong { font-weight: 700; }
 
 html { height: 100%; }
 
@@ -102,16 +123,16 @@ button:focus-visible, input:focus-visible {
 }
 
 .brand { flex: 0 0 auto; min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: flex-start; font-weight: 700; font-size: 18px; letter-spacing: -0.5px; color: var(--text-main); }
-.next-event { flex: 1 1 auto; min-width: 0; color: var(--text-light); font-size: 13px; font-weight: 700; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.next-event { flex: 1 1 auto; min-width: 0; color: var(--text-light); font-size: 13px; font-weight: 600; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 .top-actions { flex: 0 0 auto; display: flex; align-items: center; gap: var(--sp-2); }
-.top-action { width: 44px; height: 44px; min-width: 44px; min-height: 44px; padding: 0; border-radius: 50%; background: transparent; color: var(--text-main); display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+.top-action { width: 44px; height: 44px; min-width: 44px; min-height: 44px; padding: 0; border-radius: 50%; background: transparent; color: var(--text-main); display: grid; place-items: center; font-size: 12px; font-weight: 600; }
 .top-action:hover, .top-action:focus-visible, .top-action:active { background: rgba(17, 24, 39, 0.06); }
 .top-action svg { width: 23px; height: 23px; display: block; }
 .avatar { flex: 0 0 auto; position: relative; z-index: 0; width: 44px; height: 44px; min-width: 44px; min-height: 44px; background: transparent; color: #fff; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 14px; }
 .avatar::before { content: ""; position: absolute; z-index: -1; width: 36px; height: 36px; border-radius: 50%; background: var(--text-main); }
 
 .greeting-section { margin-bottom: var(--sp-6); padding-top: var(--sp-2); }
-.date-label { font-size: 13px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 var(--sp-1) 0; }
+.date-label { font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 var(--sp-1) 0; }
 .greeting-section h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; margin: 0 0 var(--sp-1) 0; overflow-wrap: break-word; word-break: normal; }
 
 .tabs-container { display: inline-flex; background: rgba(0, 0, 0, 0.04); padding: 4px; border-radius: 99px; margin-bottom: var(--sp-4); }
@@ -136,7 +157,7 @@ button:focus-visible, input:focus-visible {
 .event-card:active { transform: scale(0.98); }
 
 .card-header { display: flex; justify-content: space-between; align-items: flex-start; width: 100%; }
-.category-pill { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: var(--sp-2); }
+.category-pill { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: var(--sp-2); }
 
 .region-flag {
   width: 24px; height: 24px; border-radius: 50%; object-fit: contain;
@@ -144,33 +165,33 @@ button:focus-visible, input:focus-visible {
 }
 
 .event-card h2 { font-size: 18px; font-weight: 700; line-height: 1.25; margin: 0 0 var(--sp-2) 0; letter-spacing: -0.3px; max-width: calc(100% - 64px); overflow-wrap: anywhere; }
-.event-card > p { font-family: inherit; font-size: 13px; font-weight: 700; letter-spacing: 0; color: var(--text-light); line-height: 1.4; margin: 0 0 var(--sp-4) 0; max-width: calc(100% - 64px); overflow-wrap: anywhere; }
+.event-card > p { font-family: inherit; font-size: 13px; font-weight: 600; letter-spacing: 0; color: var(--text-light); line-height: 1.4; margin: 0 0 var(--sp-4) 0; max-width: calc(100% - 64px); overflow-wrap: anywhere; }
 
 .card-meta { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3); }
-.score-pill { padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 700; background: var(--yellow-bg); color: var(--yellow-text); }
+.score-pill { padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; background: var(--yellow-bg); color: var(--yellow-text); }
 .score-pill.gray { background: var(--gray-bg); color: var(--gray-text); }
 
 .ticker-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding-right: 40px; }
-.ticker-chip { padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 700; }
+.ticker-chip { padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; }
 .ticker-chip.positive { background: var(--green-bg); color: var(--green-text); }
 .ticker-chip.negative { background: var(--red-bg); color: var(--red-text); }
 .ticker-chip.mixed, .ticker-chip.neutral { background: var(--gray-bg); color: var(--gray-text); }
 
-.timestamp { position: absolute; bottom: 20px; right: 16px; font-size: 11px; font-weight: 700; color: var(--text-light); }
+.timestamp { position: absolute; bottom: 20px; right: 16px; font-size: 11px; font-weight: 600; color: var(--text-light); }
 .upcoming-card .timestamp { right: 20px; bottom: 18px; }
 
 .detail-controls { display: flex; justify-content: space-between; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-4); }
-.action-btn { min-height: 44px; padding: 8px 16px; border-radius: 99px; font-size: 14px; font-weight: 700; color: var(--text-main); border: 1px solid rgba(255, 255, 255, 0.8); }
+.action-btn { min-height: 44px; padding: 8px 16px; border-radius: 99px; font-size: 14px; font-weight: 600; color: var(--text-main); border: 1px solid rgba(255, 255, 255, 0.8); }
 .action-btn.saved { background: var(--yellow-bg); color: var(--yellow-text); border-color: transparent; }
 .action-btn.publish-action { background: var(--green-bg); color: var(--green-text); border-color: transparent; }
 .action-btn.archive-action { background: var(--gray-bg); color: var(--gray-text); border-color: transparent; }
 .review-actions { display: flex; gap: var(--sp-2); margin-left: auto; }
-.review-badge { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 8px; background: var(--yellow-bg); color: var(--yellow-text); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; margin-left: var(--sp-2); }
+.review-badge { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 8px; background: var(--yellow-bg); color: var(--yellow-text); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; margin-left: var(--sp-2); }
 .review-card-note { color: var(--text-muted); font-size: 13px; line-height: 1.4; margin: var(--sp-2) 0 0 0; }
-.review-token-action { margin-top: var(--sp-3); padding: 7px 12px; border-radius: 99px; background: var(--gray-bg); color: var(--gray-text); font-size: 13px; font-weight: 700; }
+.review-token-action { margin-top: var(--sp-3); padding: 7px 12px; border-radius: 99px; background: var(--gray-bg); color: var(--gray-text); font-size: 13px; font-weight: 600; }
 .review-toolbar { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
 .review-mini-tabs { display: inline-flex; background: rgba(0, 0, 0, 0.04); padding: 4px; border-radius: 99px; margin-top: var(--sp-3); }
-.review-mini-tab { padding: 7px 12px; border-radius: 99px; font-size: 13px; font-weight: 700; color: var(--text-muted); }
+.review-mini-tab { padding: 7px 12px; border-radius: 99px; font-size: 13px; font-weight: 600; color: var(--text-muted); }
 .review-mini-tab.active { background: #fff; color: var(--text-main); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); }
 .candidate-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
 .candidate-actions .action-btn { font-size: 12px; padding: 7px 10px; }
@@ -179,7 +200,7 @@ button:focus-visible, input:focus-visible {
 .candidate-score span { display: block; color: var(--text-muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; }
 .candidate-score strong { display: block; margin-top: 2px; color: var(--text-main); font-size: 14px; }
 .candidate-facts { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-2) 0; }
-.candidate-fact { display: inline-flex; align-items: center; gap: 4px; border-radius: 10px; background: rgba(0, 0, 0, 0.035); padding: 5px 8px; color: var(--text-muted); font-size: 11px; font-weight: 700; }
+.candidate-fact { display: inline-flex; align-items: center; gap: 4px; border-radius: 10px; background: rgba(0, 0, 0, 0.035); padding: 5px 8px; color: var(--text-muted); font-size: 11px; font-weight: 600; }
 .candidate-fact strong { color: var(--text-main); font-weight: 700; }
 .pipeline-result { margin-top: var(--sp-3); color: var(--text-muted); font-size: 13px; line-height: 1.4; }
 .data-status-card { border-radius: 18px; padding: var(--sp-4); margin-bottom: var(--sp-4); text-align: left; }
@@ -194,48 +215,46 @@ button:focus-visible, input:focus-visible {
 .data-status-card.status-error p { color: var(--red-text); }
 
 .watchlist-controls { display: flex; flex-direction: column; gap: var(--sp-3); margin-top: var(--sp-4); }
-.watchlist-assets-toggle { min-height: 44px; width: 100%; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); padding: 6px 4px; color: var(--text-main); font-size: 13px; font-weight: 700; text-align: left; }
-.watchlist-assets-toggle::after { content: ""; width: 8px; height: 8px; flex: 0 0 auto; margin-right: 5px; border-right: 2px solid var(--text-muted); border-bottom: 2px solid var(--text-muted); transform: rotate(45deg); transition: transform 0.2s ease; }
-.watchlist-assets-toggle[aria-expanded="true"]::after { transform: rotate(225deg); }
+.watchlist-assets-toggle { min-height: 44px; width: 100%; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); padding: 6px 4px; color: var(--text-main); font-size: 13px; font-weight: 600; text-align: left; }
+.watchlist-assets-toggle::after { content: "+"; flex: 0 0 auto; margin-right: 5px; font-size: 16px; font-weight: 600; color: var(--text-muted); }
+.watchlist-assets-toggle[aria-expanded="true"]::after { content: "-"; }
 .watchlist-symbols { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .watchlist-symbols[hidden] { display: none; }
 .watchlist-symbol-item { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; }
-.watchlist-symbol { min-height: 44px; min-width: 0; max-width: calc(100% - 48px); display: inline-flex; align-items: center; justify-content: flex-start; padding: 6px 12px; border-radius: 14px; background: var(--gray-bg); color: var(--gray-text); font-size: 12px; font-weight: 700; text-align: left; }
+.watchlist-symbol { min-height: 44px; min-width: 0; max-width: calc(100% - 48px); display: inline-flex; align-items: center; justify-content: flex-start; padding: 6px 12px; border-radius: 14px; background: var(--gray-bg); color: var(--gray-text); font-size: 12px; font-weight: 600; text-align: left; }
 .watchlist-symbol-line { min-width: 0; max-width: 100%; display: inline-flex; align-items: baseline; flex-wrap: nowrap; gap: 4px; }
 .watchlist-symbol-code { min-width: 0; overflow: hidden; color: var(--text-main); white-space: nowrap; text-overflow: ellipsis; overflow-wrap: normal; word-break: normal; }
-.watchlist-intelligence { flex: 0 0 auto; color: var(--text-muted); font-size: 10px; font-weight: 700; }
+.watchlist-intelligence { flex: 0 0 auto; color: var(--text-muted); font-size: 10px; font-weight: 600; }
 .watchlist-remove { position: relative; z-index: 0; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; background: transparent; color: var(--text-muted); font-size: 13px; line-height: 1; }
 .watchlist-remove::before { content: ""; position: absolute; z-index: -1; width: 28px; height: 28px; border-radius: 50%; background: rgba(0, 0, 0, 0.08); }
 .watchlist-form { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
 .watchlist-input { min-width: 0; flex: 1 1 120px; height: 44px; border: 1px solid rgba(0, 0, 0, 0.08); border-radius: 99px; padding: 0 12px; background: rgba(255, 255, 255, 0.72); color: var(--text-main); font: inherit; font-size: 13px; outline: none; }
 .watchlist-input:focus { border-color: rgba(17, 24, 39, 0.22); box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.06); }
-.watchlist-message { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.4; }
+.watchlist-message { margin: 0; color: var(--text-light); font-size: 13px; line-height: 1.4; }
 .watchlist-empty { display: flex; flex-direction: column; gap: var(--sp-2); }
 
 .detail-hero { border-radius: 24px; padding: var(--sp-5); margin-bottom: var(--sp-3); }
 .detail-hero h1 { font-size: 22px; font-weight: 700; line-height: 1.2; margin: 0 0 var(--sp-3) 0; letter-spacing: -0.5px; }
-.detail-summary { font-family: inherit; font-size: 13px; font-weight: 700; letter-spacing: 0; color: var(--text-light); line-height: 1.5; margin: 0 0 var(--sp-4) 0; }
+.detail-summary { font-family: inherit; font-size: 13px; font-weight: 600; letter-spacing: 0; color: var(--text-light); line-height: 1.5; margin: 0 0 var(--sp-4) 0; }
 .signal-row { display: flex; gap: var(--sp-2); }
 
 .detail-sections { display: flex; flex-direction: column; gap: var(--sp-3); }
 .detail-card { border-radius: 24px; }
-details.detail-card summary { padding: var(--sp-5); font-size: 17px; font-weight: 700; color: var(--text-main); list-style: none; display: flex; justify-content: space-between; align-items: center; }
-details.detail-card summary::-webkit-details-marker { display: none; }
-details.detail-card summary::after { content: "+"; font-size: 18px; font-weight: 700; color: var(--text-muted); }
-details.detail-card[open] summary::after { content: "-"; }
+details.detail-card > summary { padding: var(--sp-5); font-size: 17px; font-weight: 700; color: var(--text-main); list-style: none; display: flex; justify-content: space-between; align-items: center; }
+details.detail-card > summary::-webkit-details-marker { display: none; }
+details.detail-card > summary::after { content: "+"; font-size: 18px; font-weight: 600; color: var(--text-muted); }
+details.detail-card[open] > summary::after { content: "-"; }
 
-.detail-body { padding: 0 var(--sp-5) var(--sp-5) var(--sp-5); font-size: 14px; line-height: 1.5; color: var(--text-muted); font-weight: 400; }
-.detail-body p, .detail-body li { font-family: inherit; font-size: 14px; line-height: 1.5; color: var(--text-muted); font-weight: 400; }
+.detail-body { padding: 0 var(--sp-5) var(--sp-5) var(--sp-5); font-size: 13px; line-height: 1.5; color: var(--text-light); font-weight: 600; }
+.detail-body p, .detail-body li { font-family: inherit; font-size: 13px; line-height: 1.5; color: var(--text-light); font-weight: 600; }
 
-.chain-list, .asset-list, .scenario-list, .counter-list, .source-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--sp-4); }
-.chain-step strong, .scenario-item strong { display: block; color: var(--text-main); margin-bottom: 4px; font-size: 15px; font-weight: 700; }
-.chain-step p, .scenario-item p { margin: 0 0 6px 0; }
+.asset-list, .source-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--sp-4); }
 
 .asset-card { background: rgba(0, 0, 0, 0.03); padding: var(--sp-3); border-radius: 12px; }
 .asset-top { display: flex; justify-content: space-between; margin-bottom: 4px; }
 .asset-top h3 { margin: 0; font-size: 14px; font-weight: 700; color: var(--text-main); }
-.asset-top span { font-size: 12px; font-weight: 700; text-transform: capitalize; }
-.asset-card .asset-subline { margin: 4px 0 0 0; color: var(--text-muted); font-size: 13px; font-weight: 700; line-height: 1.4; }
+.asset-top span { font-size: 12px; font-weight: 600; text-transform: capitalize; }
+.asset-card .asset-subline { margin: 4px 0 0 0; color: var(--text-muted); font-size: 13px; font-weight: 600; line-height: 1.4; }
 .exposure-etfs { word-spacing: 6px; }
 .direction-positive { color: var(--green-text); }
 .direction-negative { color: var(--red-text); }
@@ -250,7 +269,7 @@ details.detail-card[open] summary::after { content: "-"; }
 .evidence-source { display: flex; flex-direction: column; gap: 6px; }
 .evidence-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--sp-2); }
 .evidence-head h3 { margin: 0; font-size: 14px; font-weight: 700; color: var(--text-main); }
-.status-pill { padding: 3px 8px; border-radius: 8px; font-size: 11px; font-weight: 700; text-transform: capitalize; background: var(--gray-bg); color: var(--gray-text); white-space: nowrap; }
+.status-pill { padding: 3px 8px; border-radius: 8px; font-size: 11px; font-weight: 600; text-transform: capitalize; background: var(--gray-bg); color: var(--gray-text); white-space: nowrap; }
 .status-success { background: var(--green-bg); color: var(--green-text); }
 .status-partial_success { background: var(--yellow-bg); color: var(--yellow-text); }
 .status-failed, .status-timeout, .status-rate_limited { background: var(--red-bg); color: var(--red-text); }
@@ -258,80 +277,66 @@ details.detail-card[open] summary::after { content: "-"; }
 .status-published { background: var(--green-bg); color: var(--green-text); }
 .review-status-section { border-color: rgba(245, 158, 11, 0.28); }
 .evidence-fact-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
-.evidence-fact-list li { color: var(--text-muted); font-size: 13px; font-weight: 400; line-height: 1.4; }
+.evidence-fact-list li { color: var(--text-muted); font-size: 13px; font-weight: 600; line-height: 1.4; }
 
 /* Node Detail v2 (additive, does not modify existing classes) */
-.wim-lead { font-size: 14px; font-weight: 400; color: var(--text-muted); line-height: 1.55; margin: 0 0 var(--sp-4) 0; }
+.wim-lead { font-size: 13px; font-weight: 600; color: var(--text-light); line-height: 1.55; margin: 0 0 var(--sp-4) 0; }
 .cc-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
 .cc { background: rgba(0, 0, 0, 0.03); border-radius: 12px; overflow: hidden; }
 .cc > summary { list-style: none; cursor: pointer; padding: var(--sp-3) var(--sp-4); display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
 .cc > summary::-webkit-details-marker { display: none; }
-.cc > summary::after { content: "+"; flex: 0 0 auto; font-size: 18px; font-weight: 700; color: var(--text-muted); line-height: 1.4; }
+.cc > summary::after { content: "+"; flex: 0 0 auto; font-size: 18px; font-weight: 600; color: var(--text-muted); line-height: 1.4; }
 .cc[open] > summary::after { content: "-"; }
 .cc-head { min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
 .cc-title { color: var(--text-main); font-size: 14px; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
-.cc-mech { color: var(--text-muted); font-size: 12px; font-weight: 400; line-height: 1.45; overflow-wrap: anywhere; }
+.cc-mech { color: var(--text-light); font-size: 13px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; }
 .cc-body { padding: 0 var(--sp-4) var(--sp-4) var(--sp-4); }
 .cc-steps { list-style: none; margin: 0 0 var(--sp-3) 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
 .cc-step { display: flex; gap: var(--sp-3); align-items: flex-start; }
-.cc-step-kind { flex: 0 0 84px; font-size: 10px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; color: var(--text-light); line-height: 1.5; padding-top: 1px; }
-.cc-step-text { min-width: 0; font-size: 13px; font-weight: 400; color: var(--text-muted); line-height: 1.45; overflow-wrap: anywhere; }
-.cc-sub { font-size: 10px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; color: var(--text-light); margin: var(--sp-3) 0 var(--sp-2) 0; }
-.cc-assets { display: flex; flex-direction: column; gap: var(--sp-2); margin: 0; }
-.cc-asset { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); }
-.cc-asset-name { font-size: 13px; font-weight: 700; color: var(--text-main); min-width: 0; overflow-wrap: anywhere; }
-.cc-asset-dir { flex: 0 0 auto; font-size: 12px; font-weight: 700; }
-.cc-force { font-size: 12px; font-weight: 400; color: var(--text-muted); line-height: 1.5; margin: var(--sp-3) 0 0 0; padding-top: var(--sp-3); border-top: 1px solid rgba(17, 24, 39, 0.06); }
-.cc-force strong { font-weight: 700; color: var(--text-main); }
-.kme-group { font-size: 11px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; color: var(--text-muted); margin: var(--sp-4) 0 var(--sp-2) 0; }
-.kme-group:first-child { margin-top: 0; }
+.cc-step-num { flex: 0 0 18px; font-size: 11px; font-weight: 600; color: var(--text-muted); line-height: 1.6; }
+.cc-step-text { min-width: 0; font-size: 13px; font-weight: 600; color: var(--text-muted); line-height: 1.45; overflow-wrap: anywhere; }
+.detail-body .cc-force { font-size: 13px; font-weight: 600; color: var(--text-light); line-height: 1.5; margin: var(--sp-3) 0 0 0; padding-top: var(--sp-3); border-top: 1px solid rgba(17, 24, 39, 0.06); }
+.detail-body .cc-force strong { font-weight: 700; color: var(--text-light); }
+.detail-body .kme-group { font-size: 11px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; color: var(--text-muted); margin: var(--sp-4) 0 var(--sp-2) 0; }
+.detail-body .kme-group:first-child { margin-top: 0; }
 .kme-list { list-style: none; padding: 0; margin: 0 0 var(--sp-2) 0; display: flex; flex-direction: column; gap: var(--sp-2); }
 .kme { background: rgba(0, 0, 0, 0.03); border-radius: 12px; overflow: hidden; }
 .kme > summary { list-style: none; cursor: pointer; padding: var(--sp-3); display: flex; align-items: center; gap: var(--sp-2); }
 .kme > summary::-webkit-details-marker { display: none; }
-.kme > summary::after { content: "+"; flex: 0 0 auto; font-size: 16px; font-weight: 700; color: var(--text-muted); }
+.kme > summary::after { content: "+"; flex: 0 0 auto; font-size: 16px; font-weight: 600; color: var(--text-muted); }
 .kme[open] > summary::after { content: "-"; }
 .kme-flat { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3); }
 .kme-name { flex: 1 1 auto; min-width: 0; font-size: 14px; font-weight: 700; color: var(--text-main); overflow-wrap: anywhere; }
-.kme-dir { flex: 0 0 auto; font-size: 12px; font-weight: 700; }
+.kme-dir { flex: 0 0 auto; font-size: 12px; font-weight: 600; }
 .kme-body { padding: 0 var(--sp-3) var(--sp-3) var(--sp-3); }
-.kme-body p { margin: 0; font-size: 13px; font-weight: 400; color: var(--text-muted); line-height: 1.45; }
-.kme-chain { display: inline-block; margin-top: var(--sp-2); font-size: 10px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; color: var(--text-light); }
-.watch-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; }
-.watch-item { padding: var(--sp-3) 0; border-bottom: 1px solid rgba(17, 24, 39, 0.06); }
-.watch-item:first-child { padding-top: 0; }
-.watch-item:last-child { padding-bottom: 0; border-bottom: 0; }
-.watch-obs { font-size: 13px; font-weight: 700; color: var(--text-main); margin: 0 0 4px 0; line-height: 1.35; }
-.watch-line { font-size: 12.5px; font-weight: 400; color: var(--text-muted); line-height: 1.45; margin: 5px 0 0 0; }
-.watch-tag { font-weight: 700; margin-right: 5px; }
-.watch-confirm .watch-tag { color: var(--green-text); }
-.watch-challenge .watch-tag { color: var(--red-text); }
+.detail-body .kme-body p { margin: 0; font-size: 13px; font-weight: 600; color: var(--text-muted); line-height: 1.45; }
+.watch-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
+.watch-item { min-width: 0; }
+.detail-body .watch-obs { font-size: 13px; font-weight: 600; color: var(--text-muted); margin: 0 0 var(--sp-1) 0; line-height: 1.35; }
+.watch-note { font-size: 13px; font-weight: 600; color: var(--text-light); line-height: 1.45; margin: 0; overflow-wrap: anywhere; }
 .exp-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; }
 .exp-item { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); padding: var(--sp-3) 0; border-bottom: 1px solid rgba(17, 24, 39, 0.06); }
 .exp-item:first-child { padding-top: 0; }
 .exp-item:last-child { padding-bottom: 0; border-bottom: 0; }
 .exp-name { font-size: 14px; font-weight: 700; color: var(--text-main); min-width: 0; overflow-wrap: anywhere; }
-.exp-dir { flex: 0 0 auto; font-size: 12px; font-weight: 700; }
+.exp-dir { flex: 0 0 auto; font-size: 12px; font-weight: 600; }
 .exp-block { margin-top: var(--sp-4); }
-.exp-block-title { font-size: 10px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; color: var(--text-light); margin: 0 0 var(--sp-2) 0; }
-.exp-note { font-size: 13px; font-weight: 400; color: var(--text-muted); line-height: 1.5; margin: 0; }
-.exp-note.excluded { color: var(--text-light); }
-.exp-note strong { font-weight: 700; color: var(--text-main); }
+.detail-body .exp-note { font-size: 13px; font-weight: 600; color: var(--text-light); line-height: 1.5; margin: 0; }
 .hero-facts { margin-top: var(--sp-4); padding-top: var(--sp-3); border-top: 1px solid rgba(17, 24, 39, 0.08); }
 .hero-facts .facts-row { padding: 7px 0; }
 .facts-grid { display: flex; flex-direction: column; margin: 0; }
 .facts-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); padding: var(--sp-2) 0; border-bottom: 1px solid rgba(17, 24, 39, 0.06); }
 .facts-row:first-child { padding-top: 0; }
 .facts-row:last-child { padding-bottom: 0; border-bottom: 0; }
-.facts-label { font-size: 13px; font-weight: 400; color: var(--text-muted); min-width: 0; }
-.facts-value { flex: 0 0 auto; font-size: 15px; font-weight: 700; color: var(--text-main); }
+.facts-label { font-size: 13px; font-weight: 600; color: var(--text-light); min-width: 0; }
+.facts-value { flex: 0 0 auto; font-size: 13px; font-weight: 600; color: var(--text-muted); }
 .risk-scenarios { list-style: none; padding: 0; margin: 0 0 var(--sp-3) 0; display: flex; flex-direction: column; gap: var(--sp-3); }
-.risk-scenario-title { font-size: 13px; font-weight: 700; color: var(--text-main); margin: 0 0 3px 0; }
-.risk-scenario-body { font-size: 13px; font-weight: 400; color: var(--text-muted); line-height: 1.5; margin: 0; }
-.risk-counter-title { font-size: 10px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; color: var(--text-light); margin: var(--sp-3) 0 var(--sp-2) 0; }
+.detail-body .risk-scenario-title { font-size: 13px; font-weight: 600; color: var(--text-muted); margin: 0 0 3px 0; }
+.risk-scenario-body { font-size: 13px; font-weight: 600; color: var(--text-light); line-height: 1.5; margin: 0; }
+.detail-body .risk-counter-title { font-size: 11px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; color: var(--text-muted); margin: var(--sp-3) 0 var(--sp-2) 0; }
 .risk-counter-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
-.risk-counter-list li { font-size: 13px; font-weight: 400; color: var(--text-muted); line-height: 1.5; padding-left: var(--sp-4); position: relative; }
-.risk-counter-list li::before { content: "-"; position: absolute; left: 0; color: var(--text-light); }
+.risk-counter-list li { font-size: 13px; font-weight: 600; color: var(--text-light); line-height: 1.5; padding-left: var(--sp-4); position: relative; }
+.risk-counter-list li::before { content: "\00B7"; position: absolute; left: 0; color: var(--text-light); }
 
 .screen-actions, .profile-actions, .onboarding-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
 .screen-actions { margin-top: var(--sp-3); }
@@ -411,7 +416,7 @@ details.detail-card[open] summary::after { content: "-"; }
 .onboarding-dialog h2 { margin: 0 0 var(--sp-2) 0; font-size: 22px; line-height: 1.2; }
 .onboarding-dialog p { margin: 0 0 var(--sp-4) 0; color: var(--text-muted); font-size: 14px; line-height: 1.45; }
 .onboarding-dialog .onboarding-description { color: var(--text-light); }
-.onboarding-progress { margin-bottom: var(--sp-3); color: var(--text-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; }
+.onboarding-progress { margin-bottom: var(--sp-3); color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; }
 .onboarding-actions { justify-content: space-between; margin-top: var(--sp-4); }
 
 .bottom-nav {
@@ -434,7 +439,7 @@ details.detail-card[open] summary::after { content: "-"; }
 .bottom-nav[hidden] { display: none; }
 .nav-item { flex: 1; min-height: 44px; text-align: center; padding: 12px 0; border-radius: 99px; font-size: 14px; font-weight: 700; color: var(--text-main); transition: all 0.2s ease; }
 .nav-item.active { background: var(--text-main); color: #fff; }
-.disclaimer { text-align: center; font-size: 10px; font-weight: 400; color: var(--text-muted); margin-top: var(--sp-6); padding: 0 var(--sp-4); }
+.disclaimer { text-align: center; font-size: 10px; font-weight: 600; color: var(--text-light); margin-top: var(--sp-6); padding: 0 var(--sp-4); }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
@@ -546,53 +551,41 @@ const fallbackNodes = [
       { label: "Core surprise", value: "+0.10 pp" },
       { label: "Core previous", value: "not supplied" }
     ],
-    whyMatters: "Both headline and core CPI landed 0.10 pp above consensus. A hotter print does not force the Fed to hike, but it can weaken confidence in near-term rate cuts, and that reprices bonds, the dollar and long-duration equities through distinct channels.",
+    whyMatters: "Markets had already priced a 0.30% increase, so the news is not the 0.40% itself but the 0.10 pp gap between expectation and reality. That gap delays expected Fed rate cuts, and the repricing travels through bonds, tech valuations and the dollar via three distinct channels.",
     chains: [
       {
         id: "C1",
         title: "Inflation surprise to Fed expectations to yields",
-        tagline: "The closest and strongest CPI transmission path.",
+        tagline: "Markets move on the gap between expectation and reality, not on the number itself.",
         steps: [
-          { kind: "Observed", text: "Headline and core CPI exceed the supplied consensus values." },
-          { kind: "Transmission", text: "Investors reassess how quickly inflation is returning toward target." },
-          { kind: "Transmission", text: "Confidence in near-term Fed rate cuts weakens; policy stays higher for longer." },
-          { kind: "Derived", text: "Treasury yields face upward pressure and long-duration bond prices fall." }
+          "Consensus expected 0.30%, the print showed 0.40%. Only this gap forces investors to reposition, because the expected part was already in prices.",
+          "Hot inflation weakens the case for near-term Fed rate cuts, so expected policy rates stay higher for longer.",
+          "New bonds will offer better yields, so existing bonds with lower fixed coupons become less attractive and their prices fall.",
+          "The longer a bond's remaining lifetime, the more repriced years it contains. That is why 20+ year Treasuries fall harder than short-term paper."
         ],
-        assets: [
-          { name: "US 10Y yield", direction: "positive", directionLabel: "Upward" },
-          { name: "TLT", direction: "negative", directionLabel: "Down" }
-        ],
-        counterforces: ["Weak labor data, dovish policy communication, already-priced expectations or a transitory release composition can weaken the chain."]
+        counterforces: ["Weak labor data, dovish Fed communication or a surprise driven by volatile components can reverse the move within days."]
       },
       {
         id: "C2",
         title: "Yields to discount rates to equity valuations",
-        tagline: "CPI reaches growth equities through present-value math.",
+        tagline: "Why tech stocks fall on an inflation number that has nothing to do with tech.",
         steps: [
-          { kind: "Transmission", text: "Higher risk-free yields raise the rate used to discount future cash flows." },
-          { kind: "Transmission", text: "Long-duration firms lose more present value than near-term cash-flow businesses." },
-          { kind: "Derived", text: "High-multiple growth equities face valuation pressure." }
+          "A higher risk-free Treasury yield raises the bar that every other investment has to clear.",
+          "Future profits are discounted back to today at that higher rate, and profits promised years from now lose the most present value.",
+          "Growth companies are valued mostly on distant profits, so their valuations compress more than firms earning money today."
         ],
-        assets: [
-          { name: "QQQ", direction: "negative", directionLabel: "Down" },
-          { name: "SPY", direction: "mixed", directionLabel: "Mixed" }
-        ],
-        counterforces: ["Strong earnings growth, falling risk premia, a fast yield reversal or a print already embedded in valuations."]
+        counterforces: ["Strong earnings, falling risk premia or a fast yield reversal can offset the valuation pressure."]
       },
       {
         id: "C3",
         title: "Relative rates to the dollar, and a mixed gold outcome",
-        tagline: "Rate differentials drive FX; competing forces leave gold mixed.",
+        tagline: "Why the classic inflation hedge can fall on hot inflation news.",
         steps: [
-          { kind: "Transmission", text: "Reduced U.S. cuts keep U.S. rates higher relative to other economies." },
-          { kind: "Transmission", text: "Dollar-denominated assets become relatively more attractive." },
-          { kind: "Derived", text: "The dollar may firm; gold is pulled between inflation-hedge demand and higher real yields." }
+          "If U.S. rate cuts move further away while other central banks stay on course, holding dollars pays relatively more.",
+          "That rate gap attracts capital into dollar assets and supports the dollar.",
+          "Gold pays no interest. When yields rise, holding it costs more in foregone income, so inflation-hedge demand and opportunity cost pull gold in opposite directions at once."
         ],
-        assets: [
-          { name: "DXY", direction: "positive", directionLabel: "Up" },
-          { name: "Gold / GLD", direction: "mixed", directionLabel: "Mixed" }
-        ],
-        counterforces: ["The dollar can weaken if foreign expectations reprice more, or if U.S. growth risk dominates."]
+        counterforces: ["The dollar can still weaken if foreign rate expectations reprice more, or if U.S. growth worries start to dominate."]
       }
     ],
     keyMarketEffects: {
@@ -608,10 +601,10 @@ const fallbackNodes = [
       ]
     },
     watchItems: [
-      { observation: "US 10Y and real yields", confirms: "the read if the rise persists", challenges: "it on a fast reversal" },
-      { observation: "Rate-cut probabilities", confirms: "if cuts move later or fewer", challenges: "on more dovish pricing" },
-      { observation: "Inflation composition", confirms: "if broad services prove persistent", challenges: "if driven by narrow volatile components" },
-      { observation: "Labor-market data", confirms: "if resilience reinforces higher-for-longer", challenges: "if weakness offsets the inflation signal" }
+      { observation: "US 10Y and real yields", note: "A sustained rise supports the higher-for-longer read; a quick reversal weakens it." },
+      { observation: "Rate-cut probabilities", note: "Cuts priced later or fewer support the repricing; more dovish pricing argues against it." },
+      { observation: "Inflation composition", note: "Broad, persistent services inflation strengthens the signal; narrow volatile components weaken it." },
+      { observation: "Labor-market data", note: "Resilient jobs data reinforces the story; clear weakness offsets the inflation signal." }
     ],
     sectorExposures: [
       { name: "Growth technology (XLK / QQQ)", direction: "negative", directionLabel: "Negative" },
@@ -620,8 +613,7 @@ const fallbackNodes = [
       { name: "Consumer demand (XLY)", direction: "negative", directionLabel: "Negative" },
       { name: "Regional banks (KRE)", direction: "mixed", directionLabel: "Mixed" }
     ],
-    researchCandidates: "A named company needs a second evidence step: valuation duration, refinancing schedule, balance sheet or management guidance. Sector membership alone is not enough.",
-    excluded: "Visa and Mastercard are not direct CPI effects without a specific, evidence-backed channel.",
+    researchCandidates: "Individual companies appear here only once there is company-specific evidence, such as refinancing pressure or management guidance. Sector membership alone is not enough.",
     affectedAssets: [
       { ticker: "TLT", name: "iShares 20+ Year Treasury Bond", direction: "negative", strength: "High", reason: "Long-duration Treasuries fall as yields rise." },
       { ticker: "QQQ", name: "Invesco QQQ Trust", direction: "negative", strength: "Medium", reason: "Higher discount rates weigh on long-duration growth equities." },
@@ -712,10 +704,10 @@ const fallbackNodes = [
       ]
     },
     watchItems: [
-      { observation: "Tanker transits and availability", confirms: "if volumes or capacity fall", challenges: "if transit and capacity stay normal" },
-      { observation: "War-risk insurance premiums", confirms: "if premiums or restrictions rise", challenges: "if availability stays stable" },
-      { observation: "Energy curves and product cracks", confirms: "if physical tightness emerges", challenges: "if the headline spike fades" },
-      { observation: "Verified cyber incidents", confirms: "the conditional cyber path", challenges: "it when there is no incident or budget evidence" }
+      { observation: "Tanker transits and availability", note: "Falling volumes or shrinking capacity would show real impairment; normal transit speaks against it." },
+      { observation: "War-risk insurance premiums", note: "Rising premiums or restricted coverage would confirm the mechanism; stable availability speaks against it." },
+      { observation: "Energy curves and product cracks", note: "Emerging physical tightness would confirm supply pressure; a fading headline spike speaks against it." },
+      { observation: "Verified cyber incidents", note: "Only verified incidents or budget evidence would activate the cyber path; headlines alone do not." }
     ],
     sectorExposures: [
       { name: "Energy upstream (XLE)", direction: "positive", directionLabel: "Positive" },
@@ -723,8 +715,7 @@ const fallbackNodes = [
       { name: "Airlines and travel (XLY)", direction: "negative", directionLabel: "Negative" },
       { name: "Chemicals and materials (XLB)", direction: "negative", directionLabel: "Negative" }
     ],
-    researchCandidates: "XOM, TSMC and LVMH enter only with company-specific exposure, contract, backlog or guidance evidence. Sector membership is not enough.",
-    excluded: "Visa, Mastercard and generic technology names stay out without a specific, evidence-backed channel.",
+    researchCandidates: "Companies like Exxon, TSMC or LVMH appear here only once there is company-specific evidence, such as contracts, backlog or guidance. Being in an affected sector is not enough.",
     affectedAssets: [
       { ticker: "BRENT CRUDE", name: "Brent crude oil", direction: "positive", strength: "High", reason: "Impaired transit and insurance raise realized crude prices after confirmation." },
       { ticker: "GLD", name: "Gold", direction: "mixed", strength: "Medium", reason: "Safe-haven demand competes with a stronger dollar and higher real yields." },
@@ -1915,7 +1906,10 @@ async function loadPublishedNodes() {
       return;
     }
 
-    nodes = await hydrateSupabaseNodes(publishedRows);
+    const hydratedNodes = await hydrateSupabaseNodes(publishedRows);
+    const modelNodes = fallbackNodes.filter((node) => node.id === "cpi" || node.id === "hormus");
+    const liveNodes = hydratedNodes.filter((node) => !modelNodes.some((model) => model.id === node.id));
+    nodes = sortNodesNewestFirst([...modelNodes, ...liveNodes]);
     nodeDataState = { status: "live", title: "", message: "" };
 
     if (selectedNodeId) {
@@ -4009,8 +4003,10 @@ function nodeDirClass(direction) {
 }
 
 function nodeDirWord(item) {
-  if (item && item.directionLabel) return item.directionLabel;
-  return formatLabel((item && item.direction) || "mixed");
+  const d = String((item && item.direction) || "mixed").toLowerCase();
+  if (d === "positive" || d.startsWith("up")) return "Positive";
+  if (d === "negative" || d.startsWith("down")) return "Negative";
+  return "Mixed";
 }
 
 function chainStepsFor(chain) {
@@ -4036,16 +4032,12 @@ function renderCausalChains(chains) {
   const items = chains.map((chain, index) => {
     const steps = chainStepsFor(chain);
     const stepsHTML = steps.length
-      ? `<ul class="cc-steps">${steps.map((s) => `<li class="cc-step">${s.kind ? `<span class="cc-step-kind">${escapeHtml(s.kind)}</span>` : ""}<span class="cc-step-text">${escapeHtml(s.text)}</span></li>`).join("")}</ul>`
-      : "";
-    const assets = Array.isArray(chain.assets) ? chain.assets : [];
-    const assetsHTML = assets.length
-      ? `<p class="cc-sub">Derived markets</p><div class="cc-assets">${assets.map((a) => `<div class="cc-asset"><span class="cc-asset-name">${escapeHtml(a.name || a.ticker || "")}</span><span class="cc-asset-dir ${nodeDirClass(a.direction)}">${escapeHtml(nodeDirWord(a))}</span></div>`).join("")}</div>`
+      ? `<ul class="cc-steps">${steps.map((s, stepIndex) => `<li class="cc-step"><span class="cc-step-num">${stepIndex + 1}</span><span class="cc-step-text">${escapeHtml(s.text)}</span></li>`).join("")}</ul>`
       : "";
     const force = chainCounterforceText(chain);
     const forceHTML = force ? `<p class="cc-force"><strong>Counterforces:</strong> ${escapeHtml(force)}</p>` : "";
     const tagline = hasValue(chain.tagline) ? chain.tagline : "";
-    return `<details class="cc"${index === 0 ? " open" : ""}><summary><span class="cc-head"><span class="cc-title">${escapeHtml(chain.title || "")}</span>${tagline ? `<span class="cc-mech">${escapeHtml(tagline)}</span>` : ""}</span></summary><div class="cc-body">${stepsHTML}${assetsHTML}${forceHTML}</div></details>`;
+    return `<details class="cc"${index === 0 ? " open" : ""}><summary><span class="cc-head"><span class="cc-title">${escapeHtml(chain.title || "")}</span>${tagline ? `<span class="cc-mech">${escapeHtml(tagline)}</span>` : ""}</span></summary><div class="cc-body">${stepsHTML}${forceHTML}</div></details>`;
   }).join("");
   return `<div class="cc-list">${items}</div>`;
 }
@@ -4054,13 +4046,10 @@ function marketEffectRow(item) {
   const reason = item.reason || item.whyRelevant || "";
   const name = `<span class="kme-name">${escapeHtml(item.name || item.ticker || "")}</span>`;
   const dir = `<span class="kme-dir ${nodeDirClass(item.direction)}">${escapeHtml(nodeDirWord(item))}</span>`;
-  if (!hasValue(reason) && !hasValue(item.chain)) {
+  if (!hasValue(reason)) {
     return `<div class="kme kme-flat">${name}${dir}</div>`;
   }
-  const bodyBits = [];
-  if (hasValue(reason)) bodyBits.push(`<p>${escapeHtml(reason)}</p>`);
-  if (hasValue(item.chain)) bodyBits.push(`<span class="kme-chain">Chain ${escapeHtml(item.chain)}</span>`);
-  return `<details class="kme"><summary>${name}${dir}</summary><div class="kme-body">${bodyBits.join("")}</div></details>`;
+  return `<details class="kme"><summary>${name}${dir}</summary><div class="kme-body"><p>${escapeHtml(reason)}</p></div></details>`;
 }
 
 function renderKeyMarketEffects(directList, indirectList) {
@@ -4082,11 +4071,12 @@ function collectWatchItems(node, chains) {
 function renderWatchItems(items) {
   if (!items.length) return "";
   return `<ul class="watch-list">${items.map((w) => {
-    const lines = [];
-    if (hasValue(w.confirms)) lines.push(`<p class="watch-line watch-confirm"><span class="watch-tag">Confirms</span> ${escapeHtml(w.confirms)}</p>`);
-    if (hasValue(w.challenges)) lines.push(`<p class="watch-line watch-challenge"><span class="watch-tag">Challenges</span> ${escapeHtml(w.challenges)}</p>`);
-    if (hasValue(w.note)) lines.push(`<p class="watch-line">${escapeHtml(w.note)}</p>`);
-    return `<li class="watch-item"><p class="watch-obs">${escapeHtml(w.observation || "")}</p>${lines.join("")}</li>`;
+    const parts = [];
+    if (hasValue(w.note)) parts.push(w.note);
+    if (!parts.length && hasValue(w.confirms)) parts.push(`Confirms: ${w.confirms}`);
+    if (!hasValue(w.note) && hasValue(w.challenges)) parts.push(`Challenges: ${w.challenges}`);
+    const text = parts.join(" · ");
+    return `<li class="watch-item"><p class="watch-obs">${escapeHtml(w.observation || "")}</p>${text ? `<p class="watch-note">${escapeHtml(text)}</p>` : ""}</li>`;
   }).join("")}</ul>`;
 }
 
@@ -4102,8 +4092,7 @@ function renderExposuresBlock(node, exposuresToWatch) {
       return `<li class="exp-item"><span class="exp-name">${escapeHtml(name)}</span>${e.directionHint ? `<span class="exp-dir ${nodeDirClass(e.directionHint)}">${escapeHtml(formatLabel(e.directionHint))}</span>` : ""}</li>`;
     }).join("")}</ul>`;
   }
-  if (hasValue(node.researchCandidates)) html += `<div class="exp-block"><p class="exp-block-title">Research candidates &mdash; need company evidence</p><p class="exp-note">${escapeHtml(node.researchCandidates)}</p></div>`;
-  if (hasValue(node.excluded)) html += `<div class="exp-block"><p class="exp-note excluded"><strong>Excluded:</strong> ${escapeHtml(node.excluded)}</p></div>`;
+  if (hasValue(node.researchCandidates)) html += `<div class="exp-block"><p class="exp-note">${escapeHtml(node.researchCandidates)}</p></div>`;
   return html;
 }
 
@@ -4190,9 +4179,9 @@ function renderDetail(node) {
     ...(watchHTML ? [section("What to watch next", watchHTML)] : []),
     ...(exposuresBlockHTML ? [section("Sector & company exposures", exposuresBlockHTML)] : []),
     ...(risksHTML ? [section("Risks & scenarios", risksHTML)] : []),
-    section("Sources & review", sourceStatusHTML, false, "review-status-section"),
+    ...(reviewModeEnabled ? [section("Sources & review", sourceStatusHTML, false, "review-status-section")] : []),
     ...(missingDataHTML ? [section("Missing Data", missingDataHTML, false, "review-status-section")] : []),
-    ...(researchEvidenceHTML ? [section("Research Evidence", researchEvidenceHTML, false, "research-evidence-section")] : []),
+    ...(reviewModeEnabled && researchEvidenceHTML ? [section("Research Evidence", researchEvidenceHTML, false, "research-evidence-section")] : []),
     `<p class="disclaimer">Not investment advice. No buy/sell recommendations or performance promises.</p>`
   ].join("");
 
