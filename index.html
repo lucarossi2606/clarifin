@@ -170,6 +170,7 @@ button:focus-visible, input:focus-visible {
 .card-meta { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3); }
 .score-pill { padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; background: var(--yellow-bg); color: var(--yellow-text); }
 .score-pill.gray { background: var(--gray-bg); color: var(--gray-text); }
+.score-pill.confidence { background: var(--gray-bg); color: var(--text-muted); }
 
 .ticker-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding-right: 40px; }
 .ticker-chip { padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; }
@@ -324,6 +325,26 @@ details.detail-card[open] > summary::after { content: "-"; }
 .detail-body .exp-note { font-size: 13px; font-weight: 600; color: var(--text-light); line-height: 1.5; margin: 0; }
 .hero-facts { margin-top: var(--sp-4); padding-top: var(--sp-3); border-top: 1px solid rgba(17, 24, 39, 0.08); }
 .hero-facts .facts-row { padding: 7px 0; }
+
+.info-dot { position: relative; flex: 0 0 auto; align-self: center; width: 18px; height: 18px; min-width: 18px; min-height: 18px; padding: 0; border-radius: 50%; border: 1px solid rgba(158, 165, 170, 0.55); background: var(--gray-bg); color: var(--text-muted); font-size: 11px; font-weight: 700; font-style: normal; line-height: 1; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.info-dot::after { content: ""; position: absolute; inset: -13px; border-radius: 50%; }
+.info-dot:focus-visible { outline: 3px solid rgba(17, 24, 39, 0.22); outline-offset: 2px; }
+.signal-row .info-dot { margin-left: auto; }
+.kme-name-wrap { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--sp-2); }
+.kme-name-wrap .kme-name { flex: 0 1 auto; }
+.kme-dir-cell { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.kme-dir-note { font-size: 11px; font-weight: 600; color: var(--text-light); }
+.info-sheet-overlay { position: absolute; inset: 0; z-index: 100001; display: grid; align-items: end; padding: 88px 16px calc(24px + env(safe-area-inset-bottom, 0px)); background: rgba(241, 243, 246, 0.72); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+.info-sheet-overlay[hidden] { display: none; }
+.info-sheet { position: relative; width: 100%; max-height: calc(100dvh - 112px); overflow-y: auto; border-radius: 24px 24px 24px 24px; padding: var(--sp-5); animation: info-sheet-rise 0.22s ease; }
+@keyframes info-sheet-rise { from { transform: translateY(16px); opacity: 0.6; } to { transform: translateY(0); opacity: 1; } }
+.info-sheet h2 { margin: 0 var(--sp-6) var(--sp-3) 0; font-size: 18px; line-height: 1.25; }
+.info-sheet p { margin: 0 0 var(--sp-4) 0; color: var(--text-light); font-size: 13px; font-weight: 600; line-height: 1.5; }
+.info-sheet p:last-child { margin-bottom: 0; }
+.info-sheet p strong { color: var(--text-main); }
+.info-sheet-close { position: absolute; top: 12px; right: 12px; width: 44px; height: 44px; min-width: 44px; min-height: 44px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 22px; line-height: 1; }
+.info-sheet-close:focus-visible { outline: 3px solid rgba(17, 24, 39, 0.22); outline-offset: 2px; }
+.app-screen.info-locked { overflow: hidden; }
 .facts-grid { display: flex; flex-direction: column; margin: 0; }
 .facts-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); padding: var(--sp-2) 0; border-bottom: 1px solid rgba(17, 24, 39, 0.06); }
 .facts-row:first-child { padding-top: 0; }
@@ -446,6 +467,7 @@ details.detail-card[open] > summary::after { content: "-"; }
   .dot { animation: none; }
   .event-card, .event-tab, .nav-item, .watchlist-assets-toggle::after { transition: none; }
   .event-card:hover, .event-card:active { transform: none; }
+  .info-sheet { animation: none; }
 }
 
     </style>
@@ -506,9 +528,10 @@ details.detail-card[open] > summary::after { content: "-"; }
             <p class="detail-summary" id="node-summary"></p>
             <div class="signal-row">
               <span class="score-pill yellow" id="impact-label"></span>
-              <span class="score-pill gray" id="confidence-label"></span>
+              <span class="score-pill confidence" id="confidence-label"></span>
                           <span class="score-pill gray" id="event-type-label" hidden></span>
               <span class="score-pill gray" id="event-status-label" hidden></span>
+              <button class="info-dot" type="button" data-info-key="impact-confidence" aria-label="About impact and confidence">i</button>
             </div>
             <div class="hero-facts" id="node-facts" hidden></div>
           </article>
@@ -525,6 +548,7 @@ details.detail-card[open] > summary::after { content: "-"; }
       </nav>
 
       <section class="onboarding-overlay" id="onboarding-overlay" hidden aria-hidden="true"></section>
+      <section class="info-sheet-overlay" id="info-sheet-overlay" hidden aria-hidden="true"></section>
       
     </div>
     <script>
@@ -548,10 +572,9 @@ const fallbackNodes = [
       { label: "Headline surprise", value: "+0.10 pp" },
       { label: "Core CPI (MoM)", value: "0.35%" },
       { label: "Core consensus", value: "0.25%" },
-      { label: "Core surprise", value: "+0.10 pp" },
-      { label: "Core previous", value: "not supplied" }
+      { label: "Core surprise", value: "+0.10 pp" }
     ],
-    whyMatters: "Markets had already priced a 0.30% increase, so the news is not the 0.40% itself but the 0.10 pp gap between expectation and reality. That gap delays expected Fed rate cuts, and the repricing travels through bonds, tech valuations and the dollar via three distinct channels.",
+    whyMatters: "Markets had already priced a 0.30% increase, so the news is not the 0.40% itself but the 0.10 pp gap between expectation and reality. That gap delays expected Fed rate cuts. The repricing travels through several distinct channels.",
     chains: [
       {
         id: "C1",
@@ -578,33 +601,49 @@ const fallbackNodes = [
       },
       {
         id: "C3",
-        title: "Relative rates to the dollar, and a mixed gold outcome",
-        tagline: "Why the classic inflation hedge can fall on hot inflation news.",
+        title: "Relative rates to dollar support",
         steps: [
-          "If U.S. rate cuts move further away while other central banks stay on course, holding dollars pays relatively more.",
-          "That rate gap attracts capital into dollar assets and supports the dollar.",
-          "Gold pays no interest. When yields rise, holding it costs more in foregone income, so inflation-hedge demand and opportunity cost pull gold in opposite directions at once."
-        ],
-        counterforces: ["The dollar can still weaken if foreign rate expectations reprice more, or if U.S. growth worries start to dominate."]
+          "A hotter inflation print can delay expected U.S. rate cuts. If expected U.S. rates remain higher relative to other economies, dollar assets can become more attractive and support the U.S. dollar."
+        ]
+      },
+      {
+        id: "C4",
+        title: "Inflation hedge versus real yields",
+        steps: [
+          "Inflation concerns can support demand for gold, while rising real yields and a stronger dollar can pressure it. The dominant force determines the eventual reaction."
+        ]
+      }
+    ],
+    transmissionPaths: [
+      {
+        id: "T1",
+        title: "Higher-for-longer to financing conditions",
+        steps: [
+          "Hotter inflation can delay expected rate cuts.",
+          "Borrowing and refinancing costs remain elevated for longer.",
+          "Higher financing costs can reduce investment and discretionary spending.",
+          "Housing, real estate and other rate-sensitive demand can come under pressure.",
+          "The economic effect usually develops more slowly than the immediate market repricing."
+        ]
       }
     ],
     keyMarketEffects: {
       direct: [
-        { name: "US 10Y yield", direction: "positive", directionLabel: "Upward", chain: "C1", reason: "Higher-for-longer expectations push nominal yields up as near-term cut confidence fades." },
-        { name: "TLT", direction: "negative", directionLabel: "Down", chain: "C1", reason: "Long-duration Treasuries fall as yields rise." },
-        { name: "DXY", direction: "positive", directionLabel: "Up", chain: "C3", reason: "Wider rate differentials support the dollar." }
+        { name: "US 10Y yield", direction: "positive", directionNote: "Yields up", reason: "Fewer expected cuts mean investors demand more yield for holding Treasuries, and the 10-year reprices first." },
+        { name: "TLT", direction: "negative", reason: "Existing long-term bonds with low fixed coupons lose value when new bonds yield more. The longer the maturity, the harder the fall." },
+        { name: "DXY", direction: "positive", reason: "Relatively higher U.S. rates make dollar assets more attractive than other currencies." }
       ],
       indirect: [
-        { name: "QQQ", direction: "negative", directionLabel: "Down", chain: "C2", reason: "Higher discount rates compress the present value of distant tech cash flows." },
-        { name: "SPY", direction: "mixed", directionLabel: "Mixed", chain: "C2", reason: "Broad equities feel valuation pressure, partly offset by earnings and sector mix." },
-        { name: "Gold / GLD", direction: "mixed", directionLabel: "Mixed", chain: "C3", reason: "Inflation-hedge demand competes with higher real yields and a firmer dollar." }
+        { name: "QQQ", direction: "negative", reason: "Tech valuations rest on profits far in the future, exactly the profits that lose most value when discount rates rise." },
+        { name: "SPY", direction: "mixed", reason: "The broad index feels the same valuation pressure, but banks and energy inside it partly benefit from higher rates, so the mix cushions the move." },
+        { name: "Gold / GLD", direction: "mixed", reason: "Inflation-hedge buying competes with rising real yields and a firmer dollar. Neither force reliably wins on day one." }
       ]
     },
     watchItems: [
-      { observation: "US 10Y and real yields", note: "A sustained rise supports the higher-for-longer read; a quick reversal weakens it." },
-      { observation: "Rate-cut probabilities", note: "Cuts priced later or fewer support the repricing; more dovish pricing argues against it." },
-      { observation: "Inflation composition", note: "Broad, persistent services inflation strengthens the signal; narrow volatile components weaken it." },
-      { observation: "Labor-market data", note: "Resilient jobs data reinforces the story; clear weakness offsets the inflation signal." }
+      { observation: "Rate-cut pricing in futures markets", note: "If markets push the first expected cut further out or remove one entirely, the repricing is real. A drift back toward more cuts unwinds it." },
+      { observation: "US 10Y and real yields", note: "A rise that holds over several days signals conviction. A fast round trip says the print was treated as noise." },
+      { observation: "Services inflation detail", note: "Broad pressure across services keeps the story alive. A surprise driven by airfares or energy alone weakens it." },
+      { observation: "Next labor-market report", note: "Strong jobs make higher-for-longer credible. Clear weakness flips the debate from inflation to growth." }
     ],
     sectorExposures: [
       { name: "Growth technology (XLK / QQQ)", direction: "negative", directionLabel: "Negative" },
@@ -620,13 +659,13 @@ const fallbackNodes = [
       { ticker: "DXY", name: "U.S. Dollar Index", direction: "positive", strength: "Medium", reason: "Wider rate differentials support the dollar." }
     ],
     scenarios: [
-      { title: "Already priced", body: "Markets had embedded a hotter print. The reaction fades quickly because positioning was set in advance." },
-      { title: "Labor-market offset", body: "A subsequent soft jobs report softens the higher-for-longer read and eases pressure on rate-sensitive assets." }
+      { title: "Already priced", body: "If positioning had quietly embedded a hot print, the first spike fades within a session. Whether yields hold the move tells you which world you are in." },
+      { title: "Labor-market offset", body: "A weak jobs report would flip the narrative from inflation too hot to growth too cold, and yields can fall despite the CPI surprise." }
     ],
     counterarguments: [
-      "One hot print does not force a Fed hike; it mainly lowers confidence in near-term cuts.",
-      "A transitory composition driven by volatile components would weaken the persistence signal.",
-      "If expectations already embedded the surprise, the market impact is muted."
+      "One print is not a trend: the Fed reacts to several months of data, not a single release.",
+      "If the surprise came mainly from volatile components, it says little about persistent inflation.",
+      "If investors privately expected a hot number despite the official consensus, much of the reaction was already in prices."
     ],
     sources: ["U.S. BLS (CPI release)", "Consensus survey", "Treasury and FX market data"]
   },
@@ -643,71 +682,59 @@ const fallbackNodes = [
     region: "global",
     published_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
     created_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-    whyMatters: "Escalation moves markets only when the Strait becomes physically unsafe, hard to insure or commercially unusable. Effective vessel capacity, not the headline, is the real decision variable, and three mechanisms can act at once.",
+    whyMatters: "Roughly a fifth of the world's seaborne oil and much of its LNG leaves the Gulf through this one strait, and unlike Suez there is no sea route around it. Markets do not react to the war headline itself: they react when transit becomes unsafe, uninsurable or commercially unusable, and insurance can shut the route faster than any blockade.",
     chains: [
       {
         id: "C1",
         title: "Transit risk to insurance to energy flows",
-        tagline: "Physical closure is not required; impaired commercial capacity is enough.",
+        tagline: "Insurers can close the strait commercially before anyone closes it physically.",
         steps: [
-          { kind: "Observed", text: "Risk rises around a critical shipping route." },
-          { kind: "Transmission", text: "War-risk premiums rise; shipowners, crews and insurers restrict availability." },
-          { kind: "Transmission", text: "Effective vessel capacity falls even without a physical closure." },
-          { kind: "Derived", text: "Crude, LNG and refined-product delivery becomes slower and costlier." }
+          "War-risk insurance is priced per voyage and repriced daily. After an incident, premiums can jump or cover can be withdrawn within days.",
+          "Without affordable cover, owners and crews refuse the passage, so effective tanker capacity falls even though the water stays open.",
+          "Gulf oil and LNG have no alternative sea route, and pipelines can replace only a fraction of the volume.",
+          "Delivered crude, LNG and freight become scarcer and more expensive, lifting prices and tanker rates together."
         ],
-        assets: [
-          { name: "Brent crude", direction: "positive", directionLabel: "Up" },
-          { name: "Tanker rates", direction: "positive", directionLabel: "Up" },
-          { name: "LNG benchmarks", direction: "positive", directionLabel: "Up" }
-        ],
-        counterforces: ["Government escorts or insurer backstops, spare capacity or strategic releases, demand weakness, or rapid de-escalation."]
+        counterforces: ["Naval escorts or state-backed insurance, strategic reserve releases, weak demand or fast de-escalation can cap the move."]
       },
       {
         id: "C2",
         title: "Energy costs to inflation to rates",
-        tagline: "Higher energy and freight costs can delay policy easing.",
+        tagline: "An oil shock reaches interest rates through inflation expectations.",
         steps: [
-          { kind: "Transmission", text: "Energy and freight costs raise inflation expectations." },
-          { kind: "Transmission", text: "Persistent pressure can delay easing and keep policy rates higher." },
-          { kind: "Derived", text: "Nominal yields may rise while long-duration bonds face pressure." }
+          "Energy and freight feed into almost every other price, so inflation expectations rise with a lag.",
+          "Central banks facing a fresh price shock hesitate to cut rates, even if growth suffers.",
+          "Expected higher-for-longer rates push yields up and long-duration bonds down, while a genuine growth scare would drag yields the other way."
         ],
-        assets: [
-          { name: "US 10Y yield", direction: "positive", directionLabel: "Upward" },
-          { name: "TLT", direction: "mixed", directionLabel: "Mixed" }
-        ],
-        counterforces: ["A growth shock can lower yields; central banks may look through a short-lived supply shock."]
+        counterforces: ["Central banks may look through a short-lived supply shock; a growth scare can pull yields down instead."]
       },
       {
         id: "C3",
         title: "Risk aversion to safe havens",
-        tagline: "Gold, the dollar and Treasuries may draw demand, but forces conflict.",
+        tagline: "The same shock pushes Treasuries in two directions at once.",
         steps: [
-          { kind: "Transmission", text: "Escalation raises tail-risk demand and investors reduce cyclical risk." },
-          { kind: "Derived", text: "Gold and the dollar may firm; Treasury safe-haven demand fights inflation pressure." }
+          "Escalation makes investors cut risk and reach for gold, dollars and Treasuries.",
+          "But the shock is inflationary, and inflation is exactly what bond holders fear, so safe-haven buying fights inflation-driven selling in the same market.",
+          "Gold faces the same tug of war between safe-haven demand, a firmer dollar and higher yields. Mixed is the honest answer."
         ],
-        assets: [
-          { name: "Gold", direction: "mixed", directionLabel: "Up / Mixed" },
-          { name: "DXY", direction: "positive", directionLabel: "Up" }
-        ],
-        counterforces: ["Higher real yields and a stronger dollar can offset gold; inflation can offset Treasury safe-haven demand."]
+        counterforces: ["Higher real yields and a stronger dollar can fully offset gold's safe-haven bid."]
       }
     ],
     keyMarketEffects: {
       direct: [
-        { name: "Brent crude", direction: "positive", directionLabel: "Up", chain: "C1", reason: "Impaired transit and insurance raise realized crude prices after confirmation." },
-        { name: "Gold", direction: "mixed", directionLabel: "Mixed", chain: "C3", reason: "Safe-haven demand competes with a stronger dollar and higher real yields." },
-        { name: "DXY", direction: "positive", directionLabel: "Up", chain: "C3", reason: "Risk aversion and relative rates support the dollar." }
+        { name: "Brent crude", direction: "positive", reason: "Prices move when transit or insurance is verifiably impaired. The mechanism runs through barrels and cover, not headlines." },
+        { name: "Gold", direction: "mixed", reason: "Safe-haven demand competes with a firmer dollar and higher yields. Which fear dominates decides the direction." },
+        { name: "DXY", direction: "positive", reason: "In global stress, demand for dollars rises. It is the currency that trade routes, oil and debts are priced in." }
       ],
       indirect: [
-        { name: "US 10Y yield", direction: "positive", directionLabel: "Upward", chain: "C2", reason: "Energy-driven inflation pressure can push nominal yields up." },
-        { name: "TLT", direction: "mixed", directionLabel: "Mixed", chain: "C2", reason: "Inflation pressure and safe-haven demand pull long Treasuries in opposite directions." }
+        { name: "US 10Y yield", direction: "positive", reason: "Energy-driven inflation pressure pushes yields up early, before any growth damage shows in the data." },
+        { name: "TLT", direction: "mixed", reason: "Caught between inflation-driven selling and safe-haven buying, so the direction depends on which force dominates." }
       ]
     },
     watchItems: [
-      { observation: "Tanker transits and availability", note: "Falling volumes or shrinking capacity would show real impairment; normal transit speaks against it." },
-      { observation: "War-risk insurance premiums", note: "Rising premiums or restricted coverage would confirm the mechanism; stable availability speaks against it." },
-      { observation: "Energy curves and product cracks", note: "Emerging physical tightness would confirm supply pressure; a fading headline spike speaks against it." },
-      { observation: "Verified cyber incidents", note: "Only verified incidents or budget evidence would activate the cyber path; headlines alone do not." }
+      { observation: "Tanker transits and freight rates", note: "Falling transit counts or spiking charter rates show real impairment. Normal traffic says the risk is priced, not physical." },
+      { observation: "War-risk insurance premiums", note: "The fastest honest indicator: insurers reprice within days, long before official statements." },
+      { observation: "Qatari LNG loadings", note: "Qatar ships roughly a fifth of global LNG through the strait. Disrupted loadings would turn the scenario physical." },
+      { observation: "Shape of the oil futures curve", note: "If near-term barrels trade above later ones, traders are paying up for oil now. That is physical tightness, not just headlines." }
     ],
     sectorExposures: [
       { name: "Energy upstream (XLE)", direction: "positive", directionLabel: "Positive" },
@@ -722,13 +749,13 @@ const fallbackNodes = [
       { ticker: "DXY", name: "U.S. Dollar Index", direction: "positive", strength: "Medium", reason: "Risk aversion and relative rates support the dollar." }
     ],
     scenarios: [
-      { title: "Short disruption", body: "Reserves, rerouting and diplomacy cushion the shock. Second-order effects remain limited." },
-      { title: "Extended disruption", body: "After several weeks, energy and supply-chain constraints become operational. Relevance shifts from headlines to margins and production risk." }
+      { title: "Short disruption", body: "Reserves, rerouting and diplomacy cushion the shock. Prices spike and fade without lasting economic damage." },
+      { title: "Extended disruption", body: "After weeks, higher energy costs reach production, shipping and consumer prices. The story moves from traders to the real economy." }
     ],
     counterarguments: [
-      "Strategic oil reserves and non-Gulf OPEC+ supply could dampen price spikes.",
-      "Insurance and energy inventories can delay operational effects by several weeks.",
-      "Diplomatic de-escalation or a geographically contained conflict would reduce many second-order effects."
+      "Strategic reserves and spare capacity outside the Gulf can cap price spikes for a while.",
+      "Insurance markets have absorbed regional incidents before without closing the route.",
+      "De-escalation can reverse the entire risk premium within days."
     ],
     sources: ["IEA", "EIA", "Bloomberg", "Carnegie Endowment"]
   },
@@ -2117,6 +2144,23 @@ const brandButton = document.querySelector(".brand");
 const searchButton = document.querySelector("#search-button");
 const avatarButton = document.querySelector("#avatar-button");
 const onboardingOverlay = document.querySelector("#onboarding-overlay");
+const infoSheetOverlay = document.querySelector("#info-sheet-overlay");
+let infoSheetTrigger = null;
+const IMPACT_CONFIDENCE_INFO = {
+  title: "Impact & confidence",
+  body: `
+    <p><strong>Impact</strong><br>Impact estimates how strongly an event could affect the relevant markets if the described transmission mechanisms materialize.</p>
+    <p><strong>Confidence</strong><br>Confidence reflects the strength and completeness of the evidence behind the analysis. It is not a probability or guarantee of a market outcome.</p>
+  `
+};
+const ASSET_INFO = {
+  "US 10Y yield": "The yield investors demand on ten-year U.S. government bonds. It is an important benchmark for borrowing costs and asset valuations.",
+  "TLT": "An ETF that tracks long-duration U.S. Treasury bonds. Its price typically falls when long-term Treasury yields rise.",
+  "DXY": "An index that measures the U.S. dollar against a basket of major currencies.",
+  "QQQ": "An ETF tracking the Nasdaq-100, with significant exposure to large technology and growth companies.",
+  "SPY": "An ETF tracking the S&P 500, representing a broad cross-section of large U.S. companies.",
+  "Gold / GLD": "Gold is the underlying asset; GLD is an ETF designed to track the gold price. Its reaction can reflect competing effects from inflation demand, real yields and the U.S. dollar."
+};
 const nextEventLabel = document.querySelector(".next-event");
 const appStatusRegion = document.querySelector("#app-status-region");
 let statusAnnouncementFrame = null;
@@ -3366,6 +3410,129 @@ function startOnboarding() {
   renderOnboarding();
 }
 
+function isInfoSheetVisible() {
+  return Boolean(infoSheetOverlay && !infoSheetOverlay.hidden);
+}
+
+function getInfoSheetDialog() {
+  return infoSheetOverlay?.querySelector(".info-sheet") || null;
+}
+
+function getInfoSheetFocusableElements() {
+  const dialog = getInfoSheetDialog();
+  if (!dialog) return [];
+  return Array.from(dialog.querySelectorAll("button, input, select, textarea, a[href], [tabindex]"))
+    .filter(isFocusableElementVisible);
+}
+
+function setInfoSheetBackgroundInert(enabled) {
+  [document.querySelector(".top-nav"), appScreen, bottomNav].forEach((element) => {
+    if (!element) return;
+    if (enabled) {
+      if (!element.hasAttribute("inert")) element.dataset.infoSheetManagedInert = "true";
+      element.inert = true;
+    } else if (element.dataset.infoSheetManagedInert === "true") {
+      element.inert = false;
+      delete element.dataset.infoSheetManagedInert;
+    }
+  });
+}
+
+function resolveInfoSheetContent(key) {
+  if (!key) return null;
+  if (key === "impact-confidence") return IMPACT_CONFIDENCE_INFO;
+  if (key.startsWith("asset:")) {
+    const name = key.slice("asset:".length);
+    const definition = ASSET_INFO[name];
+    if (definition) return { title: name, body: `<p>${escapeHtml(definition)}</p>` };
+  }
+  return null;
+}
+
+function openInfoSheet(key, trigger) {
+  if (!infoSheetOverlay) return;
+  const content = resolveInfoSheetContent(key);
+  if (!content) return;
+  infoSheetTrigger = trigger && document.contains(trigger) ? trigger : null;
+  setInfoSheetBackgroundInert(true);
+  appScreen?.classList.add("info-locked");
+  infoSheetOverlay.hidden = false;
+  infoSheetOverlay.setAttribute("aria-hidden", "false");
+  infoSheetOverlay.innerHTML = `
+    <div class="info-sheet liquid-glass" role="dialog" aria-modal="true" aria-labelledby="info-sheet-title" tabindex="-1">
+      <button class="info-sheet-close" type="button" data-info-close aria-label="Close">&times;</button>
+      <h2 id="info-sheet-title">${escapeHtml(content.title)}</h2>
+      ${content.body}
+    </div>
+  `;
+  const dialog = getInfoSheetDialog();
+  window.setTimeout(() => {
+    const closeButton = dialog?.querySelector("[data-info-close]");
+    (closeButton || dialog)?.focus();
+  }, 0);
+}
+
+function resolveInfoSheetFocusTarget() {
+  if (
+    infoSheetTrigger
+    && document.contains(infoSheetTrigger)
+    && !infoSheetTrigger.closest("[inert]")
+    && isFocusableElementVisible(infoSheetTrigger)
+  ) {
+    return infoSheetTrigger;
+  }
+  if (!detailScreen || detailScreen.hidden || !selectedNodeId) return null;
+  const impactConfidenceButton = detailScreen.querySelector('[data-info-key="impact-confidence"]');
+  if (isFocusableElementVisible(impactConfidenceButton)) return impactConfidenceButton;
+  const backButton = detailScreen.querySelector("#back-button");
+  if (isFocusableElementVisible(backButton)) return backButton;
+  return null;
+}
+
+function closeInfoSheet() {
+  if (!infoSheetOverlay || infoSheetOverlay.hidden) return;
+  setInfoSheetBackgroundInert(false);
+  appScreen?.classList.remove("info-locked");
+  infoSheetOverlay.hidden = true;
+  infoSheetOverlay.setAttribute("aria-hidden", "true");
+  infoSheetOverlay.innerHTML = "";
+  const target = resolveInfoSheetFocusTarget();
+  infoSheetTrigger = null;
+  window.setTimeout(() => target?.focus?.({ preventScroll: true }), 0);
+}
+
+function handleInfoSheetKeydown(event) {
+  if (!isInfoSheetVisible()) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeInfoSheet();
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const dialog = getInfoSheetDialog();
+  if (!dialog) return;
+  const focusable = getInfoSheetFocusableElements();
+  if (!focusable.length) {
+    event.preventDefault();
+    dialog.focus();
+    return;
+  }
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (!dialog.contains(document.activeElement)) {
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus();
+    return;
+  }
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
 function handleProfileAction(action) {
   if (action === "watchlist") {
     activeView = "watchlist";
@@ -4027,7 +4194,7 @@ function chainCounterforceText(chain) {
   return "";
 }
 
-function renderCausalChains(chains) {
+function renderCausalChains(chains, { openFirst = true } = {}) {
   if (!chains.length) return "";
   const items = chains.map((chain, index) => {
     const steps = chainStepsFor(chain);
@@ -4037,15 +4204,20 @@ function renderCausalChains(chains) {
     const force = chainCounterforceText(chain);
     const forceHTML = force ? `<p class="cc-force"><strong>Counterforces:</strong> ${escapeHtml(force)}</p>` : "";
     const tagline = hasValue(chain.tagline) ? chain.tagline : "";
-    return `<details class="cc"${index === 0 ? " open" : ""}><summary><span class="cc-head"><span class="cc-title">${escapeHtml(chain.title || "")}</span>${tagline ? `<span class="cc-mech">${escapeHtml(tagline)}</span>` : ""}</span></summary><div class="cc-body">${stepsHTML}${forceHTML}</div></details>`;
+    return `<details class="cc"${openFirst && index === 0 ? " open" : ""}><summary><span class="cc-head"><span class="cc-title">${escapeHtml(chain.title || "")}</span>${tagline ? `<span class="cc-mech">${escapeHtml(tagline)}</span>` : ""}</span></summary><div class="cc-body">${stepsHTML}${forceHTML}</div></details>`;
   }).join("");
   return `<div class="cc-list">${items}</div>`;
 }
 
 function marketEffectRow(item) {
   const reason = item.reason || item.whyRelevant || "";
-  const name = `<span class="kme-name">${escapeHtml(item.name || item.ticker || "")}</span>`;
-  const dir = `<span class="kme-dir ${nodeDirClass(item.direction)}">${escapeHtml(nodeDirWord(item))}</span>`;
+  const assetName = item.name || item.ticker || "";
+  const info = hasValue(assetName) && ASSET_INFO[assetName]
+    ? `<button class="info-dot" type="button" data-info-key="asset:${escapeHtml(assetName)}" aria-label="About ${escapeHtml(assetName)}">i</button>`
+    : "";
+  const name = `<span class="kme-name-wrap"><span class="kme-name">${escapeHtml(assetName)}</span>${info}</span>`;
+  const dirNote = hasValue(item.directionNote) ? `<span class="kme-dir-note">${escapeHtml(item.directionNote)}</span>` : "";
+  const dir = `<span class="kme-dir-cell"><span class="kme-dir ${nodeDirClass(item.direction)}">${escapeHtml(nodeDirWord(item))}</span>${dirNote}</span>`;
   if (!hasValue(reason)) {
     return `<div class="kme kme-flat">${name}${dir}</div>`;
   }
@@ -4156,6 +4328,8 @@ function renderDetail(node) {
   const counterarguments = Array.isArray(node.counterarguments) ? node.counterarguments : [];
 
   const whyMattersHTML = `${hasValue(node.whyMatters) ? `<p class="wim-lead">${escapeHtml(node.whyMatters)}</p>` : ""}${renderCausalChains(chains)}`;
+  const transmissionPaths = Array.isArray(node.transmissionPaths) ? node.transmissionPaths : [];
+  const transmissionHTML = transmissionPaths.length ? renderCausalChains(transmissionPaths, { openFirst: false }) : "";
   const directEffects = (node.keyMarketEffects && Array.isArray(node.keyMarketEffects.direct))
     ? node.keyMarketEffects.direct
     : affectedAssets.map((a) => ({ name: assetDisplayName(a), direction: a.direction, reason: a.reason }));
@@ -4175,9 +4349,10 @@ function renderDetail(node) {
       { label: "Review", value: isDraftNode ? "Review required before publishing." : "Already published or outside draft queue." }
     ]), true, "review-status-section")] : []),
     ...((hasValue(node.whyMatters) || chains.length) ? [section("Why it matters", whyMattersHTML, true)] : []),
+    ...(transmissionHTML ? [section("More transmission paths", transmissionHTML)] : []),
     ...(keyMarketEffectsHTML ? [section("Key market effects", keyMarketEffectsHTML, true)] : []),
     ...(watchHTML ? [section("What to watch next", watchHTML)] : []),
-    ...(exposuresBlockHTML ? [section("Sector & company exposures", exposuresBlockHTML)] : []),
+    ...(exposuresBlockHTML ? [section("Broader market exposures", exposuresBlockHTML)] : []),
     ...(risksHTML ? [section("Risks & scenarios", risksHTML)] : []),
     ...(reviewModeEnabled ? [section("Sources & review", sourceStatusHTML, false, "review-status-section")] : []),
     ...(missingDataHTML ? [section("Missing Data", missingDataHTML, false, "review-status-section")] : []),
@@ -4436,6 +4611,22 @@ onboardingOverlay?.addEventListener("click", (event) => {
 });
 
 document.addEventListener("keydown", handleOnboardingKeydown);
+
+document.addEventListener("keydown", handleInfoSheetKeydown);
+
+document.addEventListener("click", (event) => {
+  const trigger = event.target.closest(".info-dot[data-info-key]");
+  if (!trigger) return;
+  event.preventDefault();
+  event.stopPropagation();
+  openInfoSheet(trigger.dataset.infoKey, trigger);
+});
+
+infoSheetOverlay?.addEventListener("click", (event) => {
+  if (event.target.closest("[data-info-close]") || event.target === infoSheetOverlay) {
+    closeInfoSheet();
+  }
+});
 
 document.querySelectorAll(".event-tab").forEach((tab) => {
   tab.addEventListener("click", () => {
