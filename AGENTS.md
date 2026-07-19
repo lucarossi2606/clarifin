@@ -4,6 +4,8 @@
 
 - Clarifin is a mobile-first market-intelligence application for retail investors.
 - The core product flow is: Event -> Evidence -> Economic channel -> Direct impact -> Indirect impact -> Exposures -> Missing data -> Counterarguments.
+- Write the product name as `clarifin` in every user-facing string. Never use `Clarifin`, `CLARIFIN`, or another capitalization in UI copy.
+- Do not rename technical identifiers, existing storage keys, or filenames solely to apply the user-facing `clarifin` capitalization rule.
 - Before any substantial Clarifin task, read `docs/event_intelligence_current_status.md`.
 - Use only the repository containing this `AGENTS.md`.
 - Never use `C:\Users\luca2\OneDrive\Dokumente\clarifin`.

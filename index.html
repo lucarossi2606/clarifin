@@ -167,10 +167,11 @@ button:focus-visible, input:focus-visible {
 .event-card h2 { font-size: 18px; font-weight: 700; line-height: 1.25; margin: 0 0 var(--sp-2) 0; letter-spacing: -0.3px; max-width: calc(100% - 64px); overflow-wrap: anywhere; }
 .event-card > p { font-family: inherit; font-size: 13px; font-weight: 600; letter-spacing: 0; color: var(--text-light); line-height: 1.4; margin: 0 0 var(--sp-4) 0; max-width: calc(100% - 64px); overflow-wrap: anywhere; }
 
-.card-meta { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.card-meta { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3); flex-wrap: wrap; }
 .score-pill { padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; background: var(--yellow-bg); color: var(--yellow-text); }
 .score-pill.gray { background: var(--gray-bg); color: var(--gray-text); }
 .score-pill.confidence { background: var(--gray-bg); color: var(--text-muted); }
+.score-pill.origin-pill { white-space: nowrap; }
 
 .ticker-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding-right: 40px; }
 .ticker-chip { padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; }
@@ -237,7 +238,7 @@ button:focus-visible, input:focus-visible {
 .detail-hero { border-radius: 24px; padding: var(--sp-5); margin-bottom: var(--sp-3); }
 .detail-hero h1 { font-size: 22px; font-weight: 700; line-height: 1.2; margin: 0 0 var(--sp-3) 0; letter-spacing: -0.5px; }
 .detail-summary { font-family: inherit; font-size: 13px; font-weight: 600; letter-spacing: 0; color: var(--text-light); line-height: 1.5; margin: 0 0 var(--sp-4) 0; }
-.signal-row { display: flex; gap: var(--sp-2); }
+.signal-row { display: flex; gap: var(--sp-2); flex-wrap: wrap; align-items: center; }
 
 .detail-sections { display: flex; flex-direction: column; gap: var(--sp-3); }
 .detail-card { border-radius: 24px; }
@@ -282,6 +283,22 @@ details.detail-card[open] > summary::after { content: "-"; }
 
 /* Node Detail v2 (additive, does not modify existing classes) */
 .wim-lead { font-size: 13px; font-weight: 600; color: var(--text-light); line-height: 1.55; margin: 0 0 var(--sp-4) 0; }
+/* Contextual glossary term: stays typographically part of the sentence, no link colour, no icon. */
+.glossary-term {
+  display: inline;
+  color: inherit;
+  font: inherit;
+  background: none;
+  cursor: pointer;
+  text-decoration-line: underline;
+  text-decoration-style: solid;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: currentColor;
+  text-decoration-skip-ink: auto;
+}
+.glossary-term:hover { text-decoration-style: dashed; }
+.glossary-term:focus-visible { outline: 3px solid rgba(17, 24, 39, 0.22); outline-offset: 2px; border-radius: 3px; }
 .cc-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
 .cc { background: rgba(0, 0, 0, 0.03); border-radius: 12px; overflow: hidden; }
 .cc > summary { list-style: none; cursor: pointer; padding: var(--sp-3) var(--sp-4); display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
@@ -326,7 +343,7 @@ details.detail-card[open] > summary::after { content: "-"; }
 .hero-facts { margin-top: var(--sp-4); padding-top: var(--sp-3); border-top: 1px solid rgba(17, 24, 39, 0.08); }
 .hero-facts .facts-row { padding: 7px 0; }
 
-.info-dot { position: relative; flex: 0 0 auto; align-self: center; width: 18px; height: 18px; min-width: 18px; min-height: 18px; padding: 0; border-radius: 50%; border: 1px solid rgba(158, 165, 170, 0.55); background: var(--gray-bg); color: var(--text-muted); font-size: 11px; font-weight: 700; font-style: normal; line-height: 1; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.info-dot { position: relative; flex: 0 0 auto; align-self: center; width: 18px; height: 18px; min-width: 18px; min-height: 18px; padding: 0; border-radius: 50%; border: 0; background: var(--gray-bg); color: var(--text-muted); font-size: 11px; font-weight: 700; font-style: normal; line-height: 1; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
 .info-dot::after { content: ""; position: absolute; inset: -13px; border-radius: 50%; }
 .info-dot:focus-visible { outline: 3px solid rgba(17, 24, 39, 0.22); outline-offset: 2px; }
 .signal-row .info-dot { margin-left: auto; }
@@ -531,6 +548,7 @@ details.detail-card[open] > summary::after { content: "-"; }
               <span class="score-pill confidence" id="confidence-label"></span>
                           <span class="score-pill gray" id="event-type-label" hidden></span>
               <span class="score-pill gray" id="event-status-label" hidden></span>
+              <span class="score-pill gray" id="origin-label" hidden></span>
               <button class="info-dot" type="button" data-info-key="impact-confidence" aria-label="About impact and confidence">i</button>
             </div>
             <div class="hero-facts" id="node-facts" hidden></div>
@@ -682,7 +700,7 @@ const fallbackNodes = [
     region: "global",
     published_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
     created_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-    whyMatters: "Roughly a fifth of the world's seaborne oil and much of its LNG leaves the Gulf through this one strait, and unlike Suez there is no sea route around it. Markets do not react to the war headline itself: they react when transit becomes unsafe, uninsurable or commercially unusable, and insurance can shut the route faster than any blockade.",
+    whyMatters: "Roughly a fifth of the world's seaborne oil and much of its LNG leaves the Gulf through the Strait of Hormuz, and unlike Suez there is no sea route around it. Markets do not react to the war headline itself: they react when transit becomes unsafe, uninsurable or commercially unusable, and insurance can shut the route faster than any blockade. The same shock also pushes investors toward safe havens, even if that defensive bid is not guaranteed.",
     chains: [
       {
         id: "C1",
@@ -920,10 +938,14 @@ const LOCAL_ASSET_CATALOG = [
 ];
 const directionOrder = { positive: 0, negative: 1, mixed: 2, neutral: 2 };
 const reviewModeEnabled = new URLSearchParams(window.location.search).get("mode") === "review";
+// Explicit, fully isolated CPI Node Detail v2 fixture mode. When on, no Supabase/remote load
+// runs and only the separate, non-live clarifin examples are shown.
+const cpiV2FixtureEnabled = new URLSearchParams(window.location.search).get("fixture") === "cpi-v2";
 let activeView = reviewModeEnabled ? "review" : "home";
 let eventMode = "top";
 let reviewTab = "drafts";
 let selectedNodeId = null;
+let selectedNodeOrigin = "";
 let selectedUpcomingEventId = "";
 let savedNodeIds = sanitizeStringArray(safeReadLocalJson(SAVED_NODES_STORAGE_KEY, []));
 let watchlist = loadWatchlistSymbols();
@@ -1594,6 +1616,13 @@ function groupByNodeId(rows, allowOwnId = false) {
   }, {});
 }
 
+function hasSupabaseConfig() {
+  return Boolean(
+    typeof SUPABASE_URL === "string" && SUPABASE_URL.trim() &&
+    typeof SUPABASE_PUBLISHABLE_KEY === "string" && SUPABASE_PUBLISHABLE_KEY.trim()
+  );
+}
+
 async function supabaseFetch(path) {
   const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     headers: SUPABASE_HEADERS
@@ -1749,11 +1778,81 @@ function useFallbackNodes(state = {
   title: "Showing demo data",
   message: "Showing demo data because live data is unavailable."
 }) {
-  nodes = sortNodesNewestFirst(fallbackNodes);
+  const nonExampleFallbacks = fallbackNodes.filter((node) => !EXAMPLE_SOURCE_NODE_IDS.has(node.id));
+  nodes = sortNodesNewestFirst(markLocalNodes(nonExampleFallbacks, "fallback"));
   nodeDataState = state;
 }
 
+// Runtime-only origin markers for locally sourced nodes. These live purely in the view/runtime
+// model: they are never persisted, never a DB status value, and never sent to Supabase. Each
+// local node is a shallow copy so the shared fallbackNodes array is never mutated.
+//   origin === "example"  -> controlled clarifin example node
+//   origin === "fallback" -> local demo fallback node (missing config / remote error)
+// Real remote nodes are left untouched and stay identifiable by isSupabaseNode === true.
+function markLocalNode(node, origin) {
+  return {
+    ...node,
+    nodeOrigin: origin,
+    isSupabaseNode: false,
+    isLive: false,
+    isPublishable: false,
+    // Local view-model status marker, never the DB "published"/"draft" values.
+    status: origin === "example" ? "example" : "local_fallback"
+  };
+}
+function markLocalNodes(list, origin) {
+  return list.map((node) => markLocalNode(node, origin));
+}
+
+const EXAMPLE_NODE_SPECS = [
+  { sourceNodeId: "cpi", id: "clarifin-example:cpi", modelKey: "cpi" },
+  { sourceNodeId: "hormus", id: "clarifin-example:hormus", modelKey: "hormus" }
+];
+const EXAMPLE_SOURCE_NODE_IDS = new Set(EXAMPLE_NODE_SPECS.map((spec) => spec.sourceNodeId));
+const exampleNodes = EXAMPLE_NODE_SPECS.map((spec) => {
+  const sourceNode = fallbackNodes.find((node) => node.id === spec.sourceNodeId);
+  if (!sourceNode) return null;
+  return markLocalNode({
+    ...sourceNode,
+    id: spec.id,
+    exampleModelKey: spec.modelKey
+  }, "example");
+}).filter(Boolean);
+
+function isExampleNode(node) {
+  return Boolean(node && node.nodeOrigin === "example");
+}
+
+// Compact, human-readable non-live marker for a node, or null for real remote nodes.
+function getLocalNodeMarker(node) {
+  if (isExampleNode(node)) return { kind: "example", label: "clarifin example" };
+  if (node && node.nodeOrigin === "fallback") return { kind: "fallback", label: "Local fallback · Not live" };
+  return null;
+}
+
+function useCpiV2Fixture() {
+  // Explicit CPI v2 fixture mode: the remote result set stays empty and the rendering layer
+  // exposes only the separate, controlled example collection.
+  nodes = [];
+  nodeDataState = {
+    status: "fallback",
+    title: "clarifin examples",
+    message: "Showing controlled examples. These are not live data."
+  };
+}
+
 async function loadUpcomingEvents() {
+  if (cpiV2FixtureEnabled) {
+    // Fixture mode stays fully isolated: no remote load and no example appears under Upcoming.
+    upcomingEvents = [];
+    upcomingDataState = {
+      status: "fallback",
+      title: "clarifin examples",
+      message: "Examples are available only under Top Events."
+    };
+    renderList();
+    return;
+  }
   upcomingDataState = { status: "loading", title: "Loading upcoming events", message: "Loading upcoming events..." };
   renderList();
   try {
@@ -1923,24 +2022,48 @@ function normalizeCandidate(row) {
 }
 
 async function loadPublishedNodes() {
+  if (cpiV2FixtureEnabled) {
+    // Fixture mode is fully isolated: no remote load, fixture nodes only, non-live.
+    useCpiV2Fixture();
+    renderList();
+    return;
+  }
+  if (!hasSupabaseConfig()) {
+    // Missing remote configuration: keep the local fallback so the app stays usable, never live.
+    useFallbackNodes();
+    renderList();
+    return;
+  }
   nodeDataState = { status: "loading", title: "Loading latest nodes", message: "Loading latest nodes..." };
   renderList();
   try {
     const publishedRows = await supabaseFetch("nodes?select=*&status=eq.published");
-    if (!Array.isArray(publishedRows) || !publishedRows.length) {
-      useFallbackNodes();
+    if (!Array.isArray(publishedRows)) {
+      // Malformed/unexpected response is treated as a failed remote load.
+      useFallbackNodes({
+        status: "error",
+        title: "Live data could not be loaded",
+        message: "Showing demo data because live data is unavailable."
+      });
+      renderList();
+      return;
+    }
+    if (!publishedRows.length) {
+      // Successful but empty remote result stays an empty *live* result set, never demo data.
+      nodes = [];
+      nodeDataState = { status: "live", title: "", message: "" };
       renderList();
       return;
     }
 
+    // Successful remote load: the validated remote result set stays authoritative and untouched.
+    // Controlled examples are added later by the rendering layer and cannot displace remote rows.
     const hydratedNodes = await hydrateSupabaseNodes(publishedRows);
-    const modelNodes = fallbackNodes.filter((node) => node.id === "cpi" || node.id === "hormus");
-    const liveNodes = hydratedNodes.filter((node) => !modelNodes.some((model) => model.id === node.id));
-    nodes = sortNodesNewestFirst([...modelNodes, ...liveNodes]);
+    nodes = sortNodesNewestFirst(hydratedNodes);
     nodeDataState = { status: "live", title: "", message: "" };
 
     if (selectedNodeId) {
-      const selectedNode = getNode(selectedNodeId);
+      const selectedNode = getNode(selectedNodeId, selectedNodeOrigin);
       selectedNode ? renderDetail(selectedNode) : renderList();
     } else {
       renderList();
@@ -1957,6 +2080,7 @@ async function loadPublishedNodes() {
 }
 
 async function loadDraftNodes() {
+  if (cpiV2FixtureEnabled) return;
   if (!reviewModeEnabled) return;
   reviewLoadMessage = "";
   try {
@@ -1971,6 +2095,7 @@ async function loadDraftNodes() {
 }
 
 async function loadEventCandidates() {
+  if (cpiV2FixtureEnabled) return;
   if (!reviewModeEnabled) return;
   try {
     const result = await callAutoPipelineAction({ action: "list_candidates" });
@@ -2196,6 +2321,81 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+// --- Contextual glossary -----------------------------------------------------
+// Central controlled registry: stable internal IDs, the visible term and a
+// controlled definition. Definitions are authored here only; they are never
+// derived from node free text, Supabase, the generator or any external data.
+const GLOSSARY_TERMS = [
+  { id: "strait-of-hormuz", term: "Strait of Hormuz", definition: "A narrow sea passage connecting the Persian Gulf with the Gulf of Oman. It is a major route for global oil and LNG shipments." },
+  { id: "safe-havens", term: "safe havens", definition: "Assets that investors often seek during periods of uncertainty to preserve value. Their defensive behavior is common, but not guaranteed." },
+  { id: "real-yields", term: "real yields", definition: "Government-bond yields after accounting for expected inflation. Rising real yields can increase pressure on gold and long-duration assets." },
+  { id: "discount-rates", term: "discount rates", definition: "Rates used to translate future cash flows into today’s value. Higher discount rates generally reduce present values, all else equal." }
+];
+const GLOSSARY_TERMS_BY_ID = new Map(GLOSSARY_TERMS.map((entry) => [entry.id, entry]));
+// Node-specific allowlist. Only these nodes expose glossary terms, and only the
+// listed IDs. Unknown IDs are ignored and stay normal text.
+const GLOSSARY_MODEL_ALLOWLIST = {
+  cpi: ["real-yields", "discount-rates"],
+  hormus: ["strait-of-hormuz", "safe-havens"]
+};
+
+let activeGlossaryMarker = null;
+
+function createGlossaryMarker(modelKey) {
+  const allowedIds = Array.isArray(GLOSSARY_MODEL_ALLOWLIST[modelKey]) ? GLOSSARY_MODEL_ALLOWLIST[modelKey] : [];
+  const terms = allowedIds
+    .map((id) => GLOSSARY_TERMS_BY_ID.get(id)) // unknown IDs resolve to undefined
+    .filter(Boolean)
+    .slice()
+    .sort((a, b) => b.term.length - a.term.length); // check longer terms before shorter ones
+  return { terms, used: new Set() };
+}
+
+function isGlossaryWordChar(ch) {
+  return ch !== "" && /[A-Za-z0-9]/.test(ch);
+}
+
+// Escapes the text and makes at most the first still-unused allowed term
+// interactive, respecting word boundaries and preserving the source casing.
+function markGlossaryText(marker, rawText) {
+  const text = String(rawText == null ? "" : rawText);
+  if (!marker || !marker.terms.length) return escapeHtml(text);
+  let out = "";
+  let buffer = "";
+  let i = 0;
+  while (i < text.length) {
+    let matched = null;
+    for (const term of marker.terms) {
+      if (marker.used.has(term.id)) continue;
+      const len = term.term.length;
+      if (text.substr(i, len).toLowerCase() !== term.term.toLowerCase()) continue;
+      const before = i > 0 ? text[i - 1] : "";
+      const after = i + len < text.length ? text[i + len] : "";
+      if (isGlossaryWordChar(before) || isGlossaryWordChar(after)) continue;
+      matched = { term, len, source: text.substr(i, len) };
+      break;
+    }
+    if (matched) {
+      out += escapeHtml(buffer);
+      buffer = "";
+      out += `<button type="button" class="glossary-term" data-glossary-id="${escapeHtml(matched.term.id)}" aria-label="Explain: ${escapeHtml(matched.term.term)}">${escapeHtml(matched.source)}</button>`;
+      marker.used.add(matched.term.id);
+      i += matched.len;
+    } else {
+      buffer += text[i];
+      i += 1;
+    }
+  }
+  out += escapeHtml(buffer);
+  return out;
+}
+
+// Descriptive-text escaper used by the detail renderer: identical to escapeHtml
+// unless a glossary marker is active for the current node detail.
+function glossaryText(rawText) {
+  return markGlossaryText(activeGlossaryMarker, rawText);
 }
 
 function renderDataStatusNotice(state) {
@@ -2437,7 +2637,7 @@ function returnFromAssetDetail({ keyboardActivated = false } = {}) {
 
 function captureCurrentLocation() {
   if (selectedNodeId) {
-    return { type: "node", id: selectedNodeId, originView: activeView, eventMode };
+    return { type: "node", id: selectedNodeId, nodeOrigin: selectedNodeOrigin, originView: activeView, eventMode };
   }
   if (selectedUpcomingEventId) {
     return { type: "upcoming", id: selectedUpcomingEventId, originView: activeView, eventMode };
@@ -2460,6 +2660,7 @@ function openLocalView(view, message = "") {
   }
   activeView = view;
   selectedNodeId = null;
+  selectedNodeOrigin = "";
   selectedUpcomingEventId = "";
   localScreenMessage = message;
   renderList();
@@ -2469,6 +2670,7 @@ function returnToPreviousView() {
   const location = previousLocation || { type: "view", view: "home", eventMode: "top" };
   eventMode = location.eventMode || "top";
   selectedNodeId = null;
+  selectedNodeOrigin = "";
   selectedUpcomingEventId = "";
   localScreenMessage = "";
 
@@ -2476,7 +2678,7 @@ function returnToPreviousView() {
     activeView = ["home", "watchlist", "saved", "review", "asset"].includes(location.originView)
       ? location.originView
       : "home";
-    const node = getNode(location.id);
+    const node = getNode(location.id, location.nodeOrigin || "");
     if (node) {
       renderDetail(node);
       return;
@@ -2796,16 +2998,31 @@ function goHome() {
   activeView = "home";
   eventMode = "top";
   selectedNodeId = null;
+  selectedNodeOrigin = "";
   setActiveNav("home");
   renderList();
 }
 
-function getNode(id) {
-  return [...nodes, ...draftNodes].find((node) => node.id === id);
+function getNode(id, origin = "") {
+  const nodePools = origin === "example"
+    ? [exampleNodes]
+    : (origin === "data" ? [nodes, draftNodes] : [nodes, draftNodes, exampleNodes]);
+  return nodePools.flat().find((node) => node.id === id);
 }
 
 function getCurrentListNodes() {
   return activeView === "review" ? draftNodes : nodes;
+}
+
+function getHomeTopEventNodes(orderedNodes) {
+  return [...exampleNodes, ...orderedNodes];
+}
+
+function getSavedTopEventNodes(orderedNodes) {
+  return [
+    ...exampleNodes.filter((node) => savedNodeIds.includes(node.id)),
+    ...orderedNodes.filter((node) => savedNodeIds.includes(node.id))
+  ];
 }
 
 function getTickers(node) {
@@ -3028,13 +3245,13 @@ function renderLinkedEventCard(link) {
   const timeLabel = getNodeTimeValue(node) ? getNodeTimeLabel(node) : "";
   return `
     <article class="event-card linked-event-card liquid-glass">
-      <span class="category-pill">${escapeHtml(node.category || node.eventType || "Clarifin event")}</span>
+      <span class="category-pill">${escapeHtml(node.category || node.eventType || "clarifin event")}</span>
       <h2>${escapeHtml(node.title)}</h2>
       <div class="linked-event-meta">
         <span class="status-pill">${escapeHtml(formatAssetRelationship(link.relationship))}</span>
         ${timeLabel ? `<span class="status-pill">${escapeHtml(timeLabel)}</span>` : ""}
       </div>
-      <button class="action-btn liquid-glass linked-event-action" data-linked-node="${escapeHtml(node.id)}" type="button" aria-label="Open Clarifin event ${escapeHtml(node.title)}">Open event</button>
+      <button class="action-btn liquid-glass linked-event-action" data-linked-node="${escapeHtml(node.id)}" type="button" aria-label="Open clarifin event ${escapeHtml(node.title)}">Open event</button>
     </article>
   `;
 }
@@ -3089,8 +3306,8 @@ function renderAssetDetailScreen() {
     : `
       <article class="event-card liquid-glass">
         <h2>No linked events</h2>
-        <p>No linked Clarifin events are available in the current dataset.</p>
-        <p class="local-note">This only reflects the Clarifin nodes currently loaded in the app.</p>
+        <p>No linked clarifin events are available in the current dataset.</p>
+        <p class="local-note">This only reflects the clarifin nodes currently loaded in the app.</p>
       </article>
     `;
 
@@ -3098,7 +3315,7 @@ function renderAssetDetailScreen() {
     ${messageHTML}
     ${overviewHTML}
     <section class="asset-detail-section" aria-labelledby="asset-events-title">
-      <h2 id="asset-events-title">Relevant Clarifin events</h2>
+      <h2 id="asset-events-title">Relevant clarifin events</h2>
       ${eventsHTML}
     </section>
   `;
@@ -3161,7 +3378,7 @@ function renderHelpScreen() {
   eventList.innerHTML = `
     <article class="event-card liquid-glass">
       <h2>Help / Methodology</h2>
-      <p>This section will be added in a later MVP phase. Clarifin provides market intelligence, not investment advice, and does not execute trades.</p>
+      <p>This section will be added in a later MVP phase. clarifin provides market intelligence, not investment advice, and does not execute trades.</p>
     </article>
   `;
 }
@@ -3317,12 +3534,12 @@ function renderOnboarding() {
   setOnboardingBackgroundInert(true);
   const stepBodies = [
     `
-      <h2 id="onboarding-step-1-title">Welcome to Clarifin</h2>
-      <p class="onboarding-description" id="onboarding-step-1-description">Clarifin helps you understand market-moving events. It provides market intelligence, not investment advice, and it does not execute trades.</p>
+      <h2 id="onboarding-step-1-title">Welcome to clarifin</h2>
+      <p class="onboarding-description" id="onboarding-step-1-description">clarifin helps you understand market-moving events. It provides market intelligence, not investment advice, and it does not execute trades.</p>
     `,
     `
       <h2 id="onboarding-step-2-title">Interests</h2>
-      <p class="onboarding-description" id="onboarding-step-2-description">Choose the event types you want Clarifin to emphasize. You can continue without selecting anything.</p>
+      <p class="onboarding-description" id="onboarding-step-2-description">Choose the event types you want clarifin to emphasize. You can continue without selecting anything.</p>
       ${optionButtonsHTML(INTEREST_OPTIONS, "selectedInterests")}
     `,
     `
@@ -3340,7 +3557,7 @@ function renderOnboarding() {
     `,
     `
       <h2 id="onboarding-step-5-title">You're set</h2>
-      <p class="onboarding-description" id="onboarding-step-5-description">Clarifin will keep your preferences locally on this device. You can restart onboarding from Profile.</p>
+      <p class="onboarding-description" id="onboarding-step-5-description">clarifin will keep your preferences locally on this device. You can restart onboarding from Profile.</p>
       <p class="profile-muted">Interests</p>
       ${preferenceChipsHTML(onboardingDraft.selectedInterests, "No interests selected")}
       <p class="profile-muted">Regions</p>
@@ -3364,7 +3581,7 @@ function renderOnboarding() {
           ${onboardingStep > 0 ? `<button class="action-btn liquid-glass" data-onboarding-action="back" type="button">Back</button>` : ""}
           ${isFinalStep ? "" : `<button class="action-btn liquid-glass" data-onboarding-action="skip" type="button">Skip</button>`}
         </div>
-        <button class="action-btn liquid-glass" data-onboarding-action="${isFinalStep ? "finish" : "next"}" type="button">${isFinalStep ? "Open Clarifin" : "Continue"}</button>
+        <button class="action-btn liquid-glass" data-onboarding-action="${isFinalStep ? "finish" : "next"}" type="button">${isFinalStep ? "Open clarifin" : "Continue"}</button>
       </div>
     </div>
   `;
@@ -3441,6 +3658,10 @@ function setInfoSheetBackgroundInert(enabled) {
 function resolveInfoSheetContent(key) {
   if (!key) return null;
   if (key === "impact-confidence") return IMPACT_CONFIDENCE_INFO;
+  if (key.startsWith("glossary:")) {
+    const term = GLOSSARY_TERMS_BY_ID.get(key.slice("glossary:".length));
+    if (term) return { title: term.term, body: `<p>${escapeHtml(term.definition)}</p>` };
+  }
   if (key.startsWith("asset:")) {
     const name = key.slice("asset:".length);
     const definition = ASSET_INFO[name];
@@ -3603,7 +3824,7 @@ function renderWatchlistNoMatches(noticeHTML = "") {
     <article class="event-card liquid-glass">
       <div class="watchlist-empty">
         <h2>No matching nodes yet</h2>
-        <p>Clarifin will show events with structured links to your watchlist assets.</p>
+        <p>clarifin will show events with structured links to your watchlist assets.</p>
         <div class="screen-actions">
           <button class="action-btn liquid-glass" data-open-discover type="button">Add assets</button>
         </div>
@@ -3631,8 +3852,10 @@ function renderNodeCards(list, options = {}) {
     .map(
       (node) => {
         const isDraft = String(node.status || "").toLowerCase() === "draft";
+        const localMarker = getLocalNodeMarker(node);
+        const nodeOrigin = isExampleNode(node) ? "example" : "data";
         return `
-        <button class="event-card liquid-glass" data-node="${node.id}" type="button">
+        <button class="event-card liquid-glass" data-node="${escapeHtml(node.id)}" data-node-origin="${nodeOrigin}" type="button">
           <div class="card-header">
             <div>
               <span class="category-pill">${escapeHtml(node.category)}</span>
@@ -3646,6 +3869,7 @@ function renderNodeCards(list, options = {}) {
           <div class="card-meta">
             <span class="score-pill yellow">${node.impact}</span>
             <span class="score-pill gray">${node.confidence}</span>
+            ${localMarker ? `<span class="score-pill gray origin-pill">${escapeHtml(localMarker.label)}</span>` : ""}
           </div>
           <div class="ticker-row">
             ${getTickers(node).map((asset) => `<span class="ticker-chip ${asset.direction}">${escapeHtml(asset.ticker)}</span>`).join("")}
@@ -3859,6 +4083,7 @@ function restoreManualWatchlistInputInteraction(interaction) {
 function renderList({ scrollToTop = true } = {}) {
   const manualWatchlistInteraction = captureManualWatchlistInputInteraction();
   selectedNodeId = null;
+  selectedNodeOrigin = "";
   selectedUpcomingEventId = "";
   listScreen.hidden = false;
   detailScreen.hidden = true;
@@ -3936,11 +4161,12 @@ function renderList({ scrollToTop = true } = {}) {
       });
       return;
     }
-    if (nodeDataState.status === "loading" && !orderedNodes.length) {
+    const savedNodes = getSavedTopEventNodes(orderedNodes);
+    if (nodeDataState.status === "loading" && !savedNodes.length) {
       eventList.innerHTML = nodeNoticeHTML;
       return;
     }
-    renderNodeCards(orderedNodes.filter((node) => savedNodeIds.includes(node.id)), {
+    renderNodeCards(savedNodes, {
       noticeHTML: nodeNoticeHTML,
       emptyTitle: "No saved nodes yet",
       emptyMessage: "Saved nodes will appear here."
@@ -3955,11 +4181,12 @@ function renderList({ scrollToTop = true } = {}) {
     }
     renderUpcomingCards(getSortedUpcomingEvents(), { noticeHTML: upcomingNoticeHTML });
   } else {
-    if (nodeDataState.status === "loading" && !orderedNodes.length) {
+    const homeNodes = getHomeTopEventNodes(orderedNodes);
+    if (nodeDataState.status === "loading" && !homeNodes.length) {
       eventList.innerHTML = nodeNoticeHTML;
       return;
     }
-    renderNodeCards(orderedNodes, { noticeHTML: nodeNoticeHTML });
+    renderNodeCards(homeNodes, { noticeHTML: nodeNoticeHTML });
   }
   restoreManualWatchlistInputInteraction(manualWatchlistInteraction);
 }
@@ -4089,8 +4316,12 @@ function renderSourceReviewStatus(node, researchEvidence) {
       `).join("")}
     </ul>
   ` : `<p>${node.isSupabaseNode ? "Source details not available for this node yet." : "Source details not available in this demo node."}</p>`;
+  const localMarker = getLocalNodeMarker(node);
+  const dataStatusValue = localMarker
+    ? localMarker.label
+    : (node.isSupabaseNode ? "Live data loaded" : "Demo fallback data");
   const statusHTML = detailRows([
-    { label: "Data status", value: node.isSupabaseNode ? "Live data loaded" : "Demo fallback data" },
+    { label: "Data status", value: dataStatusValue },
     { label: "Review status", value: hasValue(node.status) ? formatLabel(node.status) : "" },
     { label: "Event status", value: hasValue(node.eventStatus) ? formatLabel(node.eventStatus) : "" }
   ]);
@@ -4126,6 +4357,8 @@ function renderUpcomingDetail(event) {
   document.querySelector("#event-type-label").textContent = "";
   document.querySelector("#event-status-label").hidden = true;
   document.querySelector("#event-status-label").textContent = "";
+  document.querySelector("#origin-label").hidden = true;
+  document.querySelector("#origin-label").textContent = "";
 
   const savedKey = getUpcomingSavedKey(event);
   const isSaved = isUpcomingEventSaved(event);
@@ -4199,7 +4432,7 @@ function renderCausalChains(chains, { openFirst = true } = {}) {
   const items = chains.map((chain, index) => {
     const steps = chainStepsFor(chain);
     const stepsHTML = steps.length
-      ? `<ul class="cc-steps">${steps.map((s, stepIndex) => `<li class="cc-step"><span class="cc-step-num">${stepIndex + 1}</span><span class="cc-step-text">${escapeHtml(s.text)}</span></li>`).join("")}</ul>`
+      ? `<ul class="cc-steps">${steps.map((s, stepIndex) => `<li class="cc-step"><span class="cc-step-num">${stepIndex + 1}</span><span class="cc-step-text">${glossaryText(s.text)}</span></li>`).join("")}</ul>`
       : "";
     const force = chainCounterforceText(chain);
     const forceHTML = force ? `<p class="cc-force"><strong>Counterforces:</strong> ${escapeHtml(force)}</p>` : "";
@@ -4221,7 +4454,7 @@ function marketEffectRow(item) {
   if (!hasValue(reason)) {
     return `<div class="kme kme-flat">${name}${dir}</div>`;
   }
-  return `<details class="kme"><summary>${name}${dir}</summary><div class="kme-body"><p>${escapeHtml(reason)}</p></div></details>`;
+  return `<details class="kme"><summary>${name}${dir}</summary><div class="kme-body"><p>${glossaryText(reason)}</p></div></details>`;
 }
 
 function renderKeyMarketEffects(directList, indirectList) {
@@ -4282,9 +4515,17 @@ function renderRisksScenarios(scenarios, counterarguments) {
 
 function renderDetail(node) {
   selectedNodeId = node.id;
+  selectedNodeOrigin = isExampleNode(node) ? "example" : "data";
   selectedUpcomingEventId = "";
-  const nodeStatus = String(node.status || "published").toLowerCase();
-  const isReviewNode = reviewModeEnabled && (activeView === "review" || nodeStatus !== "published");
+  // Scope contextual-glossary marking to a controlled example model key. Remote IDs or titles
+  // can never opt a live node into glossary behavior.
+  activeGlossaryMarker = createGlossaryMarker(isExampleNode(node) ? node.exampleModelKey : "");
+  // Only real remote/Supabase nodes may fall back to "published"; examples and fallback nodes
+  // keep their explicit non-live status and never inherit "published" from a blind default.
+  const rawStatus = hasValue(node.status) ? node.status : (node.isSupabaseNode ? "published" : "");
+  const nodeStatus = String(rawStatus).toLowerCase();
+  const isReviewNode = reviewModeEnabled && (activeView === "review" || (node.isSupabaseNode && nodeStatus !== "published"));
+  const localMarker = getLocalNodeMarker(node);
   const isDraftNode = nodeStatus === "draft";
   listScreen.hidden = true;
   detailScreen.hidden = false;
@@ -4304,6 +4545,8 @@ function renderDetail(node) {
   document.querySelector("#event-status-label").hidden = !isReviewNode;
   document.querySelector("#event-type-label").textContent = "";
   document.querySelector("#event-status-label").textContent = isReviewNode ? `${formatLabel(nodeStatus)} - review required` : "";
+  document.querySelector("#origin-label").hidden = !localMarker;
+  document.querySelector("#origin-label").textContent = localMarker ? localMarker.label : "";
 
   const nodeFactsEl = document.querySelector("#node-facts");
   const heroFactsHTML = renderKeyNumbers(node.keyFacts);
@@ -4327,7 +4570,7 @@ function renderDetail(node) {
   const scenarios = Array.isArray(node.scenarios) ? node.scenarios : [];
   const counterarguments = Array.isArray(node.counterarguments) ? node.counterarguments : [];
 
-  const whyMattersHTML = `${hasValue(node.whyMatters) ? `<p class="wim-lead">${escapeHtml(node.whyMatters)}</p>` : ""}${renderCausalChains(chains)}`;
+  const whyMattersHTML = `${hasValue(node.whyMatters) ? `<p class="wim-lead">${glossaryText(node.whyMatters)}</p>` : ""}${renderCausalChains(chains)}`;
   const transmissionPaths = Array.isArray(node.transmissionPaths) ? node.transmissionPaths : [];
   const transmissionHTML = transmissionPaths.length ? renderCausalChains(transmissionPaths, { openFirst: false }) : "";
   const directEffects = (node.keyMarketEffects && Array.isArray(node.keyMarketEffects.direct))
@@ -4359,6 +4602,8 @@ function renderDetail(node) {
     ...(reviewModeEnabled && researchEvidenceHTML ? [section("Research Evidence", researchEvidenceHTML, false, "research-evidence-section")] : []),
     `<p class="disclaimer">Not investment advice. No buy/sell recommendations or performance promises.</p>`
   ].join("");
+  // Glossary marking only applies to the synchronous detail render above.
+  activeGlossaryMarker = null;
 
   if (node.isSupabaseNode && !exposuresToWatch.length && !node.exposuresLoaded) {
     node.exposuresLoaded = true;
@@ -4427,7 +4672,7 @@ eventList.addEventListener("click", (event) => {
   }
   const linkedNodeAction = event.target.closest("[data-linked-node]");
   if (linkedNodeAction) {
-    const linkedNode = getNode(linkedNodeAction.dataset.linkedNode);
+    const linkedNode = getNode(linkedNodeAction.dataset.linkedNode, "data");
     if (linkedNode) renderDetail(linkedNode);
     return;
   }
@@ -4439,7 +4684,8 @@ eventList.addEventListener("click", (event) => {
   const card = event.target.closest(".event-card");
   if (!card) return;
   if (card.dataset.node) {
-    renderDetail(getNode(card.dataset.node));
+    const selectedNode = getNode(card.dataset.node, card.dataset.nodeOrigin || "data");
+    if (selectedNode) renderDetail(selectedNode);
     return;
   }
   if (card.dataset.upcomingIndex) {
@@ -4489,21 +4735,23 @@ saveButton.addEventListener("click", () => {
     return;
   }
   if (!selectedNodeId) return;
+  const selectedNode = getNode(selectedNodeId, selectedNodeOrigin);
+  if (!selectedNode) return;
   savedNodeIds = savedNodeIds.includes(selectedNodeId)
     ? savedNodeIds.filter((id) => id !== selectedNodeId)
     : [...savedNodeIds, selectedNodeId];
   safeWriteLocalJson(SAVED_NODES_STORAGE_KEY, savedNodeIds);
-  renderDetail(getNode(selectedNodeId));
+  renderDetail(selectedNode);
 });
 
 publishButton?.addEventListener("click", () => {
-  const node = getNode(selectedNodeId);
+  const node = getNode(selectedNodeId, selectedNodeOrigin);
   if (!node) return;
   updateNodeReviewStatus(node, "published");
 });
 
 archiveButton?.addEventListener("click", () => {
-  const node = getNode(selectedNodeId);
+  const node = getNode(selectedNodeId, selectedNodeOrigin);
   if (!node) return;
   updateNodeReviewStatus(node, "archived");
 });
@@ -4620,6 +4868,15 @@ document.addEventListener("click", (event) => {
   event.preventDefault();
   event.stopPropagation();
   openInfoSheet(trigger.dataset.infoKey, trigger);
+});
+
+document.addEventListener("click", (event) => {
+  const glossaryTrigger = event.target.closest(".glossary-term[data-glossary-id]");
+  if (!glossaryTrigger) return;
+  // Never let a glossary click bubble into an accordion or asset-detail opener.
+  event.preventDefault();
+  event.stopPropagation();
+  openInfoSheet(`glossary:${glossaryTrigger.dataset.glossaryId}`, glossaryTrigger);
 });
 
 infoSheetOverlay?.addEventListener("click", (event) => {
