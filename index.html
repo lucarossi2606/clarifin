@@ -119,12 +119,17 @@ button:focus-visible, input:focus-visible {
 
 .top-nav {
   position: absolute; top: 16px; left: 16px; right: 16px; height: 56px;
-  border-radius: 99px; display: flex; align-items: center; gap: var(--sp-3); padding: 0 var(--sp-4) 0 var(--sp-5); z-index: 100;
+  border-radius: 99px; display: flex; align-items: center; gap: var(--sp-2); padding: 0; z-index: 100;
+  background: color-mix(in srgb, var(--bg-app) 82%, transparent);
+  border: 0;
+  box-shadow: none;
 }
 
-.brand { flex: 0 0 auto; min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: flex-start; font-weight: 700; font-size: 18px; letter-spacing: -0.5px; color: var(--text-main); }
-.next-event { flex: 1 1 auto; min-width: 0; color: var(--text-light); font-size: 13px; font-weight: 600; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
-.top-actions { flex: 0 0 auto; display: flex; align-items: center; gap: var(--sp-2); }
+.event-tabs { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--sp-3); }
+.event-tabs[hidden] { display: none; }
+.event-tab { min-height: 44px; padding: 0 2px; border: 0; border-radius: 0; background: transparent; box-shadow: none; color: var(--text-light); transition: color 0.2s ease; display: inline-flex; align-items: center; white-space: nowrap; font-size: 14px; font-weight: 700; }
+.event-tab.active { color: var(--text-main); }
+.top-actions { flex: 0 0 auto; display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; }
 .top-action { width: 44px; height: 44px; min-width: 44px; min-height: 44px; padding: 0; border-radius: 50%; background: transparent; color: var(--text-main); display: grid; place-items: center; font-size: 12px; font-weight: 600; }
 .top-action:hover, .top-action:focus-visible, .top-action:active { background: rgba(17, 24, 39, 0.06); }
 .top-action svg { width: 23px; height: 23px; display: block; }
@@ -134,15 +139,6 @@ button:focus-visible, input:focus-visible {
 .greeting-section { margin-bottom: var(--sp-6); padding-top: var(--sp-2); }
 .date-label { font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 var(--sp-1) 0; }
 .greeting-section h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; margin: 0 0 var(--sp-1) 0; overflow-wrap: break-word; word-break: normal; }
-
-.tabs-container { display: inline-flex; background: rgba(0, 0, 0, 0.04); padding: 4px; border-radius: 99px; margin-bottom: var(--sp-4); }
-.tabs-container[hidden] { display: none; }
-.event-tab { min-height: 44px; padding: 8px 16px; border-radius: 99px; font-size: 14px; font-weight: 700; color: var(--text-muted); transition: all 0.2s ease; display: inline-flex; align-items: center; }
-.event-tab.active { background: #fff; color: var(--text-main); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); }
-.event-tab[data-event-mode="upcoming"] { color: var(--text-muted); }
-
-.dot { display: inline-block; width: 6px; height: 6px; background: var(--red-text); border-radius: 50%; margin-left: 4px; vertical-align: 2px; animation: pulse 2s infinite; }
-@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
 
 .event-list { display: flex; flex-direction: column; gap: var(--sp-4); }
 
@@ -481,7 +477,6 @@ details.detail-card[open] > summary::after { content: "-"; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .dot { animation: none; }
   .event-card, .event-tab, .nav-item, .watchlist-assets-toggle::after { transition: none; }
   .event-card:hover, .event-card:active { transform: none; }
   .info-sheet { animation: none; }
@@ -493,8 +488,10 @@ details.detail-card[open] > summary::after { content: "-"; }
     <div class="phone-shell">
       
       <header class="top-nav liquid-glass">
-        <button class="brand" type="button">clarifin</button>
-        <div class="next-event">NEXT: No major event</div>
+        <nav class="event-tabs" id="event-tabs" aria-label="Event views">
+          <button class="event-tab active" data-event-mode="top" type="button" aria-pressed="true">Top Events</button>
+          <button class="event-tab" data-event-mode="upcoming" type="button" aria-pressed="false">Upcoming</button>
+        </nav>
         <div class="top-actions" aria-label="Header actions">
           <button class="top-action" id="search-button" type="button" aria-label="Search assets" title="Search assets">
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -516,13 +513,6 @@ details.detail-card[open] > summary::after { content: "-"; }
           </section>
 
           <section class="feed-section">
-            <div class="tabs-container" id="event-tabs">
-              <button class="event-tab active" data-event-mode="top" type="button" aria-pressed="true">
-                Top Events <span class="dot"></span>
-              </button>
-              <button class="event-tab" data-event-mode="upcoming" type="button" aria-pressed="false">Upcoming</button>
-            </div>
-            
             <div class="event-list" id="event-list"></div>
             
             <p class="disclaimer">Not investment advice. No buy/sell recommendations or performance promises.</p>
@@ -2265,7 +2255,6 @@ const reviewActions = document.querySelector("#review-actions");
 const reviewNav = document.querySelector("#review-nav");
 const bottomNav = document.querySelector(".bottom-nav");
 const appScreen = document.querySelector(".app-screen");
-const brandButton = document.querySelector(".brand");
 const searchButton = document.querySelector("#search-button");
 const avatarButton = document.querySelector("#avatar-button");
 const onboardingOverlay = document.querySelector("#onboarding-overlay");
@@ -2286,7 +2275,6 @@ const ASSET_INFO = {
   "SPY": "An ETF tracking the S&P 500, representing a broad cross-section of large U.S. companies.",
   "Gold / GLD": "Gold is the underlying asset; GLD is an ETF designed to track the gold price. Its reaction can reflect competing effects from inflation demand, real yields and the U.S. dollar."
 };
-const nextEventLabel = document.querySelector(".next-event");
 const appStatusRegion = document.querySelector("#app-status-region");
 let statusAnnouncementFrame = null;
 
@@ -2918,31 +2906,6 @@ function formatShortDate(date) {
   return `${day} ${month}`;
 }
 
-function formatUpcomingTime(dateString) {
-  // The top header shows the next event using short relative time labels.
-  const eventDate = new Date(dateString);
-  if (Number.isNaN(eventDate.getTime())) return "";
-
-  const now = new Date();
-  const diffMs = eventDate.getTime() - now.getTime();
-  if (diffMs <= 0) return "now";
-
-  const minutes = Math.ceil(diffMs / 60000);
-  if (minutes < 60) return `in ${minutes} min`;
-
-  const hours = Math.ceil(minutes / 60);
-  if (hours < 24) return `in ${hours}h`;
-
-  const tomorrow = new Date(now);
-  tomorrow.setDate(now.getDate() + 1);
-  if (isSameCalendarDay(eventDate, tomorrow)) return "tomorrow";
-
-  const days = Math.ceil(diffMs / (24 * 60 * 60 * 1000));
-  if (days < 7) return `in ${days}d`;
-
-  return formatShortDate(eventDate);
-}
-
 function formatUpcomingCardTimestamp(dateString) {
   const eventDate = new Date(dateString);
   if (Number.isNaN(eventDate.getTime())) return "";
@@ -2960,30 +2923,6 @@ function getUpcomingTimeLabel(dateString) {
   return eventDate.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 }
 
-function getNextUpcomingEvent() {
-  // Find the first future event after sorting all upcoming events by datetime.
-  const now = Date.now();
-  return getSortedUpcomingEvents().find((event) => {
-    const eventTime = new Date(event.datetime).getTime();
-    return Number.isFinite(eventTime) && eventTime > now;
-  });
-}
-
-function updateTopHeader() {
-  if (activeView === "review") {
-    nextEventLabel.textContent = "REVIEW: Draft queue";
-    return;
-  }
-  const nextEvent = getNextUpcomingEvent();
-  if (!nextEvent) {
-    nextEventLabel.textContent = "NEXT: No major event";
-    return;
-  }
-
-  const label = nextEvent.nextLabel || nextEvent.title;
-  nextEventLabel.textContent = `NEXT: ${label} ${formatUpcomingTime(nextEvent.datetime)}`;
-}
-
 function setActiveNav(view) {
   document.querySelectorAll(".nav-item").forEach((nav) => {
     nav.classList.toggle("active", nav.dataset.view === view);
@@ -2992,15 +2931,6 @@ function setActiveNav(view) {
 
 function scrollAppToTop() {
   appScreen.scrollTo({ top: 0, behavior: "auto" });
-}
-
-function goHome() {
-  activeView = "home";
-  eventMode = "top";
-  selectedNodeId = null;
-  selectedNodeOrigin = "";
-  setActiveNav("home");
-  renderList();
 }
 
 function getNode(id, origin = "") {
@@ -3493,7 +3423,7 @@ function focusOnboardingStep() {
 }
 
 function restoreOnboardingFocus() {
-  const fallback = avatarButton || searchButton || brandButton;
+  const fallback = avatarButton || searchButton;
   const target = onboardingPreviouslyFocusedElement
     && document.contains(onboardingPreviouslyFocusedElement)
     && !onboardingPreviouslyFocusedElement.closest("[inert]")
@@ -4091,7 +4021,6 @@ function renderList({ scrollToTop = true } = {}) {
   if (scrollToTop) scrollAppToTop();
   setActiveNav(activeView);
   renderIntro();
-  updateTopHeader();
 
   document.querySelectorAll(".event-tab").forEach((tab) => {
     const isActiveMode = tab.dataset.eventMode === eventMode;
@@ -4339,11 +4268,11 @@ function renderUpcomingDetail(event) {
   activeView = ["home", "watchlist", "saved"].includes(activeView) ? activeView : "home";
   eventMode = "upcoming";
   setActiveNav(activeView);
+  eventTabs.hidden = true;
   listScreen.hidden = true;
   detailScreen.hidden = false;
   ensureBottomNavVisible();
   scrollAppToTop();
-  updateTopHeader();
 
   document.querySelector("#node-category").textContent = event.category;
   document.querySelector("#node-title").textContent = event.title;
@@ -4527,11 +4456,11 @@ function renderDetail(node) {
   const isReviewNode = reviewModeEnabled && (activeView === "review" || (node.isSupabaseNode && nodeStatus !== "published"));
   const localMarker = getLocalNodeMarker(node);
   const isDraftNode = nodeStatus === "draft";
+  eventTabs.hidden = true;
   listScreen.hidden = true;
   detailScreen.hidden = false;
   ensureBottomNavVisible();
   scrollAppToTop();
-  updateTopHeader();
   
   document.querySelector("#node-category").textContent = node.category;
   document.querySelector("#node-title").textContent = node.title;
@@ -4901,13 +4830,6 @@ document.querySelectorAll(".nav-item").forEach((item) => {
   });
 });
 
-brandButton.addEventListener("click", goHome);
-brandButton.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" || event.key === " ") {
-    event.preventDefault();
-    goHome();
-  }
-});
 searchButton?.addEventListener("click", () => openLocalView("discover"));
 avatarButton?.addEventListener("click", () => openLocalView("profile"));
 
